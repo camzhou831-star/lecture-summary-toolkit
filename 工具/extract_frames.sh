@@ -33,7 +33,7 @@ fi
 
 # 先抓到临时目录,成功后才替换上一次的帧,失败不破坏旧产物
 rm -rf "$tmp"; mkdir -p "$tmp"
-if ! ffmpeg -hide_banner -loglevel error -i "$in" -vf "$vf" -vsync vfr -q:v 3 "$tmp/raw_%05d.jpg"; then
+if ! ffmpeg -hide_banner -loglevel error -i "$in" -vf "$vf" -fps_mode vfr -q:v 3 "$tmp/raw_%05d.jpg"; then
   echo "错误: ffmpeg 抓帧失败(见上方 ffmpeg 输出),保留上次的帧" >&2; exit 1
 fi
 if [ ! -s "$meta" ]; then echo "错误: 没有抓到任何帧(视频无画面轨或过短?),保留上次的帧" >&2; exit 1; fi

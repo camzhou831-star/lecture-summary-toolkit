@@ -51,6 +51,10 @@ if [ -n "$GLOSSARY" ] && [ -f "$GLOSSARY" ]; then
   PROMPT_ARGS=(--prompt "$(tr '\n' ' ' < "$GLOSSARY")")
 fi
 
+# 线程数:默认 min(8, CPU 核数),可用 WHISPER_THREADS 覆盖(CI 小机器上超额分配线程会拖慢甚至卡住)
+NCPU="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
+THREADS="${WHISPER_THREADS:-$(( NCPU < 8 ? NCPU : 8 ))}"
+
 BASE="${INPUT%.*}"
 TMP_BASE="$(mktemp -t transcribe)"
 TMP_WAV="$TMP_BASE.wav"
@@ -62,9 +66,6 @@ ffmpeg -hide_banner -loglevel error -y -i "$INPUT" -ar 16000 -ac 1 -c:a pcm_s16l
 DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$TMP_WAV")
 echo "== 音频时长: ${DURATION%.*} 秒,开始转写 (模型: $MODEL_NAME, VAD: $([ ${#VAD_ARGS[@]} -gt 0 ] && echo 开 || echo 关), 线程: $THREADS, GPU: $([ "${NO_GPU:-0}" = 1 ] && echo 关 || echo 开))..." >&2
 
-# 线程数:默认 min(8, CPU 核数),可用 WHISPER_THREADS 覆盖(CI 小机器上超额分配线程会拖慢甚至卡住)
-NCPU="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
-THREADS="${WHISPER_THREADS:-$(( NCPU < 8 ? NCPU : 8 ))}"
 run_whisper() {
   whisper-cli -m "$MODEL_PATH" -f "$TMP_WAV" -l "$LANG" -t "$THREADS" "$@" \
     --output-srt --output-txt --output-file "$BASE" --no-prints
