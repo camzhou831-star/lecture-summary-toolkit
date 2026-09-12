@@ -53,7 +53,7 @@ def main():
     bundle = {"video": name, "duration": duration, "generated": datetime.date.today().isoformat(),
               "srt": os.path.relpath(srt, ROOT), "frames_dir": rel_frames,
               "segments": segs,
-              "frames": [{"file": f["file"], "t": f["t"], "page": f.get("page"), "pages": f.get("pages"), "chars": f.get("chars", 0), "text": f.get("text", "")} for f in frames]}
+              "frames": [{"file": f["file"], "t": f["t"], "page": f.get("page"), "pages": f.get("pages"), "deck": f.get("deck"), "chars": f.get("chars", 0), "text": f.get("text", "")} for f in frames]}
     json.dump(bundle, open(base + ".bundle.json", "w"), ensure_ascii=False, indent=0)
 
     # grounded.md
@@ -92,7 +92,8 @@ def main():
             g0, g1 = gaps[mi]
             out.append(f"⏸ {hms(g0)}–{hms(g1)} 无语音({int(g1-g0)//60} 分 {int(g1-g0)%60} 秒,可能是课间/静音/忘开麦)")
         for f in by_min.get(mi, []):
-            page = f"p{f['page']}/{f['pages']}" if f.get("page") else "非课件画面"
+            deck = (f.get("match") or {}).get("deck") or f.get("deck")
+            page = (f"p{f['page']}/{f['pages']}" + (f" {os.path.splitext(deck)[0]}" if deck else "")) if f.get("page") else "非课件画面"
             hint = " ⚠️文字少,建议看图" if f.get("chars", 0) < 60 else ""
             out.append(f"📄 t={f['t']}s · {page} · {f['file']}{hint}")
             lines = (f.get("text") or "").splitlines()

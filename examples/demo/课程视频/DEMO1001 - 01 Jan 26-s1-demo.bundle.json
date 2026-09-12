@@ -1,0 +1,158 @@
+{
+"video": "DEMO1001 - 01 Jan 26-s1-demo",
+"duration": 111.458,
+"generated": "2026-09-12",
+"srt": "课程视频/DEMO1001 - 01 Jan 26-s1-demo.srt",
+"frames_dir": "画面/DEMO1001 - 01 Jan 26-s1-demo",
+"segments": [
+{
+"start": 9.43,
+"end": 14.47,
+"text": "Welcome to this short demo lecture. Everything you hear and see here was generated for testing",
+"i": 0
+},
+{
+"start": 14.47,
+"end": 20.11,
+"text": "the summary toolkit. So there is no copyright problem in sharing it. Today's topic is testing",
+"i": 1
+},
+{
+"start": 20.11,
+"end": 29.48,
+"text": "loops. Loops are surprisingly hard to test. The body of a loop can run zero times, exactly once,",
+"i": 2
+},
+{
+"start": 29.72,
+"end": 34.96,
+"text": "or many times, and each of those counts can hide a different fault. Line coverage tells you the",
+"i": 3
+},
+{
+"start": 34.96,
+"end": 44.36,
+"text": "but not how many times. So here is the informal heuristic that most teams use. Write one test",
+"i": 4
+},
+{
+"start": 44.36,
+"end": 50.12,
+"text": "where the loop body never runs, one where it runs exactly once, and one where it runs more than once.",
+"i": 5
+},
+{
+"start": 50.36,
+"end": 58.73,
+"text": "This is informal, but it catches a lot of off by one errors. The textbook formal eases this with",
+"i": 6
+},
+{
+"start": 58.73,
+"end": 64.93,
+"text": "prime paths. A simple path visits no node twice. A prime path is a simple path that cannot be extended",
+"i": 7
+},
+{
+"start": 64.93,
+"end": 69.83,
+"text": "without repeating a node. Prime path coverage subsumes node coverage and edge coverage.",
+"i": 8
+},
+{
+"start": 72.93,
+"end": 78.77,
+"text": "Let us look at a tiny example. While i is less than n, add a of i to the total and increment i with n",
+"i": 9
+},
+{
+"start": 78.77,
+"end": 84.87,
+"text": "equal to zero the body never runs. With n equal to one it runs once. With n equal to three it runs three",
+"i": 10
+},
+{
+"start": 84.87,
+"end": 94.29,
+"text": "times. Those three tests give you loop coverage. To summarize, test loop counts of zero, one and many,",
+"i": 11
+},
+{
+"start": 94.29,
+"end": 99.65,
+"text": "and use prime paths when you need something rigorous. The quiz next week will cover this slide deck,",
+"i": 12
+},
+{
+"start": 99.65,
+"end": 105.17,
+"text": "so make sure you can state the definition of a prime path. Thanks. See you next time.",
+"i": 13
+}
+],
+"frames": [
+{
+"file": "t00000s.jpg",
+"t": 0,
+"page": null,
+"pages": null,
+"deck": null,
+"chars": 0,
+"text": ""
+},
+{
+"file": "t00012s.jpg",
+"t": 12,
+"page": 1,
+"pages": 6,
+"deck": "DEMO1001-testing-loops.pdf",
+"chars": 138,
+"text": "Testing Loops: A Tiny Lecture\n+ Demo unit DEMO1001\n- A two-minute synthetic lecture\n+ All content in this video is original and free to reuse"
+},
+{
+"file": "t00024s.jpg",
+"t": 24,
+"page": 2,
+"pages": 6,
+"deck": "DEMO1001-testing-loops.pdf",
+"chars": 160,
+"text": "Why loops are hard to test\n- A loop body can run zero, one, or many times\n+ Each count can hide a different fault\n+ Line coverage says nothing about how many times"
+},
+{
+"file": "t00036s.jpg",
+"t": 36,
+"page": 3,
+"pages": 6,
+"deck": "DEMO1001-testing-loops.pdf",
+"chars": 181,
+"text": "Loop coverage heuristic\n- Write one test where the body runs 0 times\n* One where it runs exactly once\n* One where it runs more than once\n- This is informal but catches off-by-one errors"
+},
+{
+"file": "t00060s.jpg",
+"t": 60,
+"page": 4,
+"pages": 6,
+"deck": "DEMO1001-testing-loops.pdf",
+"chars": 165,
+"text": "Prime paths, informally\n- Asimple path visits no node twice\n+ Aprime path is a simple path that cannot be extended\n+ Prime path coverage subsumes node and edge coverage"
+},
+{
+"file": "t00072s.jpg",
+"t": 72,
+"page": 5,
+"pages": 6,
+"deck": "DEMO1001-testing-loops.pdf",
+"chars": 119,
+"text": "Worked example\n* while i <n: total += afi]; i+= 1\n*n=0 ->body never runs\n*n=1 ->body runs once\n*n=3 ->body runs three times"
+},
+{
+"file": "t00084s.jpg",
+"t": 84,
+"page": 6,
+"pages": 6,
+"deck": "DEMO1001-testing-loops.pdf",
+"chars": 101,
+"text": "* Test loop counts: 0, 1, many\n+ Prime paths formalise the idea\n* Quiz next week covers this slide deck"
+}
+]
+}

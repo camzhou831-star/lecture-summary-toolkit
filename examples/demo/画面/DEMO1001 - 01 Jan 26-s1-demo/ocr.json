@@ -1,0 +1,107 @@
+[
+ {
+  "file": "t00000s.jpg",
+  "t": 0,
+  "page": null,
+  "pages": null,
+  "text": "",
+  "chars": 0,
+  "match": null
+ },
+ {
+  "file": "t00012s.jpg",
+  "t": 12,
+  "page": 1,
+  "pages": 6,
+  "text": "Testing Loops: A Tiny Lecture\n+ Demo unit DEMO1001\n- A two-minute synthetic lecture\n+ All content in this video is original and free to reuse",
+  "chars": 138,
+  "match": {
+   "deck": "DEMO1001-testing-loops.pdf",
+   "page": 1,
+   "pages": 6,
+   "score": 1.0,
+   "toolbar": null
+  },
+  "deck": "DEMO1001-testing-loops.pdf"
+ },
+ {
+  "file": "t00024s.jpg",
+  "t": 24,
+  "page": 2,
+  "pages": 6,
+  "text": "Why loops are hard to test\n- A loop body can run zero, one, or many times\n+ Each count can hide a different fault\n+ Line coverage says nothing about how many times",
+  "chars": 160,
+  "match": {
+   "deck": "DEMO1001-testing-loops.pdf",
+   "page": 2,
+   "pages": 6,
+   "score": 1.0,
+   "toolbar": null
+  },
+  "deck": "DEMO1001-testing-loops.pdf"
+ },
+ {
+  "file": "t00036s.jpg",
+  "t": 36,
+  "page": 3,
+  "pages": 6,
+  "text": "Loop coverage heuristic\n- Write one test where the body runs 0 times\n* One where it runs exactly once\n* One where it runs more than once\n- This is informal but catches off-by-one errors",
+  "chars": 181,
+  "match": {
+   "deck": "DEMO1001-testing-loops.pdf",
+   "page": 3,
+   "pages": 6,
+   "score": 1.0,
+   "toolbar": 3
+  },
+  "deck": "DEMO1001-testing-loops.pdf"
+ },
+ {
+  "file": "t00060s.jpg",
+  "t": 60,
+  "page": 4,
+  "pages": 6,
+  "text": "Prime paths, informally\n- Asimple path visits no node twice\n+ Aprime path is a simple path that cannot be extended\n+ Prime path coverage subsumes node and edge coverage",
+  "chars": 165,
+  "match": {
+   "deck": "DEMO1001-testing-loops.pdf",
+   "page": 4,
+   "pages": 6,
+   "score": 0.87,
+   "toolbar": null
+  },
+  "deck": "DEMO1001-testing-loops.pdf"
+ },
+ {
+  "file": "t00072s.jpg",
+  "t": 72,
+  "page": 5,
+  "pages": 6,
+  "text": "Worked example\n* while i <n: total += afi]; i+= 1\n*n=0 ->body never runs\n*n=1 ->body runs once\n*n=3 ->body runs three times",
+  "chars": 119,
+  "match": {
+   "deck": "DEMO1001-testing-loops.pdf",
+   "page": 5,
+   "pages": 6,
+   "score": 0.9,
+   "toolbar": 5
+  },
+  "deck": "DEMO1001-testing-loops.pdf"
+ },
+ {
+  "file": "t00084s.jpg",
+  "t": 84,
+  "page": 6,
+  "pages": 6,
+  "text": "* Test loop counts: 0, 1, many\n+ Prime paths formalise the idea\n* Quiz next week covers this slide deck",
+  "chars": 101,
+  "match": {
+   "deck": "DEMO1001-testing-loops.pdf",
+   "page": 6,
+   "pages": 6,
+   "score": 1.0,
+   "toolbar": 6
+  },
+  "deck": "DEMO1001-testing-loops.pdf"
+ }
+]

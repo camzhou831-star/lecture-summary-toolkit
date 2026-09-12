@@ -35,7 +35,7 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
 - `画面/<视频名>/` — 幻灯片帧 `tXXXXXs.jpg`(文件名即秒数)+ `ocr.json`
 - `总结/1002/`、`总结/1003/` — 各课程的总结、考点记录、知识点笔记
 - `工具/`:
-  - `prepare.sh <视频> [语言码]` — **一键预处理**,依次调用下面各步。已有 srt 时跳过转写、已有帧时跳过抓帧,其余步骤(compact、去重、增量 OCR、bundle)每次都跑,只要几秒;`FORCE=1` 全部重做。环境变量 `FRAME_MODE=20s`、`NO_VAD=1`、`GLOSSARY=<文件>` 透传
+  - `prepare.sh <视频> [语言码]` — **一键预处理**,依次调用下面各步,结束时打印单元/日期/周次与总结应存路径。已有 srt 时跳过转写、已有帧时跳过抓帧,其余步骤(compact、去重、增量 OCR、bundle)每次都跑,只要几秒;`FORCE=1` 全部重做。环境变量 `FRAME_MODE=20s`、`NO_VAD=1`、`GLOSSARY=<文件>` 透传
   - `transcribe.sh <视频> [语言码]` — ffmpeg 抽音频 + whisper-cpp 转写(8 线程);默认开 Silero VAD 静音检测、按文件名课程号自动加载 `glossary/<课程号>.txt` 术语表;whisper 失败时自动用基础参数重试一次。`NO_VAD=1` 关 VAD,`GLOSSARY=<文件>` 指定术语表
   - `compact.sh <字幕.srt>` — 压成按分钟的 compact 文本,过滤 "Thank you." 等静音段幻觉
   - `extract_frames.sh <视频> [12s|0.20] [输出目录]` — 抓幻灯片帧,默认每 12 秒采样后去重;重跑先清旧帧
@@ -43,6 +43,8 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
   - `ocr_frames.py <画面目录> [--jobs 4] [--no-merge] [--force]` — tesseract OCR 写入 `ocr.json`(增量,识别失败的帧下次重试),并做三层合并:相邻同页码取字多的、前帧文字被后帧包含则删前帧、整节课里同一页/同一终端或浏览器画面只留一次。2 小时课 12 秒采样约 400 张原始帧 → 100 张左右
   - `build_bundle.py <视频或.srt> [--frames-dir 目录]` — 生成 `bundle.json` 与 `grounded.md`(每帧课件页最多 14 行 OCR、非课件画面 6 行,2 小时课约 1000 行);≥3 分钟无语音标 ⏸(会识别 VAD 把静音填进上一段的情况,以及 compact 里连续空白的分钟)
   - `check_summary.py <总结.md> [--srt] [--frames-dir]` — 校验总结:时间戳越界/秒数非法/落在静音段、截图引用不存在、缺小节、标题日期与文件名不符;有问题退出码 1
+  - `course_meta.py <文件名> [--json]` — 从文件名解析单元代码/日期/周次(多条正则,可在 `course.json` 追加),给出总结路径;年份、学期起始日、假期、单元别名与课件目录都在 `course.json`(示例见 `examples/demo/course.json`)
+  - `match_slides.py <画面目录> <课件pdf或目录>` — 用课件 PDF 的文字给帧定页码,比读工具栏稳;`course.json` 里配了 `slides_dir` 时 prepare.sh 自动调用(需 `brew install poppler`)
   - `sync_agents.sh` — 从技能文件生成 `AGENTS.md` 与 `CLAUDE.md`
   - `add_links.py <总结.md> [--dry-run]` — 把"章节时间线"里行首 `- ` 条目的第一个 `[MM:SS]` 变成回跳录播的链接(幂等;Obsidian 装 Media Extended 插件后可定位到秒)
 - `skills/video-summary/SKILL.md` — 两个 agent 共用的工作流程;`AGENTS.md` / `CLAUDE.md` 由它生成
@@ -60,16 +62,38 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
 
 ## 依赖
 
-- ffmpeg、whisper-cpp(`brew install ffmpeg whisper-cpp`)
+- ffmpeg、whisper-cpp(`brew install ffmpeg whisper-cpp`);课件 PDF 匹配需 poppler(`brew install poppler`,可选)
 - whisper 模型放在 `~/.local/share/whisper-models/`,缺失时脚本自动下载(large-v3-turbo,约 1.6 GB)
 - tesseract(`brew install tesseract`,OCR 用)
 - python3 + Pillow(系统自带的 python3 已带 Pillow;没有则 `pip3 install pillow`)
 - 总结在线视频需另装 `brew install yt-dlp`
 
-## 内容与合规
+## 数据流:哪些留在本机,哪些会离开
 
-- 产物(转写、截图、讲义稿、总结)是**个人学习用途**。录播与课件属于学校/讲师版权,请不要把它们或其转写上传到公开仓库、分享群。本仓库 `.gitignore` 已排除 `课程视频/`、`画面/`、`总结/`。
-- 工具本身不含任何课程内容。
+| 步骤 | 工具 | 数据去向 |
+|---|---|---|
+| 抽音频、抓帧 | ffmpeg | 本机 |
+| 转写 | whisper.cpp(+Silero VAD) | 本机,模型首次从 Hugging Face 下载 |
+| 幻灯片 OCR、课件 PDF 匹配 | tesseract、pdftotext | 本机 |
+| 讲义稿、bundle、校验、链接 | 本仓库脚本 | 本机 |
+| **写总结与复习卡** | Claude Code 或 Codex CLI | **讲义稿(转写全文 + OCR 文字)会发送到 Anthropic / OpenAI 的服务器**;截图只在 agent 主动打开时上传 |
+| 在线视频 | yt-dlp | 从视频网站下载到本机 |
+
+不想让任何内容离开本机时,可以只跑 `工具/prepare.sh`,自己读讲义稿写笔记。
+
+## 合规:请在使用前读一遍
+
+- **课程材料的版权**:录播、课件属于学校和讲师。以 UWA 为例,学校规定课程材料只能在 LMS 内供个人学习使用,不得在 LMS 之外分享或上传([iPoint a_id/2752](https://ipoint.uwa.edu.au/app/answers/detail/a_id/2752/));部分录播因版权不允许下载([a_id/1448](https://ipoint.uwa.edu.au/app/answers/detail/a_id/1448/))。**转写、截图、讲义稿、总结都是课程材料的衍生物**,只能自用,不要上传到公开仓库、分享群或网盘。本仓库 `.gitignore` 已排除根目录的 `课程视频/`、`画面/`、`总结/`。
+- **AI 与考核**:UWA 要求在考核中使用生成式 AI 必须获得单元允许、如实声明,且不能替代本人的思考([a_id/3432](https://ipoint.uwa.edu.au/app/answers/detail/a_id/3432/))。本工具产出的总结和复习卡是学习辅助,不是可提交的作业;考核前请查阅所在单元的 AI 使用规定。其它学校请查自己学校的对应政策。
+- **他人隐私**:录播里可能有同学提问、讲师闲聊。总结时不要记录可识别个人的内容;分享前脱敏。
+- **工具本身不含任何课程内容**。`examples/demo/` 里的示例视频是程序生成的原创内容。
+
+## 示例与测试
+
+- `examples/demo/` — 合成的两分钟示例讲座(原创幻灯片 + 语音合成),附全部产物与总结样例,`COURSE_ROOT=examples/demo bash 工具/prepare.sh "DEMO1001 - 01 Jan 26-s1-demo.mp4" en` 可复现。
+- `python3 -m unittest discover -s tests` — 21 个单元测试,秒级,不需要 whisper/tesseract。
+- `bash tests/run_pipeline_demo.sh` — 用示例视频跑完整流水线并校验(CI 在 macOS runner 上用 tiny.en 模型跑)。
+- 贡献前请读 `CONTRIBUTING.md`。
 
 ## 已知情况
 

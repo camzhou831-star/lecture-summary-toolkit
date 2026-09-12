@@ -1,0 +1,33 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install pillow
+      - name: 单元测试(不需要 whisper/tesseract)
+        run: python3 -W ignore::ResourceWarning -m unittest discover -s tests -v
+      - name: 双端一致性:AGENTS.md 必须由 SKILL.md 生成
+        run: bash 工具/sync_agents.sh && git diff --exit-code AGENTS.md CLAUDE.md
+      - name: 仓库里不能混入课程内容(转写/截图/总结只允许 examples/ 下的合成示例)
+        run: |
+          bad=$(git ls-files | grep -E '\.(srt|mp4|jpg)$|grounded\.md$|bundle\.json$' | grep -v '^examples/' || true)
+          if [ -n "$bad" ]; then echo "发现疑似课程内容:"; echo "$bad"; exit 1; fi
+  pipeline-demo:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 依赖
+        run: brew install ffmpeg whisper-cpp tesseract poppler && python3 -m pip install --break-system-packages pillow || pip3 install pillow
+      - name: 缓存 whisper tiny.en 模型
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/whisper-models
+          key: whisper-tiny-en-v1
+      - name: 合成示例完整流水线(tiny.en 模型)
+        run: WHISPER_MODEL=tiny.en NO_GPU=1 bash tests/run_pipeline_demo.sh

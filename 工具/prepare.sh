@@ -54,6 +54,17 @@ if [ "$is_video" = 1 ] && [ -d "$frames" ]; then
   python3 "$TOOLS/dedup_frames.py" "$frames"
   if [ "${FORCE:-0}" = 1 ]; then python3 "$TOOLS/ocr_frames.py" "$frames" --force; else python3 "$TOOLS/ocr_frames.py" "$frames"; fi
 fi
+# 课件 PDF 匹配(可选):course.json 里该单元配了 slides_dir 且目录里有 PDF 时,用课件文字给帧定页码
+meta="$(COURSE_ROOT="$ROOT" python3 "$TOOLS/course_meta.py" "$video" --json 2>/dev/null || true)"
+slides_dir="$(printf '%s' "$meta" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("slides_dir") or "")' 2>/dev/null || true)"
+if [ "$is_video" = 1 ] && [ -n "$slides_dir" ] && ls "$ROOT/$slides_dir"/*.pdf >/dev/null 2>&1 && command -v pdftotext >/dev/null; then
+  echo "== [4b] 课件 PDF 匹配 ($slides_dir)"; python3 "$TOOLS/match_slides.py" "$frames" "$ROOT/$slides_dir"
+fi
 echo "== [5/5] bundle + 讲义稿"; python3 "$TOOLS/build_bundle.py" "$video"
 rm -f "$base.transcribe.log" "$base.frames.log"
-echo "== 全部完成,用时 $(( $(date +%s) - t0 )) 秒。下一步:读 $base.grounded.md 写总结,总结存 总结/<课程号>/$name.md,写完跑 工具/check_summary.py"
+notes="总结/<单元代码>/$name.md"
+if [ -n "$meta" ]; then
+  echo "== 课程信息: $(COURSE_ROOT="$ROOT" python3 "$TOOLS/course_meta.py" "$video" 2>/dev/null | head -1)"
+  notes="$(printf '%s' "$meta" | python3 -c 'import sys,json; print(json.load(sys.stdin)["notes_path"])')"
+fi
+echo "== 全部完成,用时 $(( $(date +%s) - t0 )) 秒。下一步:读 $base.grounded.md 写总结,总结存 $notes,写完跑 工具/add_links.py 与 工具/check_summary.py"
