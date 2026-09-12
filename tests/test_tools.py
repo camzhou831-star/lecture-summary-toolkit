@@ -35,6 +35,19 @@ class CourseMeta(unittest.TestCase):
         self.assertIn("未确认", r["year_source"])
     def test_unknown_name(self):
         self.assertIsNone(self.m.parse("random.mp4", self.cfg))
+    def test_multiple_breaks(self):
+        cfg = dict(self.cfg); cfg["break_weeks_after"] = [6, 9]
+        got = {n: self.m.parse(f"DEMO1001 - {n} 20-s1-full.mp4", cfg) for n in ["26 Aug", "02 Sep", "09 Sep", "23 Sep", "30 Sep", "07 Oct"]}
+        self.assertEqual([got[n]["week"] for n in got], [6, None, 7, 9, None, 10])
+        self.assertTrue(got["02 Sep"]["in_break"] and got["30 Sep"]["in_break"])
+    def test_cross_year_semester(self):
+        cfg = {"year": 2025, "semester_start": "2025-12-29"}
+        r1 = self.m.parse("DEMO1001 - 30 Dec 26-s1.mp4", cfg); r2 = self.m.parse("DEMO1001 - 06 Jan 26-s1.mp4", cfg)
+        self.assertEqual((r1["date"], r1["week"]), ("2025-12-30", 1))
+        self.assertEqual((r2["date"], r2["week"]), ("2026-01-06", 2)); self.assertIn("调整为 2026", r2["year_source"])
+    def test_non_monday_start_warns(self):
+        r = self.m.parse("DEMO1001 - 26 Aug 20-s1-full.mp4", {"year": 2026, "semester_start": "2026-07-21"})
+        self.assertTrue(any("不是周一" in w for w in r["warnings"]))
     def test_custom_pattern(self):
         cfg = dict(self.cfg); cfg["filename_patterns"] = [r"^Week(?P<week_ignored>\d+)_(?P<unit>[A-Z]{4}\d{4})_(?P<day>\d{2})(?P<mon>[A-Z][a-z]{2})"]
         r = self.m.parse("Week3_DEMO1001_05Aug.mp4", cfg)
@@ -126,6 +139,31 @@ class Frames(unittest.TestCase):
     def test_match_words(self):
         m = load("match_slides")
         self.assertEqual(m.words("The prime path, and the LOOP body!"), {"prime", "path", "loop", "body"})
+    @unittest.skipUnless(shutil.which("pdftotext"), "需要 poppler")
+    def test_match_preserves_toolbar_and_clear(self):
+        with tempfile.TemporaryDirectory() as d:
+            # 两页文字 PDF(手写 PDF 语法)
+            def pdf(path, texts):
+                objs = []; add = lambda o: (objs.append(o), len(objs))[1]
+                font = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"); pages_idx = add(b"P"); ids = []
+                for t in texts:
+                    c = ("BT /F1 20 Tf 50 700 Td (" + t + ") Tj ET").encode(); cid = add(b"<< /Length %d >>\nstream\n" % len(c) + c + b"\nendstream")
+                    ids.append(add(("<< /Type /Page /Parent %d 0 R /MediaBox [0 0 800 800] /Contents %d 0 R /Resources << /Font << /F1 %d 0 R >> >> >>" % (pages_idx, cid, font)).encode()))
+                objs[pages_idx - 1] = ("<< /Type /Pages /Kids [%s] /Count %d >>" % (" ".join("%d 0 R" % i for i in ids), len(ids))).encode()
+                cat = add(("<< /Type /Catalog /Pages %d 0 R >>" % pages_idx).encode()); out = b"%PDF-1.4\n"; offs = []
+                for n, o in enumerate(objs, 1): offs.append(len(out)); out += b"%d 0 obj\n" % n + o + b"\nendobj\n"
+                xref = len(out); out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1) + b"".join(b"%010d 00000 n \n" % o for o in offs)
+                out += b"trailer\n<< /Size %d /Root %d 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, cat, xref); open(path, "wb").write(out)
+            pdf(os.path.join(d, "deck.pdf"), ["prime paths simple path cannot extend subsumes node edge coverage", "loop body zero once many times fault line coverage"])
+            ocr = [{"file": "t00010s.jpg", "t": 10, "page": 7, "pages": 9, "chars": 80, "text": "prime paths: a simple path that cannot be extended; subsumes node and edge coverage"},
+                   {"file": "t00020s.jpg", "t": 20, "page": None, "pages": None, "chars": 10, "text": "terminal"}]
+            json.dump(ocr, open(os.path.join(d, "ocr.json"), "w"))
+            ms = os.path.join(TOOLS, "match_slides.py")
+            for _ in range(2): self.assertEqual(run(["python3", ms, d, os.path.join(d, "deck.pdf")]).returncode, 0)
+            e = json.load(open(os.path.join(d, "ocr.json")))[0]
+            self.assertEqual((e["page"], e["pages"], e["deck"]), (1, 2, "deck")); self.assertEqual(e["toolbar"], {"page": 7, "pages": 9})   # 工具栏值不被 PDF 页码污染
+            run(["python3", ms, d, "--clear"]); e = json.load(open(os.path.join(d, "ocr.json")))[0]
+            self.assertEqual((e["page"], e["pages"]), (7, 9)); self.assertNotIn("deck", e)
 
 class DualAgent(unittest.TestCase):
     def test_agents_md_matches_skill(self):
@@ -139,9 +177,15 @@ class DualAgent(unittest.TestCase):
         m = re.search(r"^@(\S+)", s, re.M); self.assertIsNotNone(m)
         self.assertTrue(os.path.exists(os.path.join(ROOT, m.group(1))))
     def test_install_links_three_dirs(self):
+        # 用隔离的 HOME 真跑 install.sh 的第 3 步(前两步靠 PATH 里的假 brew 跳过)
         with tempfile.TemporaryDirectory() as home:
-            s = open(os.path.join(ROOT, "install.sh")).read()
-            for d in [".claude/skills", ".codex/skills", ".agents/skills"]: self.assertIn(d, s)
+            fake = os.path.join(home, "bin"); os.makedirs(fake)
+            open(os.path.join(fake, "brew"), "w").write("#!/bin/sh\n[ \"$1\" = list ] && exit 0\nexit 0\n"); os.chmod(os.path.join(fake, "brew"), 0o755)
+            r = run(["bash", os.path.join(ROOT, "install.sh")], env={"HOME": home, "PATH": fake + ":" + os.environ["PATH"]})
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            for d in [".claude/skills", ".codex/skills", ".agents/skills"]:
+                link = os.path.join(home, d, "video-summary")
+                self.assertTrue(os.path.islink(link) and os.path.exists(os.path.join(link, "SKILL.md")), d)
     def test_scripts_syntax(self):
         for f in os.listdir(TOOLS):
             p = os.path.join(TOOLS, f)

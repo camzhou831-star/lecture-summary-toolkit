@@ -97,6 +97,7 @@
 "page": null,
 "pages": null,
 "deck": null,
+"also_at": [],
 "chars": 0,
 "text": ""
 },
@@ -105,7 +106,8 @@
 "t": 12,
 "page": 1,
 "pages": 6,
-"deck": "DEMO1001-testing-loops.pdf",
+"deck": "DEMO1001-testing-loops",
+"also_at": [],
 "chars": 138,
 "text": "Testing Loops: A Tiny Lecture\n+ Demo unit DEMO1001\n- A two-minute synthetic lecture\n+ All content in this video is original and free to reuse"
 },
@@ -114,7 +116,8 @@
 "t": 24,
 "page": 2,
 "pages": 6,
-"deck": "DEMO1001-testing-loops.pdf",
+"deck": "DEMO1001-testing-loops",
+"also_at": [],
 "chars": 160,
 "text": "Why loops are hard to test\n- A loop body can run zero, one, or many times\n+ Each count can hide a different fault\n+ Line coverage says nothing about how many times"
 },
@@ -123,7 +126,8 @@
 "t": 36,
 "page": 3,
 "pages": 6,
-"deck": "DEMO1001-testing-loops.pdf",
+"deck": "DEMO1001-testing-loops",
+"also_at": [],
 "chars": 181,
 "text": "Loop coverage heuristic\n- Write one test where the body runs 0 times\n* One where it runs exactly once\n* One where it runs more than once\n- This is informal but catches off-by-one errors"
 },
@@ -132,7 +136,8 @@
 "t": 60,
 "page": 4,
 "pages": 6,
-"deck": "DEMO1001-testing-loops.pdf",
+"deck": "DEMO1001-testing-loops",
+"also_at": [],
 "chars": 165,
 "text": "Prime paths, informally\n- Asimple path visits no node twice\n+ Aprime path is a simple path that cannot be extended\n+ Prime path coverage subsumes node and edge coverage"
 },
@@ -141,7 +146,8 @@
 "t": 72,
 "page": 5,
 "pages": 6,
-"deck": "DEMO1001-testing-loops.pdf",
+"deck": "DEMO1001-testing-loops",
+"also_at": [],
 "chars": 119,
 "text": "Worked example\n* while i <n: total += afi]; i+= 1\n*n=0 ->body never runs\n*n=1 ->body runs once\n*n=3 ->body runs three times"
 },
@@ -150,7 +156,8 @@
 "t": 84,
 "page": 6,
 "pages": 6,
-"deck": "DEMO1001-testing-loops.pdf",
+"deck": "DEMO1001-testing-loops",
+"also_at": [],
 "chars": 101,
 "text": "* Test loop counts: 0, 1, many\n+ Prime paths formalise the idea\n* Quiz next week covers this slide deck"
 }

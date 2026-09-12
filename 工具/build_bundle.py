@@ -53,7 +53,7 @@ def main():
     bundle = {"video": name, "duration": duration, "generated": datetime.date.today().isoformat(),
               "srt": os.path.relpath(srt, ROOT), "frames_dir": rel_frames,
               "segments": segs,
-              "frames": [{"file": f["file"], "t": f["t"], "page": f.get("page"), "pages": f.get("pages"), "deck": f.get("deck"), "chars": f.get("chars", 0), "text": f.get("text", "")} for f in frames]}
+              "frames": [{"file": f["file"], "t": f["t"], "page": f.get("page"), "pages": f.get("pages"), "deck": f.get("deck"), "also_at": f.get("also_at", []), "chars": f.get("chars", 0), "text": f.get("text", "")} for f in frames]}
     json.dump(bundle, open(base + ".bundle.json", "w"), ensure_ascii=False, indent=0)
 
     # grounded.md
@@ -95,7 +95,8 @@ def main():
             deck = (f.get("match") or {}).get("deck") or f.get("deck")
             page = (f"p{f['page']}/{f['pages']}" + (f" {os.path.splitext(deck)[0]}" if deck else "")) if f.get("page") else "非课件画面"
             hint = " ⚠️文字少,建议看图" if f.get("chars", 0) < 60 else ""
-            out.append(f"📄 t={f['t']}s · {page} · {f['file']}{hint}")
+            also = f" · 之后又回到此页: {', '.join(str(t)+'s' for t in f['also_at'])}" if f.get("also_at") else ""
+            out.append(f"📄 t={f['t']}s · {page} · {f['file']}{hint}{also}")
             lines = (f.get("text") or "").splitlines()
             cap = 14 if f.get("page") else 6          # 课件页最多 14 行,终端/浏览器等最多 6 行,够认出内容即可
             for line in lines[:cap]:

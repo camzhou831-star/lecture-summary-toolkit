@@ -83,7 +83,7 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
 
 ## 合规:请在使用前读一遍
 
-- **课程材料的版权**:录播、课件属于学校和讲师。以 UWA 为例,学校规定课程材料只能在 LMS 内供个人学习使用,不得在 LMS 之外分享或上传([iPoint a_id/2752](https://ipoint.uwa.edu.au/app/answers/detail/a_id/2752/));部分录播因版权不允许下载([a_id/1448](https://ipoint.uwa.edu.au/app/answers/detail/a_id/1448/))。**转写、截图、讲义稿、总结都是课程材料的衍生物**,只能自用,不要上传到公开仓库、分享群或网盘。本仓库 `.gitignore` 已排除根目录的 `课程视频/`、`画面/`、`总结/`。
+- **课程材料的版权**:录播、课件属于学校和讲师。以 UWA 为例,学校规定课程材料只能在 LMS 内供个人学习使用,不得在 LMS 之外分享或上传([iPoint a_id/2752](https://ipoint.uwa.edu.au/app/answers/detail/a_id/2752/));部分录播因版权不允许下载([a_id/1448](https://ipoint.uwa.edu.au/app/answers/detail/a_id/1448/))。**转写、截图、讲义稿、总结都是课程材料的衍生物**,默认只能自用,不要上传到公开仓库、分享群或网盘;学校规定的例外(获讲师授权、教学目的下的少量引用等)以规定原文为准。本仓库 `.gitignore` 已排除根目录的 `课程视频/`、`画面/`、`总结/`。
 - **AI 与考核**:UWA 要求在考核中使用生成式 AI 必须获得单元允许、如实声明,且不能替代本人的思考([a_id/3432](https://ipoint.uwa.edu.au/app/answers/detail/a_id/3432/))。本工具产出的总结和复习卡是学习辅助,不是可提交的作业;考核前请查阅所在单元的 AI 使用规定。其它学校请查自己学校的对应政策。
 - **他人隐私**:录播里可能有同学提问、讲师闲聊。总结时不要记录可识别个人的内容;分享前脱敏。
 - **工具本身不含任何课程内容**。`examples/demo/` 里的示例视频是程序生成的原创内容。
@@ -93,6 +93,8 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
 - `examples/demo/` — 合成的两分钟示例讲座(原创幻灯片 + 语音合成),附全部产物与总结样例,`COURSE_ROOT=examples/demo bash 工具/prepare.sh "DEMO1001 - 01 Jan 26-s1-demo.mp4" en` 可复现。
 - `python3 -m unittest discover -s tests` — 21 个单元测试,秒级,不需要 whisper/tesseract。
 - `bash tests/run_pipeline_demo.sh` — 用示例视频跑完整流水线并校验(CI 在 macOS runner 上用 tiny.en 模型跑)。
+- `bash tests/check_no_course_content.sh` — 防泄漏门禁,CI 与本地都可跑。
+- 示例视频可用 `python3 examples/demo/make_demo.py` 重新生成(需要 macOS `say`),脚本里就是全部旁白与幻灯片文字。
 - 贡献前请读 `CONTRIBUTING.md`。
 
 ## 已知情况

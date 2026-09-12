@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """用课件 PDF 的文字给每一帧定页码(比 OCR 读工具栏 "N of M" 稳),写回 ocr.json 的 page/pages/deck/match 字段。
 用法: match_slides.py <画面目录> <课件.pdf 或目录> [更多 pdf/目录...] [--min-score 0.35] [--dry-run]
+      match_slides.py <画面目录> --clear      # 撤销匹配,恢复工具栏读到的页码
 原理: pdftotext 逐页抽字 → 每帧 OCR 词集合与每页词集合算 相似度 = |A∩B| / |A|(A 为帧的词,偏向"帧上的字都能在这页找到")
       得分最高且 >= min-score 的页作为匹配;同分时优先与上一帧同一套课件、页码相近的。
-      已有工具栏页码的帧,若与匹配结果冲突,以 PDF 匹配为准并记录 match.toolbar 备查。
+      OCR 读到的工具栏页码原样保存在 e["toolbar"]={"page","pages"}(只在第一次匹配时写入,重复匹配不会被 PDF 页码污染);
+      匹配结果写 e["match"] 并覆盖 e["page"]/e["pages"]/e["deck"];--clear 从 e["toolbar"] 恢复。
+      没有文字层的 PDF(扫描/图片版)会被识别并提示。课件按完整路径区分,不同目录同名 PDF 不会混。
 依赖: poppler 的 pdftotext(brew install poppler)
 """
 import argparse, json, os, re, subprocess, sys
@@ -28,18 +31,33 @@ def collect_pdfs(args):
     return out
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("dir"); ap.add_argument("pdfs", nargs="+")
-    ap.add_argument("--min-score", type=float, default=0.35); ap.add_argument("--dry-run", action="store_true")
+    ap = argparse.ArgumentParser(); ap.add_argument("dir"); ap.add_argument("pdfs", nargs="*")
+    ap.add_argument("--min-score", type=float, default=0.35); ap.add_argument("--dry-run", action="store_true"); ap.add_argument("--clear", action="store_true")
     a = ap.parse_args()
-    pdfs = collect_pdfs(a.pdfs)
-    if not pdfs: sys.exit("错误: 没有找到 PDF")
-    decks = {os.path.basename(p): pdf_pages(p) for p in pdfs}
     ocr_path = os.path.join(a.dir, "ocr.json")
     entries = json.load(open(ocr_path))
+    if a.clear:
+        n = 0
+        for e in entries:
+            if "toolbar" in e:
+                e["page"], e["pages"] = e["toolbar"]["page"], e["toolbar"]["pages"]; n += 1
+            e.pop("match", None); e.pop("deck", None)
+        json.dump(entries, open(ocr_path, "w"), ensure_ascii=False, indent=1)
+        print(f"== 已撤销课件匹配,恢复 {n} 帧的工具栏页码"); return
+    pdfs = collect_pdfs(a.pdfs)
+    if not pdfs: sys.exit("错误: 没有找到 PDF")
+    decks = {}   # 完整路径 -> 各页词集合;显示名用不带扩展名的文件名
+    for pth in pdfs:
+        pages = pdf_pages(pth)
+        if pages and not any(pages): print(f"   ⚠️ {os.path.basename(pth)} 没有文字层(扫描/图片版 PDF),无法用于匹配", file=sys.stderr); continue
+        decks[pth] = pages
+    if not decks: sys.exit("错误: 所有 PDF 都没有文字层")
     prev = None; matched = 0; conflicts = 0
     for e in entries:
+        if "toolbar" not in e: e["toolbar"] = {"page": e.get("page"), "pages": e.get("pages")}   # 只记录一次 OCR 原始结果
+        tb_page = e["toolbar"]["page"]
         fw = words(e.get("text", ""))
-        if len(fw) < 6: e["match"] = None; continue
+        if len(fw) < 4: e["match"] = None; continue
         best = None
         for deck, pages in decks.items():
             for i, pw in enumerate(pages, 1):
@@ -47,14 +65,16 @@ def main():
                 score = len(fw & pw) / len(fw)
                 bonus = 0.02 if prev and prev[0] == deck and abs(prev[1] - i) <= 2 else 0   # 连续性:同一套、相邻页优先
                 if best is None or score + bonus > best[2]: best = (deck, i, score + bonus, score)
-        if best and best[3] >= a.min_score:
+        need = a.min_score if len(fw) >= 6 else max(a.min_score, 0.6)    # 短文本帧要求更高的匹配度
+        if best and best[3] >= need:
             deck, page, _, score = best
-            toolbar = e.get("page")
-            if toolbar and toolbar != page: conflicts += 1
-            e["match"] = {"deck": deck, "page": page, "pages": len(decks[deck]), "score": round(score, 2), "toolbar": toolbar}
-            e["deck"] = deck; e["page"] = page; e["pages"] = len(decks[deck]); matched += 1; prev = (deck, page)
+            if tb_page and tb_page != page: conflicts += 1
+            name = os.path.splitext(os.path.basename(deck))[0]
+            e["match"] = {"deck": name, "path": deck, "page": page, "pages": len(decks[deck]), "score": round(score, 2)}
+            e["deck"] = name; e["page"] = page; e["pages"] = len(decks[deck]); matched += 1; prev = (deck, page)
         else:
-            e["match"] = {"deck": None, "page": None, "score": round(best[3], 2) if best else 0, "toolbar": e.get("page")}
+            e["match"] = {"deck": None, "page": None, "score": round(best[3], 2) if best else 0}
+            e["page"], e["pages"] = tb_page, e["toolbar"]["pages"]; e.pop("deck", None)
     if not a.dry_run: json.dump(entries, open(ocr_path, "w"), ensure_ascii=False, indent=1)
     print(f"== 课件匹配: {matched}/{len(entries)} 帧定到页码({len(decks)} 套课件),{conflicts} 帧与工具栏页码不一致(以 PDF 为准)" + (" (dry-run)" if a.dry_run else ""))
 

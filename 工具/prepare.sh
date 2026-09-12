@@ -57,8 +57,16 @@ fi
 # 课件 PDF 匹配(可选):course.json 里该单元配了 slides_dir 且目录里有 PDF 时,用课件文字给帧定页码
 meta="$(COURSE_ROOT="$ROOT" python3 "$TOOLS/course_meta.py" "$video" --json 2>/dev/null || true)"
 slides_dir="$(printf '%s' "$meta" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("slides_dir") or "")' 2>/dev/null || true)"
-if [ "$is_video" = 1 ] && [ -n "$slides_dir" ] && ls "$ROOT/$slides_dir"/*.pdf >/dev/null 2>&1 && command -v pdftotext >/dev/null; then
-  echo "== [4b] 课件 PDF 匹配 ($slides_dir)"; python3 "$TOOLS/match_slides.py" "$frames" "$ROOT/$slides_dir"
+if [ "$is_video" = 1 ] && [ -n "$slides_dir" ]; then
+  if ! command -v pdftotext >/dev/null; then
+    echo "   ⚠️ course.json 配了课件目录 $slides_dir,但没装 poppler(brew install poppler),跳过课件匹配" >&2; python3 "$TOOLS/match_slides.py" "$frames" --clear >/dev/null
+  elif ! ls "$ROOT/$slides_dir"/*.pdf >/dev/null 2>&1; then
+    echo "   ⚠️ course.json 配了课件目录 $slides_dir,但里面没有 PDF,跳过课件匹配" >&2; python3 "$TOOLS/match_slides.py" "$frames" --clear >/dev/null
+  else
+    echo "== [4b] 课件 PDF 匹配 ($slides_dir)"; python3 "$TOOLS/match_slides.py" "$frames" "$ROOT/$slides_dir" || echo "   ⚠️ 课件匹配失败,继续用工具栏页码" >&2
+  fi
+elif [ "$is_video" = 1 ] && [ -f "$frames/ocr.json" ]; then
+  python3 "$TOOLS/match_slides.py" "$frames" --clear >/dev/null 2>&1 || true    # 没配课件:清掉以前的匹配结果,避免陈旧引用
 fi
 echo "== [5/5] bundle + 讲义稿"; python3 "$TOOLS/build_bundle.py" "$video"
 rm -f "$base.transcribe.log" "$base.frames.log"

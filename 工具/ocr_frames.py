@@ -94,7 +94,7 @@ def main():
             for k in kept:
                 kw = words(k["text"])
                 if e["page"] and k["page"] == e["page"] and k["pages"] == e["pages"]:
-                    if w and len(w & kw) / len(w) >= 0.9: drop = True; break
+                    if w and len(w & kw) / len(w) >= 0.9: k.setdefault("also_at", []).append(e["t"]); drop = True; break   # 记下"回看该页"的时间点
                     if kw and len(w & kw) / len(kw) >= 0.9 and k["chars"] < e["chars"]:
                         removed.append(k["file"]); kept.remove(k); break
                 elif not e["page"] and not k["page"] and len(w) >= 8 and len(w & kw) / len(w | kw) >= 0.7:

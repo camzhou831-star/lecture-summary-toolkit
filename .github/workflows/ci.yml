@@ -14,16 +14,16 @@ jobs:
         run: python3 -W ignore::ResourceWarning -m unittest discover -s tests -v
       - name: 双端一致性:AGENTS.md 必须由 SKILL.md 生成
         run: bash 工具/sync_agents.sh && git diff --exit-code AGENTS.md CLAUDE.md
-      - name: 仓库里不能混入课程内容(转写/截图/总结只允许 examples/ 下的合成示例)
-        run: |
-          bad=$(git ls-files | grep -E '\.(srt|mp4|jpg)$|grounded\.md$|bundle\.json$' | grep -v '^examples/' || true)
-          if [ -n "$bad" ]; then echo "发现疑似课程内容:"; echo "$bad"; exit 1; fi
+      - name: 仓库里不能混入课程内容(媒体/转写/OCR/课件/总结只允许 examples/ 下的合成示例)
+        run: bash tests/check_no_course_content.sh
   pipeline-demo:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: 依赖
-        run: brew install ffmpeg whisper-cpp tesseract poppler && python3 -m pip install --break-system-packages pillow || pip3 install pillow
+        run: brew install ffmpeg whisper-cpp tesseract poppler
+      - name: Pillow
+        run: python3 -m pip install --break-system-packages pillow
       - name: 缓存 whisper tiny.en 模型
         uses: actions/cache@v4
         with:
