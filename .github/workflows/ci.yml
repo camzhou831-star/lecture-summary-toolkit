@@ -18,6 +18,7 @@ jobs:
         run: bash tests/check_no_course_content.sh
   pipeline-demo:
     runs-on: macos-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: 依赖
@@ -29,5 +30,5 @@ jobs:
         with:
           path: ~/.local/share/whisper-models
           key: whisper-tiny-en-v1
-      - name: 合成示例完整流水线(tiny.en 模型)
-        run: WHISPER_MODEL=tiny.en NO_GPU=1 bash tests/run_pipeline_demo.sh
+      - name: 合成示例完整流水线(tiny.en 模型;整体 12 分钟超时,超时后打印转写日志)
+        run: WHISPER_MODEL=tiny.en NO_GPU=1 perl -e 'alarm 720; exec @ARGV' bash tests/run_pipeline_demo.sh

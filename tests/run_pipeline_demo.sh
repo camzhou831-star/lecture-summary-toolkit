@@ -3,7 +3,10 @@
 # 用法: bash tests/run_pipeline_demo.sh   环境变量: WHISPER_MODEL(默认 tiny.en,本机可设 large-v3-turbo)
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
+work="$(mktemp -d)"
+cleanup() { rc=$?; if [ $rc -ne 0 ]; then echo "===== 失败,打印日志 ====="; for f in "$work"/课程视频/*.log; do [ -f "$f" ] && { echo "--- $f"; tail -50 "$f"; }; done; fi; rm -rf "$work"; exit $rc; }
+trap cleanup EXIT
+echo "== 环境: $(uname -m) $(sysctl -n hw.ncpu 2>/dev/null || nproc) 核; whisper-cli: $(whisper-cli --version 2>&1 | head -1 || true); ffmpeg: $(ffmpeg -version 2>/dev/null | head -1 | cut -d' ' -f3); tesseract: $(tesseract --version 2>&1 | head -1)"
 cp -r "$root/examples/demo/." "$work/"
 rm -rf "$work/画面" "$work/课程视频/"*.srt "$work/课程视频/"*.txt "$work/课程视频/"*.json "$work/课程视频/"*.md
 export COURSE_ROOT="$work" WHISPER_MODEL="${WHISPER_MODEL:-tiny.en}"
