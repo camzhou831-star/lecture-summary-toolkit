@@ -4,4 +4,4 @@
 
 @skills/video-summary/SKILL.md
 
-安装到全局技能目录后,在任何目录说"总结 xxx.mp4"即可触发:`bash install.sh` 会把它链接到 `~/.claude/skills/` 与 `~/.codex/skills/`。
+安装到全局技能目录后,在任何目录说"总结 xxx.mp4"即可触发:`bash install.sh` 会把它链接到 `~/.claude/skills/`、`~/.codex/skills/` 与 `~/.agents/skills/`。

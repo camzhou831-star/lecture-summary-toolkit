@@ -6,7 +6,10 @@
 
 # 长视频自动总结
 
-工作目录 = 环境变量 `COURSE_ROOT`;未设置时为 `工具/` 所在的上级目录(在本仓库里打开 Claude Code / Codex 时就是仓库根目录)。下文的相对路径都相对于该目录。
+**先定位两个目录**(每次触发本技能第一步):
+- `TOOLKIT` = 本工具仓库根目录。在仓库里打开 agent 时就是当前目录;若本技能是 `install.sh` 链接安装的,用 `readlink -f` 找到本 SKILL.md 的真实路径,其上两级就是 `TOOLKIT`(`$(dirname "$(dirname "$(dirname "$(readlink -f <SKILL.md>)")")")`)。
+- `COURSE_ROOT` = 课程数据目录(视频、画面、总结所在)。默认 = `TOOLKIT`;用户另有目录时 `export COURSE_ROOT=<目录>`。
+下文 `工具/xxx` 一律指 `$TOOLKIT/工具/xxx`,其余相对路径相对于 `COURSE_ROOT`;`prepare.sh` 会自动创建 `课程视频/ 画面/ 总结/`。
 - `工具/prepare.sh` — **一键预处理**(转写+抓帧+compact+去重+OCR+bundle),平时只需要跑这一个
 - `工具/transcribe.sh` / `compact.sh` / `extract_frames.sh` / `dedup_frames.py` / `ocr_frames.py` / `build_bundle.py` — prepare.sh 内部调用的各步骤,可单独跑
 - `工具/check_summary.py` — 总结写完后的校验(时间戳越界/落在静音段、截图引用、必需小节、标题日期)
@@ -20,20 +23,20 @@
 
 1. **确定输入**
    - 本地文件:用户给文件名或路径即可,`prepare.sh` 会在 `课程视频/`、`~/Downloads/` 里找,并把视频移入 `课程视频/`。
-   - 在线链接(YouTube/B站等):先检查 `yt-dlp`(未装则 `brew install yt-dlp`),`yt-dlp -f "ba" -x --audio-format m4a -o "$COURSE_ROOT/课程视频/%(title)s.%(ext)s" <URL>` 只下音频;先试 `--write-auto-subs --skip-download` 拿现成字幕。
+   - 在线链接(YouTube/B站等):先检查 `yt-dlp`(未装则 `brew install yt-dlp`),`yt-dlp -f "ba" -x --audio-format m4a -o "<COURSE_ROOT>/课程视频/%(title)s.%(ext)s" <URL>` 只下音频;先试 `--write-auto-subs --skip-download` 拿现成字幕。
 
 2. **预处理**(后台运行;2 小时录播约 3–4 分钟)
    ```bash
-   bash 工具/prepare.sh "<视频文件名>" en
+   bash "$TOOLKIT/工具/prepare.sh" "<视频文件名或路径>" en
    ```
    - 语言码:英文授课传 `en`;中文视频传 `zh`;不确定传 `auto`。
-   - 转写已开 VAD(静音检测)和课程术语表,静音段不再产生 "Thank you." 类幻觉;如仍见到整段重复短句,一律视为静音跳过。
+   - 转写已开 VAD(静音检测)和课程术语表(`工具/glossary/<单元代码>.txt`,按文件名前缀自动选;新单元先建一份),静音段基本不再产生 "Thank you." 类幻觉;若讲义稿里仍有整分钟只是同一短句反复出现,按静音处理并在总结里注明。
    - 抓帧默认每 12 秒采样 + 去重 + OCR 三层合并(相邻同页、动画被包含、整节课同页/同画面只留一次),2 小时课约 100 帧;`FRAME_MODE=20s` 可再减少。已有 srt 跳过转写、已有帧跳过抓帧,其余步骤每次重跑(几秒);`FORCE=1` 全部重做;`NO_VAD=1` 关静音检测(极少需要)。
    - 产物里最重要的是 **`课程视频/<视频名>.grounded.md`**(讲义稿):逐分钟转写 `[HH:MM]`(时:分),中间插入该分钟出现的幻灯片 OCR 文本、课件页码(`p12/20`)与截图文件名,并标出无语音空档。
 
 3. **写总结**
-   - **只读 `grounded.md` 一份文件**(2 小时课约 1000 行,一次 Read 读完;超过 2000 行分两次)。每帧只列前 14 行(非课件画面 6 行)OCR,完整文字在 `bundle.json`。不要再逐张 Read 截图:只对讲义稿标了 "⚠️文字少,建议看图" 或 OCR 明显是代码/图表/公式的帧,才打开 `画面/<视频名>/<文件名>` 看图。
-   - 保存到 `总结/<课程号>/<视频文件名>.md`,并在回复中给出要点。
+   - **以 `grounded.md` 为唯一主输入**(2 小时课约 1000 行,一次读完;超过 2000 行分两次)。每帧只列前 14 行(非课件画面 6 行)OCR,完整文字在 `bundle.json`。需要精确到秒时查 `.srt`;只在讲义稿标了 "⚠️文字少,建议看图" 或 OCR 明显是代码/图表/公式时才打开对应图片。纯音频输入没有帧和页码,相关要求跳过。不要再逐张 Read 截图:只对讲义稿标了 "⚠️文字少,建议看图" 或 OCR 明显是代码/图表/公式的帧,才打开 `画面/<视频名>/<文件名>` 看图。
+   - 保存到 `<COURSE_ROOT>/总结/<单元代码>/<视频文件名>.md`(单元代码取文件名开头,如 DEMO1001;取不到就问用户),并在回复中给出要点。
    - **固定结构(所有课程统一)**:
      1. 标题:`# <课程号> 第N周(YYYY-MM-DD)— <本讲主题>`;标题下引用块写讲师、对应课件与页码范围、录播时长与正课/课间/下课时间点、截图文件夹路径。**日期按视频文件名或用户告知的日期填**(UWA LMS 录播文件名如 `DEMO1001 - 26 Aug 20-s1-full.mp4`,其中 "20-s1" 不是年份)。
      2. `## ⚠️ 课程通知(起止时间)` — 考核、截止日、项目安排、老师要求;没有通知也保留此节写"无"。
@@ -54,10 +57,10 @@
 
 4. **收尾(必做)**
    ```bash
-   python3 工具/add_links.py "总结/<课程号>/<视频文件名>.md"
-   python3 工具/check_summary.py "总结/<课程号>/<视频文件名>.md"
+   python3 "$TOOLKIT/工具/add_links.py" "<COURSE_ROOT>/总结/<单元代码>/<视频文件名>.md"
+   python3 "$TOOLKIT/工具/check_summary.py" "<COURSE_ROOT>/总结/<单元代码>/<视频文件名>.md"
    ```
-   - `check_summary.py` 报的每一条都要处理(改时间戳、补小节、修引用)后再交付;通过后在回复里说明"校验通过"。
+   - `check_summary.py` 报的每一条 ❌ 都要处理(改时间戳、补小节、修引用)后再交付;⚠️ 是提醒。它不检查内容正确性,通过后在回复里如实说明"格式与时间戳校验通过"。
 
 ## 注意
 
