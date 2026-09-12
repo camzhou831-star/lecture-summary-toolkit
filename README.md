@@ -1,14 +1,25 @@
-# 课程总结工具
+# 课程总结工具 / Lecture Summary Toolkit
 
-自动总结录播课/长视频:本地转写字幕 + 抓取幻灯片画面 + AI 生成带时间戳的章节总结。全程本地运行、不上传内容。
+自动总结录播课/长视频:本地转写字幕 + 抓取幻灯片画面 + AI 生成带时间戳的章节总结与复习卡。转写与 OCR 全程本地运行、不上传内容;总结由 **Claude Code 或 Codex CLI** 任一 agent 按同一份技能文件生成。
+
+*Local lecture-recording summarizer: whisper.cpp + Silero VAD transcription, slide OCR aligned to the transcript, and a shared skill file that drives either Claude Code or Codex CLI to write timestamped notes and flashcards. Chinese UI for now; English localisation is on the roadmap.*
+
+## 安装
+
+```bash
+git clone git@github.com:camzhou831-star/lecture-summary-toolkit.git
+cd lecture-summary-toolkit && bash install.sh
+```
+
+`install.sh` 装 ffmpeg / whisper-cpp / tesseract,并把 `skills/video-summary` 链接到 `~/.claude/skills/` 与 `~/.codex/skills/`。仓库根目录的 `CLAUDE.md`(Claude Code)与 `AGENTS.md`(Codex)都指向同一份技能,改流程只改 `skills/video-summary/SKILL.md` 再跑 `bash 工具/sync_agents.sh`。
 
 ## 用法
 
-把课程视频放进 `课程视频/`(或留在 Downloads),在 Claude Code 里说:
+把课程视频放进 `课程视频/`(或留在 Downloads),在仓库目录打开 Claude Code 或 Codex,说:
 
 > 总结 DEMO1001 - 26 Aug 20-s1-full.mp4
 
-Claude 会跑 `工具/prepare.sh` 预处理,读生成的讲义稿写总结,存到 `总结/<课程号>/`。也可以手动只跑预处理:
+agent 会跑 `工具/prepare.sh` 预处理,读生成的讲义稿写总结,存到 `总结/<课程号>/`。工作目录默认是仓库根目录,可用环境变量 `COURSE_ROOT` 指到别处。也可以手动只跑预处理:
 
 ```bash
 bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
@@ -32,8 +43,10 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
   - `ocr_frames.py <画面目录> [--jobs 4] [--no-merge] [--force]` — tesseract OCR 写入 `ocr.json`(增量,识别失败的帧下次重试),并做三层合并:相邻同页码取字多的、前帧文字被后帧包含则删前帧、整节课里同一页/同一终端或浏览器画面只留一次。2 小时课 12 秒采样约 400 张原始帧 → 100 张左右
   - `build_bundle.py <视频或.srt> [--frames-dir 目录]` — 生成 `bundle.json` 与 `grounded.md`(每帧课件页最多 14 行 OCR、非课件画面 6 行,2 小时课约 1000 行);≥3 分钟无语音标 ⏸(会识别 VAD 把静音填进上一段的情况,以及 compact 里连续空白的分钟)
   - `check_summary.py <总结.md> [--srt] [--frames-dir]` — 校验总结:时间戳越界/秒数非法/落在静音段、截图引用不存在、缺小节、标题日期与文件名不符;有问题退出码 1
+  - `sync_agents.sh` — 从技能文件生成 `AGENTS.md` 与 `CLAUDE.md`
   - `add_links.py <总结.md> [--dry-run]` — 把"章节时间线"里行首 `- ` 条目的第一个 `[MM:SS]` 变成回跳录播的链接(幂等;Obsidian 装 Media Extended 插件后可定位到秒)
-- 安装见 `安装说明.md`;Claude Code 技能文件在 `claude-skill/`
+- `skills/video-summary/SKILL.md` — 两个 agent 共用的工作流程;`AGENTS.md` / `CLAUDE.md` 由它生成
+- `install.sh` — 一键安装依赖与技能链接
 
 ## 总结的固定结构
 
@@ -52,6 +65,11 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
 - tesseract(`brew install tesseract`,OCR 用)
 - python3 + Pillow(系统自带的 python3 已带 Pillow;没有则 `pip3 install pillow`)
 - 总结在线视频需另装 `brew install yt-dlp`
+
+## 内容与合规
+
+- 产物(转写、截图、讲义稿、总结)是**个人学习用途**。录播与课件属于学校/讲师版权,请不要把它们或其转写上传到公开仓库、分享群。本仓库 `.gitignore` 已排除 `课程视频/`、`画面/`、`总结/`。
+- 工具本身不含任何课程内容。
 
 ## 已知情况
 

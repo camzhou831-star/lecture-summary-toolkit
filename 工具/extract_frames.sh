@@ -5,7 +5,7 @@
 #     Ns   —— 每 N 秒定点采样,再由 mpdecimate 丢掉与前一帧几乎相同的画面(默认 12s;讲师全屏翻 PDF 时推荐)
 #     0.xx —— ffmpeg 场景变化检测阈值(越小截得越多;纯幻灯片 0.10-0.20,带摄像头画面 0.25-0.35)
 #            注意:动画逐行出现、鼠标晃动会造成连拍,翻页动作小则会漏页,已知不如定点模式稳
-# 产出: ~/Desktop/课程总结/画面/<视频名>/t<秒数>s.jpg(文件名即该帧在视频中的时间点;同一秒多帧时追加 -2、-3)
+# 产出: <COURSE_ROOT 或 工具/ 的上级目录>/画面/<视频名>/t<秒数>s.jpg(文件名即该帧在视频中的时间点;同一秒多帧时追加 -2、-3)
 # 注意: 重跑会先清掉输出目录里上一次的 t*.jpg
 set -euo pipefail
 
@@ -13,7 +13,8 @@ in="${1:?用法: extract_frames.sh <视频路径> [Ns|阈值] [输出目录]}"
 mode="${2:-12s}"
 [ -f "$in" ] || { echo "错误: 找不到文件 $in" >&2; exit 1; }
 base="$(basename "${in%.*}")"
-out="${3:-${COURSE_ROOT:-$HOME/Desktop/课程总结}/画面/$base}"
+root="${COURSE_ROOT:-$(dirname "$(cd "$(dirname "$0")" && pwd)")}"
+out="${3:-$root/画面/$base}"
 mkdir -p "$out"
 tmp="$out/.extract_tmp"
 meta="$tmp/times.txt"

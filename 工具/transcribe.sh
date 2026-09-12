@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 用法: transcribe.sh <视频或音频文件> [语言码,默认auto]
 # 输出: 与输入文件同目录的 <文件名>.srt 和 <文件名>.txt
-# 环境变量: WHISPER_MODEL(默认 large-v3-turbo) WHISPER_MODEL_DIR  NO_VAD=1 关闭静音检测  GLOSSARY=<文件> 指定术语表
+# 环境变量: WHISPER_MODEL(默认 large-v3-turbo) WHISPER_MODEL_DIR  NO_VAD=1 关闭静音检测  GLOSSARY=<文件> 指定术语表  NO_GPU=1 强制 CPU
+# 失败回退: Metal 崩溃(如在 agent 沙箱内)→ 自动用 --no-gpu 重试 → 再失败用基础参数重试
 # 兼容 macOS 自带 bash 3.2:空数组用 ${ARR[@]+"${ARR[@]}"} 展开
 set -euo pipefail
 
@@ -65,9 +66,18 @@ run_whisper() {
   whisper-cli -m "$MODEL_PATH" -f "$TMP_WAV" -l "$LANG" -t 8 "$@" \
     --output-srt --output-txt --output-file "$BASE" --no-prints
 }
-if ! run_whisper ${VAD_ARGS[@]+"${VAD_ARGS[@]}"} ${PROMPT_ARGS[@]+"${PROMPT_ARGS[@]}"} --suppress-nst; then
-  echo "== whisper-cli 失败(退出码 $?),改用不带 VAD/术语表的基础参数重试一次..." >&2
-  run_whisper || { echo "错误: whisper-cli 两次都失败,放弃" >&2; exit 1; }
+GPU_ARGS=()
+[ "${NO_GPU:-0}" = "1" ] && GPU_ARGS=(--no-gpu)
+rc=0; run_whisper ${GPU_ARGS[@]+"${GPU_ARGS[@]}"} ${VAD_ARGS[@]+"${VAD_ARGS[@]}"} ${PROMPT_ARGS[@]+"${PROMPT_ARGS[@]}"} --suppress-nst || rc=$?
+if [ "$rc" -ne 0 ] && [ ${#GPU_ARGS[@]} -eq 0 ]; then
+  # 沙箱/部分环境下 Metal 会段错误(退出码 139),改用 CPU 重试(慢 3-5 倍,但能跑)
+  echo "== whisper-cli 失败(退出码 $rc),改用 CPU(--no-gpu)重试..." >&2
+  rc=0; run_whisper --no-gpu ${VAD_ARGS[@]+"${VAD_ARGS[@]}"} ${PROMPT_ARGS[@]+"${PROMPT_ARGS[@]}"} --suppress-nst || rc=$?
+fi
+if [ "$rc" -ne 0 ]; then
+  echo "== whisper-cli 仍失败(退出码 $rc),改用不带 VAD/术语表的基础参数最后重试一次..." >&2
+  rc=0; run_whisper ${GPU_ARGS[@]+"${GPU_ARGS[@]}"} || rc=$?
+  [ "$rc" -eq 0 ] || { echo "错误: whisper-cli 三次都失败(最后退出码 $rc),放弃" >&2; exit 1; }
 fi
 [ -s "$BASE.srt" ] || { echo "错误: 转写没有产出 $BASE.srt" >&2; exit 1; }
 

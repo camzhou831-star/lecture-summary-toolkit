@@ -18,7 +18,15 @@ def noisy_line(l):
     if NOISE.search(l): return True
     alpha = sum(ch.isalpha() or ch.isspace() for ch in l)
     return alpha / max(1, len(l)) < 0.6          # 一半以上是符号/数字的行,多为界面碎片
-PAGE = re.compile(r"\b(\d{1,3}) of (\d{1,3})\b")
+# 课件页码模式(按顺序尝试):Okular/Evince 工具栏 "12 of 20"、"Page 12 of 20"、"12 / 20"、行尾 "12/20";可用环境变量 OCR_PAGE_PATTERNS 追加(用 | 分隔的正则,两个捕获组)
+PAGE_PATTERNS = [r"\bPage (\d{1,3}) of (\d{1,3})\b", r"\b(\d{1,3}) of (\d{1,3})\b", r"\b(\d{1,3}) / (\d{1,3})\b", r"(?m)\b(\d{1,3})/(\d{1,3})\s*$"]
+PAGE_PATTERNS += [x for x in os.environ.get("OCR_PAGE_PATTERNS", "").split("|") if x]
+PAGES = [re.compile(x) for x in PAGE_PATTERNS]
+def find_page(raw):
+    for rx in PAGES:
+        m = rx.search(raw)
+        if m and int(m.group(1)) <= int(m.group(2)): return int(m.group(1)), int(m.group(2))
+    return None, None
 
 def frame_key(name):
     m = re.match(r"t(\d+)s(?:-(\d+))?\.jpg$", name)
@@ -31,14 +39,14 @@ def ocr(path):
         print(f"   ⚠️ tesseract 失败: {os.path.basename(path)}: {r.stderr.decode('utf-8', 'replace').strip().splitlines()[-1] if r.stderr else ''}", file=sys.stderr)
         return {"page": None, "pages": None, "text": "", "chars": 0, "error": True}
     raw = r.stdout.decode("utf-8", errors="replace")
-    page = PAGE.search(raw)
+    page, pages = find_page(raw)
     lines = []
     for l in raw.splitlines():
         l = re.sub(r"\s+", " ", l).strip()
         if not l or noisy_line(l): continue
         if len(re.findall(r"[A-Za-z]{3,}", l)) < 2: continue      # 少于两个真单词的行
         lines.append(l)
-    return {"page": int(page.group(1)) if page else None, "pages": int(page.group(2)) if page else None,
+    return {"page": page, "pages": pages,
             "text": "\n".join(lines), "chars": sum(len(l) for l in lines)}
 
 def words(t): return set(w for w in re.findall(r"[a-z]{3,}", t.lower()))

@@ -4,9 +4,10 @@
 退出码: 0 全部通过;1 有问题(逐条打印,含行号)
 """
 import argparse, os, re, sys, subprocess
-ROOT = os.environ.get("COURSE_ROOT") or os.path.expanduser("~/Desktop/课程总结")
+ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # 默认为 工具/ 的上级目录
 MONTHS = {m: i for i, m in enumerate(["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], 1)}
-REQUIRED = ["## 一句话概括", "## 核心要点", "## 章节时间线", "## 金句 / 考点信号"]
+REQUIRED = ["## 一句话概括", "## 核心要点", "## 章节时间线", "## 金句 / 考点信号", "## 复习卡"]
+WARN_HEADINGS = ["## ⚠️ 课程通知"]   # 缺了只提醒不判失败(旧总结没有)
 TIME_RE = re.compile(r"(\d+):(\d+):(\d+)[,.]\d+\s*-->\s*(\d+):(\d+):(\d+)")
 
 def srt_spans(path):
@@ -24,11 +25,13 @@ def main():
     frames_dir = a.frames_dir or os.path.join(ROOT, "画面", name)
     text = open(a.summary, encoding="utf-8").read()
     lines = text.splitlines()
-    problems = []
+    problems = []; warnings = []
 
     # 1. 小节
     for h in REQUIRED:
         if not any(l.startswith(h) for l in lines): problems.append((0, f"缺少小节 {h}"))
+    for h in WARN_HEADINGS:
+        if not any(l.startswith(h) for l in lines): warnings.append(f"没有 {h} 节(新总结应保留此节,没有通知就写\"无\")")
 
     # 2. 标题日期 vs 文件名日期
     fm = re.search(r"- (\d{1,2}) ([A-Z][a-z]{2}) ", name)   # 文件名里的 "20-s1" 不是年份
@@ -36,7 +39,9 @@ def main():
     if fm and tm:
         d, mo = int(fm[1]), MONTHS.get(fm[2])
         if (int(tm[2]), int(tm[3])) != (mo, d): problems.append((1, f"标题日期 {tm[0]} 与文件名日期 {fm[1]} {fm[2]} 不一致"))
-        if int(tm[1]) < 2026: problems.append((1, f"标题年份 {tm[1]} 可疑(本课程为 2026 年)"))
+        import datetime
+        y = int(tm[1]); now = datetime.date.today().year
+        if y < 2020 or y > now + 1: problems.append((1, f"标题年份 {y} 可疑(当前 {now} 年)"))
 
     # 3. 时间戳
     duration = None; spans = []
@@ -74,6 +79,7 @@ def main():
         for m in re.finditer(r"画面/([^/`)\]]+)/?", l):
             if not os.path.isdir(os.path.join(ROOT, "画面", m[1])): problems.append((ln, f"引用的画面文件夹不存在: 画面/{m[1]}"))
 
+    for w in warnings: print(f"  ⚠️ {w}")
     if problems:
         print(f"❌ {a.summary}: {len(problems)} 个问题")
         for ln, p in sorted(problems): print(f"  行 {ln}: {p}")

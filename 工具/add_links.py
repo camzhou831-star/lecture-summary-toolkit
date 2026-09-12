@@ -5,7 +5,7 @@
 链接形式: [06:59](<../../课程视频/<视频名>.mp4#t=419>)
 """
 import argparse, os, re, sys
-ROOT = os.environ.get("COURSE_ROOT") or os.path.expanduser("~/Desktop/课程总结")
+ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # 默认为 工具/ 的上级目录
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("summary"); ap.add_argument("--dry-run", action="store_true")
@@ -13,7 +13,7 @@ def main():
     name = os.path.splitext(os.path.basename(a.summary))[0]
     video = next((name + ext for ext in (".mp4", ".mkv", ".m4a", ".mp3") if os.path.exists(os.path.join(ROOT, "课程视频", name + ext))), None)
     if not video: sys.exit(f"跳过: 课程视频/ 下找不到 {name} 的视频文件")
-    rel = os.path.relpath(os.path.join(ROOT, "课程视频", video), os.path.dirname(os.path.abspath(a.summary)))
+    rel = os.path.relpath(os.path.realpath(os.path.join(ROOT, "课程视频", video)), os.path.dirname(os.path.realpath(a.summary)))   # realpath 消除 /tmp→/private/tmp 之类别名
     lines = open(a.summary, encoding="utf-8").read().split("\n")
     out, n, in_section = [], 0, False
     for l in lines:

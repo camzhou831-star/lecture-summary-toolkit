@@ -2,17 +2,19 @@
 # 一键预处理一节录播:转写(VAD+术语表)‖抓帧 → compact → 帧去重 → OCR → bundle/讲义稿
 # 用法: prepare.sh <视频文件名或路径> [语言码,默认 en] 
 #   文件名不带路径时依次在 课程视频/ 和 ~/Downloads/ 找;在 Downloads 找到会先移入 课程视频/
+#   工作目录 = COURSE_ROOT,未设置时为本脚本所在 工具/ 的上级目录
 #   环境变量: FORCE=1 忽略已有产物全部重做;FRAME_MODE=12s 抓帧模式(默认 12s);NO_VAD=1 / GLOSSARY=<文件> 透传给 transcribe.sh
 #   跳过规则: 只有"转写"和"抓帧"两步在已有产物时跳过;compact、去重、OCR(增量)、bundle 每次都重跑(都只要几秒)
 # 产出(全部在 课程视频/ 与 画面/):
 #   <名>.srt/.txt/.compact.txt  画面/<名>/*.jpg + ocr.json  <名>.bundle.json  <名>.grounded.md
 set -euo pipefail
-ROOT="${COURSE_ROOT:-$HOME/Desktop/课程总结}"
-TOOLS="$ROOT/工具"
+TOOLS="$(cd "$(dirname "$0")" && pwd)"
+ROOT="${COURSE_ROOT:-$(dirname "$TOOLS")}"   # 默认为 工具/ 的上级目录,可用 COURSE_ROOT 覆盖
 arg="${1:?用法: prepare.sh <视频文件名或路径> [语言码]}"
 lang="${2:-en}"
 mode="${FRAME_MODE:-12s}"
 
+mkdir -p "$ROOT/课程视频"
 if [ -f "$arg" ]; then video="$arg"
 elif [ -f "$ROOT/课程视频/$arg" ]; then video="$ROOT/课程视频/$arg"
 elif [ -f "$HOME/Downloads/$arg" ]; then
@@ -24,6 +26,7 @@ case "$video" in "$ROOT/课程视频/"*) ;; *)
   [ -e "$ROOT/课程视频/$(basename "$video")" ] && { echo "错误: 课程视频/ 已有同名文件 $(basename "$video"),不覆盖;请先处理" >&2; exit 1; }
   echo "== 视频不在 课程视频/,移入以保持产物集中"; mv -n "$video" "$ROOT/课程视频/"; video="$ROOT/课程视频/$(basename "$video")";; esac
 
+mkdir -p "$ROOT/课程视频" "$ROOT/画面" "$ROOT/总结"
 base="${video%.*}"; name="$(basename "$base")"
 frames="$ROOT/画面/$name"
 is_video=1; ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "$video" | grep -q video || is_video=0

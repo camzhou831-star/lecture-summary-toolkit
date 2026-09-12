@@ -5,7 +5,7 @@
 用法: build_bundle.py <视频路径或 课程视频/<视频名>.srt> [--frames-dir <画面目录>]
 """
 import argparse, json, os, re, subprocess, sys, datetime
-ROOT = os.environ.get("COURSE_ROOT") or os.path.expanduser("~/Desktop/课程总结")
+ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # 默认为 工具/ 的上级目录
 TIME_RE = re.compile(r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)")
 
 def hms(sec):
