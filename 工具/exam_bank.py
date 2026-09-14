@@ -84,15 +84,20 @@ def parse_summary(path, cfg=None):
 def fmt_ts(sec): return f"{sec // 60}:{sec % 60:02d}"
 
 
-def link(it, s, out_dir):
-    if not it["timestamps"]: return ""
-    sec = it["timestamps"][0]
-    rel = os.path.relpath(os.path.realpath(os.path.join(ROOT, "课程视频", s["video"])), os.path.realpath(out_dir))
-    return f"[{fmt_ts(sec)}](<{rel}#t={sec}>) "
-
-
 def strip_ts_link(text):
     return re.sub(r"\[(\d{1,3}:\d{2})\]\(<[^>]*>\)", r"\1", text)
+
+
+def linked(it, s, out_dir):
+    """条目文本 + 第一个时间点的回跳链接:原文里已有 [MM:SS] 就把它变成链接,否则加在最前面"""
+    text = strip_ts_link(it["text"])
+    if not it["timestamps"]: return text
+    sec = it["timestamps"][0]
+    rel = os.path.relpath(os.path.realpath(os.path.join(ROOT, "课程视频", s["video"])), os.path.realpath(out_dir))
+    lk = f"[{fmt_ts(sec)}](<{rel}#t={sec}>)"
+    m = re.search(r"\[(\d{1,3}):(\d{2})\]", text)
+    if m and int(m[1]) * 60 + int(m[2]) == sec: return text[:m.start()] + lk + text[m.end():]
+    return lk + " " + text
 
 
 def card_plain(text):
@@ -109,21 +114,21 @@ def render(unit, summaries, out_dir, src_dir):
          "> 覆盖:" + "、".join(f"{wk(s)}({s['date']})" for s in summaries), ""]
     flagged = [(s, it) for s in summaries for k in ("signal", "notice", "exam") for it in s["items"][k] if it["flag"]]
     L += [f"## 🎯 老师明说会考 / 不考 / 怎么考({len(flagged)} 条)", ""]
-    L += [f"- {tag(s)} {link(it, s, out_dir)}{strip_ts_link(it['text'])}" for s, it in flagged] or ["- (暂无;总结里用 🎯 标出的条目会汇总到这里)"]
+    L += [f"- {tag(s)} {linked(it, s, out_dir)}" for s, it in flagged] or ["- (暂无;总结里用 🎯 标出的条目会汇总到这里)"]
     exams = [(s, it) for s in summaries for it in s["items"]["exam"]]
     L += ["", f"## 📝 考核说明专节({len(exams)} 条,来自总结里单列的期中/考核小节)", ""]
-    L += [f"- {tag(s)} {link(it, s, out_dir)}{strip_ts_link(it['text'])}" for s, it in exams] or ["- (无)"]
+    L += [f"- {tag(s)} {linked(it, s, out_dir)}" for s, it in exams] or ["- (无)"]
     n_notice = sum(len(s["items"]["notice"]) for s in summaries)
     L += ["", f"## 📢 课程通知(按周,{n_notice} 条)", ""]
     for s in summaries:
         L += [f"### {wk(s)}({s['date']})— {s['topic']}", ""]
-        L += [f"- {link(it, s, out_dir)}{strip_ts_link(it['text'])}" for it in s["items"]["notice"]] or ["- 无"]
+        L += [f"- {linked(it, s, out_dir)}" for it in s["items"]["notice"]] or ["- 无"]
         L.append("")
     n_sig = sum(len(s["items"]["signal"]) for s in summaries)
     L += [f"## 💬 金句 / 考点信号(按周,{n_sig} 条)", ""]
     for s in summaries:
         L += [f"### {wk(s)}({s['date']})— {s['topic']}", ""]
-        L += [f"- {link(it, s, out_dir)}{strip_ts_link(it['text'])}" for it in s["items"]["signal"]] or ["- 无"]
+        L += [f"- {linked(it, s, out_dir)}" for it in s["items"]["signal"]] or ["- 无"]
         L.append("")
     n_card = sum(len(s["items"]["card"]) for s in summaries)
     L += [f"## 🃏 复习卡题库({n_card} 张;正式排期请在各周总结里用 Spaced Repetition 插件,这里只作出题素材)", ""]
