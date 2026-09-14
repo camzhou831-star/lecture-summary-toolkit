@@ -16,6 +16,7 @@
 - `工具/transcribe.sh` / `compact.sh` / `extract_frames.sh` / `dedup_frames.py` / `ocr_frames.py` / `build_bundle.py` — prepare.sh 内部调用的各步骤,可单独跑
 - `工具/check_summary.py` — 总结写完后的校验(时间戳越界/落在静音段、截图引用、必需小节、标题日期)
 - `工具/add_links.py` — 给章节时间线加可点击回跳录播的链接
+- `工具/exam_bank.py <单元代码>` — 跨周考点库:把该单元所有总结的 🎯 考点信号、课程通知、考核说明、复习卡汇总成 `总结/<单元>/考点库.md`(+ `.json`),Quiz/期中前出模拟题的唯一素材
 - `工具/glossary/<课程号>.txt` — 转写术语表,按视频文件名前缀自动选用;新课程新建一份
 - `课程视频/` — 视频与全部转写产物放一起:`.srt` `.txt` `.compact.txt` `.bundle.json` `.grounded.md`
 - `画面/<视频名>/` — 幻灯片帧 `tXXXXXs.jpg`(文件名即秒数)+ `ocr.json`
@@ -61,8 +62,10 @@
    ```bash
    python3 "$TOOLKIT/工具/add_links.py" "<COURSE_ROOT>/总结/<单元代码>/<视频文件名>.md"
    python3 "$TOOLKIT/工具/check_summary.py" "<COURSE_ROOT>/总结/<单元代码>/<视频文件名>.md"
+   python3 "$TOOLKIT/工具/exam_bank.py" "<单元代码或总结子目录名>"
    ```
    - `check_summary.py` 报的每一条 ❌ 都要处理(改时间戳、补小节、修引用)后再交付;⚠️ 是提醒。它不检查内容正确性,通过后在回复里如实说明"格式与时间戳校验通过"。
+   - `exam_bank.py` 把本周的 🎯 考点、通知、复习卡并进该单元的 `考点库.md`(整份重生成,不要手改);它提示"没有任何 🎯 标记"时回头检查是否漏标了老师明说的考点。用户要出模拟题/复习时,读考点库而不是逐份翻总结。
 
 ## 注意
 

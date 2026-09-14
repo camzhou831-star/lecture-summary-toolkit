@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """单元测试:不需要 whisper/tesseract/网络,只用合成数据。运行: python3 -m unittest discover -s tests -v
 覆盖:course_meta 文件名与周次、compact 幻觉过滤与时间标签、check_summary 三类错误、add_links 幂等与路径别名、
-     build_bundle 空档检测(含 VAD 填充段)、dedup_frames 严格去重、ocr_frames 页码模式、match_slides 词匹配、
+     build_bundle 空档检测(含 VAD 填充段)、dedup_frames 严格去重、ocr_frames 页码模式、match_slides 词匹配、exam_bank 跨周考点库、
      双端一致性(AGENTS.md 由 SKILL 生成、CLAUDE.md 导入目标存在、技能 frontmatter)。"""
 import json, os, re, shutil, subprocess, sys, tempfile, unittest, importlib.util
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -164,6 +164,75 @@ class Frames(unittest.TestCase):
             self.assertEqual((e["page"], e["pages"], e["deck"]), (1, 2, "deck")); self.assertEqual(e["toolbar"], {"page": 7, "pages": 9})   # 工具栏值不被 PDF 页码污染
             run(["python3", ms, d, "--clear"]); e = json.load(open(os.path.join(d, "ocr.json")))[0]
             self.assertEqual((e["page"], e["pages"]), (7, 9)); self.assertNotIn("deck", e)
+
+class ExamBank(unittest.TestCase):
+    SUMMARY = """# DEMO1001 第六周(2026-08-26)— 逻辑测试
+
+> 主讲:X
+
+## ⚠️ 课程通知(07:08–07:35)
+
+1. 项目 brief 今天发(07:08)。
+2. 🎯 **项目不要求写 SQA 计划**(36:00,课件 p30)。
+
+## 一句话概括
+
+x
+
+## 核心要点
+
+1. 略
+
+## 章节时间线
+
+- **[07:08](<../../课程视频/DEMO1001 - 26 Aug 20-s1-full.mp4#t=428>) 通知** — 略
+
+## 金句 / 考点信号
+
+- 🎯 考试题型(73:09):写出满足 RACC 的测试集(lect06a p35–40)。
+- 普通金句,没有时间。
+  - 子条目并进上一条。
+
+## 复习卡
+
+- RACC 的含义?::其它子句固定时翻转主子句就翻转谓词
+- MTBF = ==MTTF + MTTR==
+- 这行不是卡片
+"""
+    def setUp(self):
+        self.m = load("exam_bank")
+        self.tmp = tempfile.mkdtemp(); self.m.ROOT = self.tmp
+        os.makedirs(os.path.join(self.tmp, "总结", "1002")); os.makedirs(os.path.join(self.tmp, "课程视频"))
+        open(os.path.join(self.tmp, "课程视频", "DEMO1001 - 26 Aug 20-s1-full.mp4"), "w").close()
+        self.f = os.path.join(self.tmp, "总结", "1002", "DEMO1001 - 26 Aug 20-s1-full.md")
+        open(self.f, "w", encoding="utf-8").write(self.SUMMARY)
+        open(os.path.join(self.tmp, "总结", "1002", "其它笔记.md"), "w", encoding="utf-8").write("# 不是总结\n随便写")
+        open(os.path.join(self.tmp, "course.json"), "w").write(json.dumps({"year": 2026, "semester_start": "2026-07-20", "units": {"DEMO1001": {"alias": "1002"}}}))
+    def tearDown(self): shutil.rmtree(self.tmp)
+    def test_parse(self):
+        s = self.m.parse_summary(self.f, {"year": 2026, "semester_start": "2026-07-20"})
+        self.assertEqual((s["week"], s["date"], s["topic"]), (6, "2026-08-26", "逻辑测试"))   # 中文数字周次、主题不含日期里的连字符
+        it = s["items"]
+        self.assertEqual(len(it["notice"]), 2); self.assertTrue(it["notice"][1]["flag"]); self.assertEqual(it["notice"][1]["timestamps"], [2160])
+        self.assertEqual(it["notice"][1]["pages"], ["p30"])
+        self.assertEqual(len(it["signal"]), 2); self.assertEqual(it["signal"][0]["timestamps"], [73*60+9]); self.assertEqual(it["signal"][0]["pages"], ["lect06a p35–40"])
+        self.assertIn("▸ 子条目", it["signal"][1]["text"]); self.assertEqual(it["signal"][1]["timestamps"], [])
+        self.assertEqual(len(it["card"]), 2)   # 没有 :: 或 == 的行不算卡
+        self.assertIsNone(self.m.parse_summary(os.path.join(self.tmp, "总结", "1002", "其它笔记.md"), {}))
+    def test_cli_writes_md_and_json(self):
+        r = run(["python3", os.path.join(TOOLS, "exam_bank.py"), "1002"], env={"COURSE_ROOT": self.tmp})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.assertIn("🎯 2 条", r.stdout)
+        out = open(os.path.join(self.tmp, "总结", "1002", "考点库.md"), encoding="utf-8").read()
+        self.assertIn("## 🎯 老师明说会考 / 不考 / 怎么考(2 条)", out)
+        self.assertIn("[36:00](<../../课程视频/DEMO1001 - 26 Aug 20-s1-full.mp4#t=2160>)", out)
+        self.assertIn("RACC 的含义? → 其它子句", out); self.assertIn("**MTTF + MTTR**", out); self.assertNotIn("::", out.split("## 🃏")[1])   # 卡片不再是 SR 语法
+        j = json.load(open(os.path.join(self.tmp, "总结", "1002", "考点库.json"), encoding="utf-8"))
+        self.assertEqual(j["unit"], "DEMO1001"); self.assertEqual(j["summaries"][0]["week"], 6)
+        # 重跑幂等(考点库.md 自身不会被当成总结读进去)
+        r2 = run(["python3", os.path.join(TOOLS, "exam_bank.py"), "1002", "--quiet"], env={"COURSE_ROOT": self.tmp})
+        self.assertEqual(r2.returncode, 0); self.assertIn("1 份总结", open(os.path.join(self.tmp, "总结", "1002", "考点库.md"), encoding="utf-8").read())
+    def test_missing_dir(self):
+        self.assertNotEqual(run(["python3", os.path.join(TOOLS, "exam_bank.py"), "9999"], env={"COURSE_ROOT": self.tmp}).returncode, 0)
 
 class DualAgent(unittest.TestCase):
     def test_agents_md_matches_skill(self):

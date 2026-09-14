@@ -47,6 +47,7 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
   - `match_slides.py <画面目录> <课件pdf或目录>` — 用课件 PDF 的文字给帧定页码,比读工具栏稳;`course.json` 里配了 `slides_dir` 时 prepare.sh 自动调用(需 `brew install poppler`)
   - `sync_agents.sh` — 从技能文件生成 `AGENTS.md` 与 `CLAUDE.md`
   - `add_links.py <总结.md> [--dry-run]` — 把"章节时间线"里行首 `- ` 条目的第一个 `[MM:SS]` 变成回跳录播的链接(幂等;Obsidian 装 Media Extended 插件后可定位到秒)
+  - `exam_bank.py <单元代码|总结目录|某份总结.md> [--out] [--no-json] [--quiet]` — 跨周考点库:汇总该单元所有总结的 🎯 考点信号、课程通知、期中/考核说明小节与复习卡,生成 `总结/<单元>/考点库.md` + `.json`(每条带周次、可回跳的时间点、课件页码;复习卡改成 `问 → 答` 以免 SR 插件重复排期)。整份重生成,不要手改
 - `skills/video-summary/SKILL.md` — 两个 agent 共用的工作流程;`AGENTS.md` / `CLAUDE.md` 由它生成
 - `install.sh` — 一键安装依赖与技能链接
 
