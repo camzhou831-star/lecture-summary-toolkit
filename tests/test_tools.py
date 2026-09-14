@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """单元测试:不需要 whisper/tesseract/网络,只用合成数据。运行: python3 -m unittest discover -s tests -v
 覆盖:course_meta 文件名与周次、compact 幻觉过滤与时间标签、check_summary 三类错误、add_links 幂等与路径别名、
-     build_bundle 空档检测(含 VAD 填充段)、dedup_frames 严格去重、ocr_frames 页码模式、match_slides 词匹配、exam_bank 跨周考点库、
+     build_bundle 空档检测(含 VAD 填充段)、dedup_frames 严格去重、ocr_frames 页码模式、match_slides 词匹配、exam_bank 跨周考点库、cam_frames 手写帧挑选与 check_summary 的 cam/ 路径、
      双端一致性(AGENTS.md 由 SKILL 生成、CLAUDE.md 导入目标存在、技能 frontmatter)。"""
 import json, os, re, shutil, subprocess, sys, tempfile, unittest, importlib.util
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -233,6 +233,42 @@ x
         self.assertEqual(r2.returncode, 0); self.assertIn("1 份总结", open(os.path.join(self.tmp, "总结", "1002", "考点库.md"), encoding="utf-8").read())
     def test_missing_dir(self):
         self.assertNotEqual(run(["python3", os.path.join(TOOLS, "exam_bank.py"), "9999"], env={"COURSE_ROOT": self.tmp}).returncode, 0)
+
+class CamFrames(unittest.TestCase):
+    """cam_frames.select 是纯函数:用合成的 (t, ink, occl, dark) 序列验证换页检测、进度帧、黑屏过滤"""
+    def setUp(self): self.m = load("cam_frames")
+    def seq(self, spec, interval=10):
+        # spec: [(帧数, ink, occl, dark), ...]
+        out, t = [], 0
+        for n, ink, occl, dark in spec:
+            for _ in range(n): out.append({"t": t, "ink": ink, "occl": occl, "dark": dark}); t += interval
+        return out
+    def test_page_change_and_progress(self):
+        fr = self.seq([(6, 0.005, 0.05, 0), (12, 0.02, 0.1, 0), (6, 0.03, 0.05, 0),   # 第一页:空白 → 写字 → 写满
+                       (2, 0.012, 0.05, 0), (18, 0.015, 0.1, 0), (6, 0.028, 0.05, 0)])  # 换页(墨迹掉一半以上,无遮挡) → 第二页
+        sel = self.m.select(fr, every=180, min_ink=0.010)
+        ends = [x for x in sel if x["kind"] == "page_end"]
+        self.assertEqual(len(ends), 2)
+        self.assertEqual(ends[0]["ink"], 0.03); self.assertEqual(ends[1]["ink"], 0.028)
+        self.assertTrue(any(x["kind"] == "progress" for x in sel))
+        self.assertTrue(all(x["ink"] >= 0.010 for x in sel))          # 空白页不入选
+        self.assertEqual([x["t"] for x in sel], sorted(x["t"] for x in sel))
+    def test_hand_cover_is_not_page_change(self):
+        fr = self.seq([(10, 0.03, 0.05, 0), (3, 0.01, 0.4, 0), (10, 0.03, 0.05, 0)])   # 手挡住 30 秒,墨迹骤降但遮挡高
+        self.assertEqual(sum(1 for x in self.m.select(fr) if x["kind"] == "page_end"), 1)
+    def test_black_camera(self):
+        fr = self.seq([(40, 0.0, 1.0, 0.95)])
+        self.assertEqual(self.m.select(fr), [])
+    def test_check_summary_accepts_cam_path(self):
+        cs = load("check_summary")
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "画面", "V", "cam")); os.makedirs(os.path.join(d, "课程视频"))
+            open(os.path.join(d, "画面", "V", "cam", "t00120s.jpg"), "w").close()
+            open(os.path.join(d, "课程视频", "V.srt"), "w").write("1\n00:00:01,000 --> 00:03:00,000\nhello\n")
+            md = os.path.join(d, "V.md")
+            open(md, "w", encoding="utf-8").write("# V 第1周(2026-07-20)— x\n\n## ⚠️ 课程通知\n无\n## 一句话概括\nx\n## 核心要点\n1. 见 cam/t00120s.jpg 与 cam/t00999s.jpg(02:00)\n## 章节时间线\n- **[02:00] a** — b\n## 金句 / 考点信号\n- x\n## 复习卡\n- q::a\n")
+            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), md, "--srt", os.path.join(d, "课程视频", "V.srt"), "--frames-dir", os.path.join(d, "画面", "V")], env={"COURSE_ROOT": d})
+            self.assertIn("cam/t00999s.jpg", r.stdout); self.assertNotIn("cam/t00120s.jpg", r.stdout)
 
 class DualAgent(unittest.TestCase):
     def test_agents_md_matches_skill(self):

@@ -74,7 +74,7 @@ def main():
 
     # 4. 截图引用
     for ln, l in enumerate(lines, 1):
-        for m in re.finditer(r"t\d{5}s(?:-\d+)?\.jpg", l):
+        for m in re.finditer(r"(cam/)?t\d{5}s(?:-\d+)?\.jpg", l):   # cam/ 前缀是实物投影(手写)帧
             if not os.path.exists(os.path.join(frames_dir, m[0])): problems.append((ln, f"引用的截图不存在: {m[0]}"))
         for m in re.finditer(r"画面/([^/`)\]]+)/?", l):
             if not os.path.isdir(os.path.join(ROOT, "画面", m[1])): problems.append((ln, f"引用的画面文件夹不存在: 画面/{m[1]}"))

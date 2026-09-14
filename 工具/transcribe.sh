@@ -2,6 +2,7 @@
 # 用法: transcribe.sh <视频或音频文件> [语言码,默认auto]
 # 输出: 与输入文件同目录的 <文件名>.srt 和 <文件名>.txt
 # 环境变量: WHISPER_MODEL(默认 large-v3-turbo) WHISPER_MODEL_DIR  NO_VAD=1 关闭静音检测  GLOSSARY=<文件> 指定术语表  NO_GPU=1 强制 CPU
+#           OUT_BASE=<不带扩展名的输出路径> 让 srt/txt 用别的名字(双路录像时从另一路取声音,但产物仍归主文件名)
 # 失败回退: Metal 崩溃(如在 agent 沙箱内)→ 自动用 --no-gpu 重试 → 再失败用基础参数重试
 # 兼容 macOS 自带 bash 3.2:空数组用 ${ARR[@]+"${ARR[@]}"} 展开
 set -euo pipefail
@@ -43,7 +44,7 @@ fi
 PROMPT_ARGS=()
 GLOSSARY="${GLOSSARY:-}"
 if [ -z "$GLOSSARY" ]; then
-  COURSE="$(basename "$INPUT" | grep -oE '^[A-Z]{4}[0-9]{4}' || true)"
+  COURSE="$(basename "${OUT_BASE:-$INPUT}" | grep -oE '^[A-Z]{4}[0-9]{4}' || true)"
   [ -n "$COURSE" ] && [ -f "$TOOLS_DIR/glossary/$COURSE.txt" ] && GLOSSARY="$TOOLS_DIR/glossary/$COURSE.txt"
 fi
 if [ -n "$GLOSSARY" ] && [ -f "$GLOSSARY" ]; then
@@ -55,7 +56,7 @@ fi
 NCPU="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
 THREADS="${WHISPER_THREADS:-$(( NCPU < 8 ? NCPU : 8 ))}"
 
-BASE="${INPUT%.*}"
+BASE="${OUT_BASE:-${INPUT%.*}}"
 TMP_BASE="$(mktemp -t transcribe)"
 TMP_WAV="$TMP_BASE.wav"
 trap 'rm -f "$TMP_WAV" "$TMP_BASE"' EXIT

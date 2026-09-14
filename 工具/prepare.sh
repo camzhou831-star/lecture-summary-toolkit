@@ -4,6 +4,8 @@
 #   文件名不带路径时依次在 课程视频/ 和 ~/Downloads/ 找;在 Downloads 找到会先移入 课程视频/
 #   工作目录 = COURSE_ROOT,未设置时为本脚本所在 工具/ 的上级目录
 #   环境变量: FORCE=1 忽略已有产物全部重做;FRAME_MODE=12s 抓帧模式(默认 12s);NO_VAD=1 / GLOSSARY=<文件> 透传给 transcribe.sh
+#   双路录像(UWA LMS 常见:<名>.mp4 是讲台电脑屏幕,<名>-2.mp4 是实物投影仪/摄像头):自动识别同目录的 <名>-2.<ext>(或 CAM=<路径> 指定);
+#     声音取两路里更响的那一路(有的课屏幕那路是静音的),产物仍归主文件名;实物投影那路用 cam_frames.py 挑手写页进 画面/<名>/cam/
 #   跳过规则: 只有"转写"和"抓帧"两步在已有产物时跳过;compact、去重、OCR(增量)、bundle 每次都重跑(都只要几秒)
 # 产出(全部在 课程视频/ 与 画面/):
 #   <名>.srt/.txt/.compact.txt  画面/<名>/*.jpg + ocr.json  <名>.bundle.json  <名>.grounded.md
@@ -27,26 +29,51 @@ case "$video" in "$ROOT/课程视频/"*) ;; *)
   echo "== 视频不在 课程视频/,移入以保持产物集中"; mv -n "$video" "$ROOT/课程视频/"; video="$ROOT/课程视频/$(basename "$video")";; esac
 
 mkdir -p "$ROOT/课程视频" "$ROOT/画面" "$ROOT/总结"
-base="${video%.*}"; name="$(basename "$base")"
+base="${video%.*}"; name="$(basename "$base")"; ext="${video##*.}"
+# 第二路(实物投影/摄像头)
+cam="${CAM:-}"
+if [ -z "$cam" ]; then
+  for cand in "$base-2.$ext" "$HOME/Downloads/$name-2.$ext"; do [ -f "$cand" ] && { cam="$cand"; break; }; done
+fi
+if [ -n "$cam" ] && [ ! -f "$cam" ]; then echo "错误: CAM 指定的文件不存在: $cam" >&2; exit 1; fi
+if [ -n "$cam" ]; then
+  case "$cam" in "$ROOT/课程视频/"*) ;; *)
+    [ -e "$ROOT/课程视频/$(basename "$cam")" ] && { echo "错误: 课程视频/ 已有同名文件 $(basename "$cam")" >&2; exit 1; }
+    echo "== 第二路录像不在 课程视频/,一并移入"; mv -n "$cam" "$ROOT/课程视频/"; cam="$ROOT/课程视频/$(basename "$cam")";; esac
+  echo "== 双路录像: 屏幕=$(basename "$video")  实物投影=$(basename "$cam")"
+fi
 frames="$ROOT/画面/$name"
 is_video=1; ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "$video" | grep -q video || is_video=0
 t0=$(date +%s)
 echo "== 预处理: $name (语言 $lang, 抓帧模式 $mode, 有画面: $is_video)"
 
+mean_db() { ffmpeg -v info -vn -sn -dn -t 900 -i "$1" -af volumedetect -f null - 2>&1 | grep -oE "mean_volume: [-0-9.]+" | grep -oE "[-0-9.]+" || echo "-99"; }
+audio_src="$video"
+if [ -n "$cam" ]; then
+  d1="$(mean_db "$video")"; d2="$(mean_db "$cam")"
+  if python3 -c "import sys; sys.exit(0 if float('$d2') > float('$d1') + 6 else 1)"; then audio_src="$cam"; fi
+  echo "== 声音: 屏幕路 ${d1} dB,实物投影路 ${d2} dB(前 15 分钟平均)→ 用 $(basename "$audio_src") 转写"
+fi
 pids=()
 if [ "${FORCE:-0}" = 1 ] || [ ! -s "$base.srt" ]; then
-  echo "== [1/5] 转写 (后台)"; bash "$TOOLS/transcribe.sh" "$video" "$lang" > "$base.transcribe.log" 2>&1 & pids+=($!)
+  echo "== [1/5] 转写 (后台)"; OUT_BASE="$base" bash "$TOOLS/transcribe.sh" "$audio_src" "$lang" > "$base.transcribe.log" 2>&1 & pids+=($!)
 else echo "== [1/5] 转写: 已有 $name.srt,跳过(FORCE=1 可重做)"; fi
 if [ "$is_video" = 1 ]; then
   if [ "${FORCE:-0}" = 1 ] || [ -z "$(ls "$frames" 2>/dev/null | grep -c '\.jpg$' || true)" ] || [ "$(ls "$frames" 2>/dev/null | grep -c '\.jpg$')" = 0 ]; then
     echo "== [2/5] 抓帧 (后台)"; bash "$TOOLS/extract_frames.sh" "$video" "$mode" "$frames" > "$base.frames.log" 2>&1 & pids+=($!)
   else echo "== [2/5] 抓帧: 画面/$name 已有帧,跳过(FORCE=1 可重做)"; fi
+  if [ -n "$cam" ]; then
+    if [ "${FORCE:-0}" = 1 ] || [ ! -s "$frames/cam/cam.json" ]; then
+      echo "== [2b] 实物投影手写帧 (后台)"; python3 "$TOOLS/cam_frames.py" "$cam" "$frames/cam" > "$base.cam.log" 2>&1 & pids+=($!)
+    else echo "== [2b] 手写帧: 画面/$name/cam 已有,跳过(FORCE=1 可重做)"; fi
+  fi
 fi
 fail=0
 for p in ${pids[@]+"${pids[@]}"}; do wait "$p" || fail=1; done
-if [ "$fail" = 1 ]; then echo "错误: 转写或抓帧失败,看 $base.transcribe.log / $base.frames.log" >&2; exit 1; fi
+if [ "$fail" = 1 ]; then echo "错误: 转写或抓帧失败,看 $base.transcribe.log / $base.frames.log / $base.cam.log" >&2; exit 1; fi
 tail -n 2 "$base.transcribe.log" 2>/dev/null | sed 's/^/   /' || true
 tail -n 1 "$base.frames.log" 2>/dev/null | sed 's/^/   /' || true
+tail -n 1 "$base.cam.log" 2>/dev/null | sed 's/^/   /' || true
 
 echo "== [3/5] compact"; bash "$TOOLS/compact.sh" "$base.srt"
 if [ "$is_video" = 1 ] && [ -d "$frames" ]; then
@@ -69,7 +96,7 @@ elif [ "$is_video" = 1 ] && [ -f "$frames/ocr.json" ]; then
   python3 "$TOOLS/match_slides.py" "$frames" --clear >/dev/null 2>&1 || true    # 没配课件:清掉以前的匹配结果,避免陈旧引用
 fi
 echo "== [5/5] bundle + 讲义稿"; python3 "$TOOLS/build_bundle.py" "$video"
-rm -f "$base.transcribe.log" "$base.frames.log"
+rm -f "$base.transcribe.log" "$base.frames.log" "$base.cam.log"
 notes="总结/<单元代码>/$name.md"
 if [ -n "$meta" ]; then
   echo "== 课程信息: $(COURSE_ROOT="$ROOT" python3 "$TOOLS/course_meta.py" "$video" 2>/dev/null | head -1)"

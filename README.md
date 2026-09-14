@@ -45,6 +45,7 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
   - `check_summary.py <总结.md> [--srt] [--frames-dir]` — 校验总结:时间戳越界/秒数非法/落在静音段、截图引用不存在、缺小节、标题日期与文件名不符;有问题退出码 1
   - `course_meta.py <文件名> [--json]` — 从文件名解析单元代码/日期/周次(多条正则,可在 `course.json` 追加),给出总结路径;年份、学期起始日、假期、单元别名与课件目录都在 `course.json`(示例见 `examples/demo/course.json`)
   - `match_slides.py <画面目录> <课件pdf或目录>` — 用课件 PDF 的文字给帧定页码,比读工具栏稳;`course.json` 里配了 `slides_dir` 时 prepare.sh 自动调用(需 `brew install poppler`)
+  - `cam_frames.py <视频> <输出目录> [--interval 10] [--every 180] [--min-ink 0.010]` — 实物投影仪/文档摄像头那一路的手写页关键帧:先定位白纸区域,按纸上笔迹量判断换页,每页写完留一张、每 3 分钟留一张进度帧,黑屏和手挡住的帧避开;不做 OCR,产物 `cam.json`。`prepare.sh` 检测到 `<名>-2.mp4` 时自动调用(声音也会自动选更响的一路)
   - `sync_agents.sh` — 从技能文件生成 `AGENTS.md` 与 `CLAUDE.md`
   - `add_links.py <总结.md> [--dry-run]` — 把"章节时间线"里行首 `- ` 条目的第一个 `[MM:SS]` 变成回跳录播的链接(幂等;Obsidian 装 Media Extended 插件后可定位到秒)
   - `exam_bank.py <单元代码|总结目录|某份总结.md> [--out] [--no-json] [--quiet]` — 跨周考点库:汇总该单元所有总结的 🎯 考点信号、课程通知、期中/考核说明小节与复习卡,生成 `总结/<单元>/考点库.md` + `.json`(每条带周次、可回跳的时间点、课件页码;复习卡改成 `问 → 答` 以免 SR 插件重复排期)。整份重生成,不要手改

@@ -37,6 +37,11 @@ def main():
     frames_dir = a.frames_dir or os.path.join(ROOT, "画面", name)
     ocr_path = os.path.join(frames_dir, "ocr.json")
     frames = []
+    cam_path = os.path.join(frames_dir, "cam", "cam.json")   # 双路录像时实物投影(手写)帧,由 cam_frames.py 产出
+    cam = []
+    if os.path.exists(cam_path):
+        try: cam = json.load(open(cam_path))
+        except (json.JSONDecodeError, TypeError): print(f"⚠️ {cam_path} 损坏,本次不含手写帧;请重跑 cam_frames.py", file=sys.stderr)
     if os.path.exists(ocr_path):
         try: frames = [f for f in json.load(open(ocr_path)) if not f.get("error")]
         except (json.JSONDecodeError, TypeError): print(f"⚠️ {ocr_path} 损坏,本次不含幻灯片;请重跑 ocr_frames.py --force", file=sys.stderr)
@@ -53,6 +58,7 @@ def main():
     bundle = {"video": name, "duration": duration, "generated": datetime.date.today().isoformat(),
               "srt": os.path.relpath(srt, ROOT), "frames_dir": rel_frames,
               "segments": segs,
+              "cam_frames": [{"file": "cam/" + c["file"], "t": c["t"], "kind": c["kind"]} for c in cam],
               "frames": [{"file": f["file"], "t": f["t"], "page": f.get("page"), "pages": f.get("pages"), "deck": f.get("deck"), "also_at": f.get("also_at", []), "chars": f.get("chars", 0), "text": f.get("text", "")} for f in frames]}
     json.dump(bundle, open(base + ".bundle.json", "w"), ensure_ascii=False, indent=0)
 
@@ -66,6 +72,8 @@ def main():
         for s in segs: minutes.setdefault(int(s["start"]) // 60, []); minutes[int(s["start"]) // 60] = (minutes[int(s["start"]) // 60] or "") + " " + s["text"]
     by_min = {}
     for f in frames: by_min.setdefault(f["t"] // 60, []).append(f)
+    cam_by_min = {}
+    for c in cam: cam_by_min.setdefault(c["t"] // 60, []).append(c)
     # 无语音的空档(>= 180 秒)也要标出来,提示可能是课间/忘开麦;标在空档开始的那一分钟
     # 注意 whisper 开 VAD 后会把静音前最后一段的结束时间拉到下一段开头(如 2 个词的段长 249 秒),
     # 所以"时长 >= 60 秒且每秒不到 0.5 个词"的段按 start + 3 秒 作为真实结束时间
@@ -81,16 +89,20 @@ def main():
     for m1, m2 in zip(mk, mk[1:]):
         if m2 - m1 - 1 >= 3 and not any(m1 <= g < m2 for g in gaps):
             gaps[m1] = ((m1 + 1) * 60, m2 * 60)
-    all_min = sorted(set(minutes) | set(by_min) | set(gaps))
+    all_min = sorted(set(minutes) | set(by_min) | set(gaps) | set(cam_by_min))
     out = [f"# {name} · 讲义稿(转写 + 幻灯片 OCR 对齐)", "",
-           f"> 时长 {hms(duration or 0)} · 转写段 {len(segs)} · 幻灯片帧 {len(frames)} · 生成于 {bundle['generated']}",
+           f"> 时长 {hms(duration or 0)} · 转写段 {len(segs)} · 幻灯片帧 {len(frames)}" + (f" · 手写帧 {len(cam)}" if cam else "") + f" · 生成于 {bundle['generated']}",
            f"> 每行 `[HH:MM]` 是该分钟的转写(时:分)。`📄 t=秒 · p页/总页 · 文件名` 是该分钟出现的幻灯片及其 OCR 文本,图片在 `{rel_frames}/`。",
-           "> OCR 文本很短(<60 字符)或看起来是代码/图表/终端的帧,建议直接打开图片看。课件页码来自 Okular 工具栏的 \"N of M\",没有的帧是终端/浏览器/桌面等非课件画面。", ""]
+           "> OCR 文本很短(<60 字符)或看起来是代码/图表/终端的帧,建议直接打开图片看。课件页码来自 Okular 工具栏的 \"N of M\",没有的帧是终端/浏览器/桌面等非课件画面。"]
+    if cam: out.append(f"> `✍️ t=秒 · 手写` 是实物投影仪拍到的老师手写页(图片在 `{rel_frames}/cam/`),没有 OCR,**必须打开图片看**:`整页` 是该页写完时的画面(内容最全),`书写中` 是每 3 分钟一张的进度帧(用来对上讲到纸上哪一处)。")
+    out.append("")
     for mi in all_min:
         if mi in minutes: out.append(f"[{mi//60:02d}:{mi%60:02d}] {minutes[mi]}")
         if mi in gaps:
             g0, g1 = gaps[mi]
             out.append(f"⏸ {hms(g0)}–{hms(g1)} 无语音({int(g1-g0)//60} 分 {int(g1-g0)%60} 秒,可能是课间/静音/忘开麦)")
+        for c in cam_by_min.get(mi, []):
+            out.append(f"✍️ t={c['t']}s · 手写{'整页' if c['kind'] == 'page_end' else '·书写中'} · cam/{c['file']} ⚠️必须看图")
         for f in by_min.get(mi, []):
             deck = (f.get("match") or {}).get("deck") or f.get("deck")
             page = (f"p{f['page']}/{f['pages']}" + (f" {os.path.splitext(deck)[0]}" if deck else "")) if f.get("page") else "非课件画面"
@@ -104,7 +116,7 @@ def main():
             if len(lines) > cap: out.append(f"    …(还有 {len(lines) - cap} 行,见 bundle.json 或图片)")
         out.append("")
     open(base + ".grounded.md", "w", encoding="utf-8").write("\n".join(out))
-    print(f"== bundle: {len(segs)} 段转写, {len(frames)} 帧, 时长 {hms(duration or 0)}")
+    print(f"== bundle: {len(segs)} 段转写, {len(frames)} 帧" + (f", {len(cam)} 手写帧" if cam else "") + f", 时长 {hms(duration or 0)}")
     print(f"   {base}.bundle.json\n   {base}.grounded.md")
 
 if __name__ == "__main__":
