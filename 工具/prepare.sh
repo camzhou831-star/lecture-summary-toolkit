@@ -47,12 +47,21 @@ is_video=1; ffprobe -v error -select_streams v:0 -show_entries stream=codec_type
 t0=$(date +%s)
 echo "== 预处理: $name (语言 $lang, 抓帧模式 $mode, 有画面: $is_video)"
 
-mean_db() { ffmpeg -v info -vn -sn -dn -t 900 -i "$1" -af volumedetect -f null - 2>&1 | grep -oE "mean_volume: [-0-9.]+" | grep -oE "[-0-9.]+" || echo "-99"; }
+# 响度取样:在 20%/50%/80% 三处各测 4 分钟的 mean_volume,取中位数(只测开头会被试麦/开场前的空档误导)
+mean_db() {
+  local f="$1" dur v vals=()
+  dur="$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f" 2>/dev/null | cut -d. -f1)"; dur="${dur:-0}"
+  for frac in 20 50 80; do
+    v="$(ffmpeg -v info -ss $(( dur * frac / 100 )) -t 240 -vn -sn -dn -i "$f" -af volumedetect -f null - 2>&1 | grep -oE "mean_volume: [-0-9.]+" | grep -oE "[-0-9.]+" || echo "-99")"
+    vals+=("$v")
+  done
+  printf '%s\n' "${vals[@]}" | sort -n | sed -n 2p
+}
 audio_src="$video"
 if [ -n "$cam" ]; then
   d1="$(mean_db "$video")"; d2="$(mean_db "$cam")"
   if python3 -c "import sys; sys.exit(0 if float('$d2') > float('$d1') + 6 else 1)"; then audio_src="$cam"; fi
-  echo "== 声音: 屏幕路 ${d1} dB,实物投影路 ${d2} dB(前 15 分钟平均)→ 用 $(basename "$audio_src") 转写"
+  echo "== 声音: 屏幕路 ${d1} dB,实物投影路 ${d2} dB(20%/50%/80% 处各 4 分钟的中位数)→ 用 $(basename "$audio_src") 转写"
 fi
 pids=()
 if [ "${FORCE:-0}" = 1 ] || [ ! -s "$base.srt" ]; then
