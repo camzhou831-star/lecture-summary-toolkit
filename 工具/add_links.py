@@ -18,7 +18,7 @@ def main():
     out, n, in_section = [], 0, False
     for l in lines:
         if l.startswith("## "): in_section = l.startswith("## 章节时间线")
-        if in_section and l.startswith("- "):
+        if in_section and l.startswith("- ") and "#t=" not in l:   # 已带链接的行整行跳过(幂等;否则第二次会给同一行的第二个时间戳加链接)
             m = re.search(r"\[(\d{1,3}):(\d{2})\](?!\()", l)
             if m:
                 sec = int(m[1])*60 + int(m[2])
