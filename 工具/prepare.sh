@@ -6,7 +6,8 @@
 #   环境变量: FORCE=1 忽略已有产物全部重做;FRAME_MODE=12s 抓帧模式(默认 12s);NO_VAD=1 / GLOSSARY=<文件> 透传给 transcribe.sh
 #   双路录像(UWA LMS 常见:<名>.mp4 是讲台电脑屏幕,<名>-2.mp4 是实物投影仪/摄像头):自动识别同目录的 <名>-2.<ext>(或 CAM=<路径> 指定);
 #     声音取两路里更响的那一路(有的课屏幕那路是静音的),产物仍归主文件名;实物投影那路用 cam_frames.py 挑手写页进 画面/<名>/cam/
-#   跳过规则: 只有"转写"和"抓帧"两步在已有产物时跳过;compact、去重、OCR(增量)、bundle 每次都重跑(都只要几秒)
+#   跳过规则: 只有"转写"和"抓帧"两步在已有产物时跳过;compact、OCR(增量)、课件匹配、bundle 每次都重跑(都只要几秒)
+#   帧去重只在本次真的抓了帧之后跑一次:dedup_frames 不是幂等的(删掉中间帧后前后两帧会落进同一窗口再被合并),重跑会把总结已引用的截图删掉
 # 产出(全部在 课程视频/ 与 画面/):
 #   <名>.srt/.txt/.compact.txt  画面/<名>/*.jpg + ocr.json  <名>.bundle.json  <名>.grounded.md
 set -euo pipefail
@@ -43,6 +44,7 @@ if [ -n "$cam" ]; then
   echo "== 双路录像: 屏幕=$(basename "$video")  实物投影=$(basename "$cam")"
 fi
 frames="$ROOT/画面/$name"
+fresh_frames=0
 is_video=1; ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "$video" | grep -q video || is_video=0
 t0=$(date +%s)
 echo "== 预处理: $name (语言 $lang, 抓帧模式 $mode, 有画面: $is_video)"
@@ -69,7 +71,7 @@ if [ "${FORCE:-0}" = 1 ] || [ ! -s "$base.srt" ]; then
 else echo "== [1/5] 转写: 已有 $name.srt,跳过(FORCE=1 可重做)"; fi
 if [ "$is_video" = 1 ]; then
   if [ "${FORCE:-0}" = 1 ] || [ -z "$(ls "$frames" 2>/dev/null | grep -c '\.jpg$' || true)" ] || [ "$(ls "$frames" 2>/dev/null | grep -c '\.jpg$')" = 0 ]; then
-    echo "== [2/5] 抓帧 (后台)"; bash "$TOOLS/extract_frames.sh" "$video" "$mode" "$frames" > "$base.frames.log" 2>&1 & pids+=($!)
+    echo "== [2/5] 抓帧 (后台)"; bash "$TOOLS/extract_frames.sh" "$video" "$mode" "$frames" > "$base.frames.log" 2>&1 & pids+=($!); fresh_frames=1
   else echo "== [2/5] 抓帧: 画面/$name 已有帧,跳过(FORCE=1 可重做)"; fi
   if [ -n "$cam" ]; then
     if [ "${FORCE:-0}" = 1 ] || [ ! -s "$frames/cam/cam.json" ]; then
@@ -87,7 +89,7 @@ tail -n 1 "$base.cam.log" 2>/dev/null | sed 's/^/   /' || true
 echo "== [3/5] compact"; bash "$TOOLS/compact.sh" "$base.srt"
 if [ "$is_video" = 1 ] && [ -d "$frames" ]; then
   echo "== [4/5] 帧去重 + OCR"
-  python3 "$TOOLS/dedup_frames.py" "$frames"
+  if [ "$fresh_frames" = 1 ]; then python3 "$TOOLS/dedup_frames.py" "$frames"; else echo "   去重: 本次未重新抓帧,跳过(去重不幂等,重跑会删掉已引用的帧)"; fi
   if [ "${FORCE:-0}" = 1 ]; then python3 "$TOOLS/ocr_frames.py" "$frames" --force; else python3 "$TOOLS/ocr_frames.py" "$frames"; fi
 fi
 # 课件 PDF 匹配(可选):course.json 里该单元配了 slides_dir 且目录里有 PDF 时,用课件文字给帧定页码

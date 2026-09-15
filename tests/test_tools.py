@@ -139,6 +139,13 @@ class Frames(unittest.TestCase):
     def test_match_words(self):
         m = load("match_slides")
         self.assertEqual(m.words("The prime path, and the LOOP body!"), {"prime", "path", "loop", "body"})
+        self.assertEqual(m.words("What has been covered until now?"), {"covered"})   # 泛用词全是停用词,这种帧不该配上任何页
+    def test_deck_common(self):
+        m = load("match_slides")
+        hdr = {"demo1004", "systems", "programming"}
+        decks = {"a": [hdr | {"arrays"}, hdr | {"pointers"}, hdr | {"files"}], "b": [hdr | {"malloc"}, {"orphan"}]}
+        self.assertEqual(m.deck_common(decks), hdr)                 # 5 页里出现 4 次的页眉词
+        self.assertEqual(m.deck_common({"a": [hdr, hdr]}), set())   # 页数太少不启用
     @unittest.skipUnless(shutil.which("pdftotext"), "需要 poppler")
     def test_match_preserves_toolbar_and_clear(self):
         with tempfile.TemporaryDirectory() as d:

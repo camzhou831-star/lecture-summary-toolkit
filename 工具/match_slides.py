@@ -4,13 +4,17 @@
       match_slides.py <画面目录> --clear      # 撤销匹配,恢复工具栏读到的页码
 原理: pdftotext 逐页抽字 → 每帧 OCR 词集合与每页词集合算 相似度 = |A∩B| / |A|(A 为帧的词,偏向"帧上的字都能在这页找到")
       得分最高且 >= min-score 的页作为匹配;同分时优先与上一帧同一套课件、页码相近的。
+      在超过一半课件页上都出现的词(页眉的单元代码/单元名等)两边都不计,少于 4 个有效词的帧不匹配,4–5 个词的帧要求 >= 0.6。
       OCR 读到的工具栏页码原样保存在 e["toolbar"]={"page","pages"}(只在第一次匹配时写入,重复匹配不会被 PDF 页码污染);
       匹配结果写 e["match"] 并覆盖 e["page"]/e["pages"]/e["deck"];--clear 从 e["toolbar"] 恢复。
       没有文字层的 PDF(扫描/图片版)会被识别并提示。课件按完整路径区分,不同目录同名 PDF 不会混。
 依赖: poppler 的 pdftotext(brew install poppler)
 """
 import argparse, json, os, re, subprocess, sys
-STOP = set("the and for that this with are was were from into your you our can will not but have has had they them their which what when where how why also than then there here these those such very just more most some any each other one two three four five six".split())
+STOP = set("""the and for that this with are was were from into your you our can will not but have has had they them their which what when where how why
+also than then there here these those such very just more most some any each other one two three four five six
+been being does did done until now all its it's only over after before about between under through during while both same should would could may might must
+next prev previous""".split())
 
 def words(t):
     return set(w for w in re.findall(r"[a-z][a-z0-9'+-]{2,}", t.lower())) - STOP
@@ -21,6 +25,15 @@ def pdf_pages(path):
     pages = r.stdout.decode("utf-8", "replace").split("\f")
     if pages and not pages[-1].strip(): pages = pages[:-1]
     return [words(p) for p in pages]
+
+def deck_common(decks, frac=0.5, min_pages=4):
+    """在所有课件页里出现率 > frac 的词(页眉的单元代码/单元名/"schedule" 之类),匹配时两边都去掉,免得标题帧靠页眉词配上任意一页"""
+    pages = [pw for pgs in decks.values() for pw in pgs if pw]
+    if len(pages) < min_pages: return set()
+    df = {}
+    for pw in pages:
+        for w in pw: df[w] = df.get(w, 0) + 1
+    return {w for w, n in df.items() if n > frac * len(pages)}
 
 def collect_pdfs(args):
     out = []
@@ -52,11 +65,13 @@ def main():
         if pages and not any(pages): print(f"   ⚠️ {os.path.basename(pth)} 没有文字层(扫描/图片版 PDF),无法用于匹配", file=sys.stderr); continue
         decks[pth] = pages
     if not decks: sys.exit("错误: 所有 PDF 都没有文字层")
+    common = deck_common(decks)
+    if common: decks = {d: [pw - common for pw in pgs] for d, pgs in decks.items()}
     prev = None; matched = 0; conflicts = 0
     for e in entries:
         if "toolbar" not in e: e["toolbar"] = {"page": e.get("page"), "pages": e.get("pages")}   # 只记录一次 OCR 原始结果
         tb_page = e["toolbar"]["page"]
-        fw = words(e.get("text", ""))
+        fw = words(e.get("text", "")) - common
         if len(fw) < 4: e["match"] = None; continue
         best = None
         for deck, pages in decks.items():
