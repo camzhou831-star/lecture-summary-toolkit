@@ -14,8 +14,18 @@
 import argparse, json, os, re, shutil, subprocess, sys, tempfile
 from PIL import Image, ImageChops, ImageFilter
 
-def paper_bbox(g, th=200, frac=0.25):
-    """白纸区域:亮像素(>th)在某列/某行占比超过 frac 的范围。找不到(整帧没有大片白)返回 None。"""
+def paper_th(g):
+    """白纸阈值:按这一帧的亮度自适应——取第 95 百分位亮度的 85%,夹在 110–200 之间。
+    录像偏暗时(教室灯光/摄像头曝光低)白纸只有 170–190,写死 200 会整节课找不到纸(DEMO1004 08-17、08-24 都是这种)。"""
+    h = g.histogram(); n = sum(h); cum = 0
+    for v, c in enumerate(h):
+        cum += c
+        if cum >= 0.95 * n: return max(110, min(200, int(v * 0.85)))
+    return 200
+
+def paper_bbox(g, th=None, frac=0.25):
+    """白纸区域:亮像素(>th)在某列/某行占比超过 frac 的范围。找不到(整帧没有大片白)返回 None。th 为 None 时按帧亮度自适应。"""
+    if th is None: th = paper_th(g)
     bright = g.point(lambda v: 255 if v > th else 0)
     W, H = g.size
     cols = bright.resize((W, 1), Image.BOX).getdata(); rows = bright.resize((1, H), Image.BOX).getdata()
@@ -32,14 +42,15 @@ def features(path):
     im = Image.open(path).convert("RGB"); im.thumbnail((640, 640))
     g = im.convert("L")
     dark = mask_gt(g.point(lambda v: 255 - v), 195).histogram()[255] / (g.size[0] * g.size[1])   # v < 60
-    bb = paper_bbox(g)
+    th = paper_th(g); bb = paper_bbox(g, th)
     if bb is None: return 0.0, 1.0, dark
     im = im.crop(bb); g = g.crop(bb); n = g.size[0] * g.size[1]
     blur = g.filter(ImageFilter.BoxBlur(4))
     stroke = mask_gt(ImageChops.subtract(blur, g), 25)
-    on_paper = mask_gt(blur, 150)
+    paper_lo = th - 50          # 纸面亮度下限:默认 150,偏暗录像随 th 一起降
+    on_paper = mask_gt(blur, paper_lo)
     ink = ImageChops.multiply(stroke, on_paper).histogram()[255] / n
-    blob = ImageChops.multiply(g.point(lambda v: 255 if v < 120 else 0), blur.point(lambda v: 255 if v <= 150 else 0)).histogram()[255] / n
+    blob = ImageChops.multiply(g.point(lambda v: 255 if v < 120 else 0), blur.point(lambda v: 255 if v <= paper_lo else 0)).histogram()[255] / n
     r, gg, b = im.split()
     skin = ImageChops.multiply(ImageChops.multiply(mask_gt(r, 95), mask_gt(gg, 40)),
                                ImageChops.multiply(mask_gt(ImageChops.subtract(r, b), 15), mask_gt(ImageChops.subtract(r, gg), 10))).histogram()[255] / n
