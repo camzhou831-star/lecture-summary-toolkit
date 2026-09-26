@@ -88,7 +88,11 @@ def set_input(jid, role, path):
     d = jobs.describe_input(path)
     job = jobs.load(jid)
     if job["state"] in ("running", "queued"): raise ApiError(409, "任务正在处理,不能修改材料", "先点「取消」再修改")
-    guess = _guess_from_name(job, path)
+    relocate = None
+    old = job["inputs"].get(role) if role != "slides" else None
+    if old:
+        relocate = ("same" if old.get("fp") == d["fp"] else "different")
+    guess = _guess_from_name(job, path) if not (role != "slides" and job["inputs"].get(role)) else {}   # 重新定位时不改标题/日期
     suggest = guess.pop("_suggest_code", None)
     def fn(j):
         if role == "slides":
@@ -97,9 +101,30 @@ def set_input(jid, role, path):
         for k, v in guess.items(): j[k] = v
         if j["state"] in ("done", "failed", "cancelled", "interrupted"): j["state"] = "draft"
     job = jobs.update(jid, fn)
-    return {"job": job, "suggest_code": suggest}
+    msg = {"same": "已重新定位:内容和之前的文件一致,已完成的步骤可以继续使用",
+           "different": "注意:新选的文件和之前的内容不同,相关步骤会在下次处理时重做"}.get(relocate)
+    return {"job": job, "suggest_code": suggest, "relocate": relocate, "message": msg}
 
 # ---------------- 视图 ----------------
+
+def mode_support():
+    """按输入模式检查依赖(网页服务本身只需要 Python;处理流程另需外部工具)"""
+    miss = lambda ts: [t for t in ts if not which(t)]
+    pdf = pdftext.backend()
+    video_missing = [] if not IS_WINDOWS else ["Windows 暂不支持视频处理"]
+    video_missing += miss(["bash", "ffmpeg", "ffprobe", "whisper-cli", "tesseract"]) if not IS_WINDOWS else []
+    try:
+        import PIL  # noqa: F401
+    except ImportError:
+        video_missing.append("Python 图像库 Pillow")
+    return {
+        "video": {"ok": not video_missing, "missing": video_missing,
+                  "hint": "Mac 终端运行:brew install ffmpeg whisper-cpp tesseract poppler" if video_missing and not IS_WINDOWS else "",
+                  "model": models.present(models.DEFAULT_MODEL)},
+        "subtitle": {"ok": True, "missing": [], "hint": "" if pdf else "没有 PDF 文字提取工具,课件不能用(brew install poppler 或 pip install pypdf)"},
+        "slides": {"ok": bool(pdf), "missing": [] if pdf else ["pdftotext 或 pypdf"],
+                   "hint": "" if pdf else "Mac:brew install poppler;其它系统:python -m pip install -r requirements-web.txt"},
+    }
 
 def job_view(job):
     jd = jobs.job_dir(job["id"])
@@ -116,17 +141,36 @@ def job_view(job):
 def _reg(jid):
     return sources.load(jobs.job_dir(jid))
 
-def summary_payload(job, v=None):
+CHECK_RULES = "checks-v2"
+
+def _reg_for(job, ent=None):
+    """某个笔记版本对应的来源表:导入时材料的快照;旧任务没有快照时用当前来源表"""
+    fp = (ent or {}).get("material_fp") or (job.get("material") or {}).get("fp")
+    if fp:
+        snap = read_json(os.path.join(jobs.job_dir(job["id"]), "ai", f"sources-{fp}.json"))
+        if snap: return snap
+    return _reg(job["id"])
+
+def _version(job, v=None):
     vers = job["ai"].get("versions") or []
     if not vers: return None
-    ent = next((x for x in vers if x["v"] == v), vers[-1]) if v else vers[-1]
-    text = open(os.path.join(jobs.job_dir(job["id"]), "ai", ent["file"]), encoding="utf-8").read()
-    reg = _reg(job["id"])
-    issues = checks.check_summary(text, reg, job["template"], job["mode"], job["id"])
-    return {"version": ent, "versions": vers, "text": text, "html": mdrender.render(text, sources.index(reg)), "issues": issues}
+    return next((x for x in vers if x["v"] == v), None) if v else vers[-1]
 
-def evidence(job, sid):
-    reg = _reg(job["id"]); idx = sources.index(reg)
+def summary_payload(job, v=None):
+    vers = job["ai"].get("versions") or []
+    ent = _version(job, v)
+    if not ent: return None
+    text = open(os.path.join(jobs.job_dir(job["id"]), "ai", ent["file"]), encoding="utf-8").read()
+    reg = _reg_for(job, ent)
+    # 按这个版本导入时的档位与模式检查,不因为之后切换档位而改变旧版本的结论
+    issues = checks.check_summary(text, reg, ent.get("template") or job["template"], ent.get("mode") or job["mode"], job["id"])
+    cur_fp = (job.get("material") or {}).get("fp")
+    stale = bool(ent.get("material_fp") and cur_fp and ent["material_fp"] != cur_fp)
+    return {"version": ent, "versions": vers, "text": text, "html": mdrender.render(text, sources.index(reg)), "issues": issues,
+            "stale_material": stale, "template_name": T.TEMPLATE_NAMES.get(ent.get("template") or job["template"])}
+
+def evidence(job, sid, v=None):
+    reg = _reg_for(job, _version(job, v)) if v else _reg_for(job); idx = sources.index(reg)
     s = idx.get(sid)
     if not s: raise ApiError(404, f"来源 {sid} 不存在", "这个编号可能是 AI 编造的")
     has_video = bool(job["inputs"].get("video")) and os.path.exists(job["inputs"]["video"]["path"])
@@ -164,6 +208,12 @@ def diagnostics(job):
     return d
 
 # ---------------- HTTP ----------------
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+    def handle_error(self, request, client_address):
+        if isinstance(sys.exc_info()[1], (ConnectionResetError, BrokenPipeError, TimeoutError)): return   # 浏览器中途断开(拖动视频进度条时很常见)
+        super().handle_error(request, client_address)
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "LSK/" + VERSION
@@ -240,6 +290,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "找不到这个任务或文件"})
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except Exception as e:
+            self._internal(e)
 
     def do_POST(self):
         if not self._gate(): return
@@ -252,6 +304,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send(e.status, {"error": e.msg, "next": e.next_step})
         except KeyError:
             self._send(404, {"error": "找不到这个任务"})
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:
+            self._internal(e)
+
+    def _internal(self, e):
+        import traceback
+        traceback.print_exc()
+        try: self._send(500, {"error": f"工作台内部错误:{type(e).__name__}", "next": "刷新页面重试;重复出现请导出诊断信息反馈"})
+        except Exception: pass
 
     def _static(self, name):
         p = os.path.realpath(os.path.join(STATIC, name))
@@ -287,19 +349,24 @@ class Handler(BaseHTTPRequestHandler):
         raise ApiError(404, "not found")
 
     def _range(self, p):
+        """单段 Range:bytes=a-b / a- / -n。语法不对或多段 → 按规范忽略,返回整个文件;起点超出文件 → 416"""
         size = os.path.getsize(p)
         ctype = mimetypes.guess_type(p)[0] or "application/octet-stream"
-        rng = self.headers.get("Range")
-        start, end = 0, size - 1
-        status = 200
-        if rng:
-            m = re.match(r"bytes=(\d*)-(\d*)", rng)
-            if m:
-                if m.group(1): start = int(m.group(1)); end = int(m.group(2)) if m.group(2) else size - 1
-                elif m.group(2): start = max(0, size - int(m.group(2)))
-                end = min(end, size - 1); status = 206
-                if start > end:
+        rng = (self.headers.get("Range") or "").strip()
+        start, end, status = 0, size - 1, 200
+        m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng)
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                start = int(m.group(1)); end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+                if m.group(2) and int(m.group(2)) < start: start, end = 0, size - 1   # 无效区间:忽略 Range
+                elif start >= size:
                     self.send_response(416); self.send_header("Content-Range", f"bytes */{size}"); self.send_header("Content-Length", "0"); self.end_headers(); return
+                else: status = 206
+            else:
+                n = int(m.group(2))
+                if n == 0:
+                    self.send_response(416); self.send_header("Content-Range", f"bytes */{size}"); self.send_header("Content-Length", "0"); self.end_headers(); return
+                start = max(0, size - n); status = 206
         length = end - start + 1
         self.send_response(status)
         self.send_header("Content-Type", ctype); self.send_header("Accept-Ranges", "bytes"); self.send_header("Content-Length", str(length))
@@ -341,7 +408,8 @@ class Handler(BaseHTTPRequestHandler):
         os.replace(tmp, dest)
         if role == "summary":
             return self._send(200, {"text": open(dest, encoding="utf-8", errors="replace").read()})
-        return self._send(200, set_input(jid, role, dest))
+        res = set_input(jid, role, dest); res["job"] = job_view(res["job"])
+        return self._send(200, res)
 
     # ---- API ----
     def _api(self, method, path, qs, body):
@@ -350,7 +418,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {
                 "version": VERSION, "platform": "mac" if IS_MAC else "windows" if IS_WINDOWS else sys.platform,
                 "tools": {t: bool(which(t)) for t in ("ffmpeg", "whisper-cli", "tesseract", "pdftotext", "pdftoppm")},
-                "pdf_backend": pdftext.backend(), "model_present": models.present(models.DEFAULT_MODEL),
+                "pdf_backend": pdftext.backend(), "model_present": models.present(models.DEFAULT_MODEL), "modes": mode_support(),
                 "courses": courses.all_courses(),
                 "jobs": [{k: j.get(k) for k in ("id", "title", "mode", "state", "created", "updated", "current", "course_id", "date")} for j in jobs.list_jobs()],
                 "running": RUNNER.current, "data_dir": redact(data_root())})
@@ -426,7 +494,8 @@ class Handler(BaseHTTPRequestHandler):
                     if j["inputs"].get(k): j["inputs"][k] = jobs.describe_input(j["inputs"][k]["path"])
                 j["inputs"]["slides"] = [jobs.describe_input(s["path"]) for s in j["inputs"]["slides"] if os.path.exists(s["path"])]
             jobs.update(jid, refresh)
-            RUNNER.enqueue(jid)
+            try: RUNNER.enqueue(jid)
+            except jobs.AlreadyQueued: raise ApiError(409, "任务已经在处理了")
             return self._send(200, job_view(jobs.load(jid)))
         if method == "POST" and sub == ["cancel"]:
             ok = RUNNER.cancel(jid)
@@ -437,11 +506,8 @@ class Handler(BaseHTTPRequestHandler):
             jobs.update(jid, lambda j: j.setdefault("force", {}).__setitem__(st, now()))
             return self._send(200, job_view(jobs.load(jid)))
         if method == "POST" and sub == ["delete"]:
-            if job["state"] in ("running", "queued"): raise ApiError(409, "任务正在处理", "先取消")
             # 只删工作台里这个任务的文件夹;原视频、原字幕、原课件在别处,不会被删
-            real = os.path.realpath(jd)
-            if not real.startswith(os.path.realpath(jobs.jobs_root()) + os.sep): raise ApiError(400, "路径异常")
-            shutil.rmtree(real)
+            if not jobs.delete(jid): raise ApiError(409, "任务正在处理", "先取消")
             return self._send(200, {"ok": True})
         if method == "GET" and sub == ["material"]:
             kind = (qs.get("kind") or ["full"])[0]
@@ -491,8 +557,10 @@ class Handler(BaseHTTPRequestHandler):
             v = (vers[-1]["v"] + 1) if vers else 1
             fn = f"summary-v{v}.md"
             atomic_write_text(os.path.join(jd, "ai", fn), text)
-            iss = checks.check_summary(text, _reg(jid), job["template"], job["mode"], jid)
+            iss = checks.check_summary(text, _reg_for(job), job["template"], job["mode"], jid)
             ent = {"v": v, "file": fn, "created": now(), "source": body.get("source") or "paste",
+                   "template": job["template"], "mode": job["mode"], "note_lang": job.get("note_lang"),
+                   "material_fp": (job.get("material") or {}).get("fp"), "rules": CHECK_RULES,
                    "errors": sum(1 for i in iss if i["level"] == "error"), "warnings": sum(1 for i in iss if i["level"] == "warn")}
             job = jobs.update(jid, lambda j: j["ai"].setdefault("versions", []).append(ent))
             return self._send(200, summary_payload(job, v))
@@ -501,12 +569,12 @@ class Handler(BaseHTTPRequestHandler):
             pl = summary_payload(job, v)
             return self._send(200, pl or {"versions": []})
         if method == "GET" and len(sub) == 2 and sub[0] == "source":
-            return self._send(200, evidence(job, sub[1]))
+            return self._send(200, evidence(job, sub[1], int((qs.get("v") or ["0"])[0]) or None))
         if method == "GET" and sub == ["export"]:
             fmt = (qs.get("fmt") or ["md"])[0]; v = int((qs.get("v") or ["0"])[0]) or None
             pl = summary_payload(job, v)
             if not pl: raise ApiError(404, "还没有导入笔记")
-            idx = sources.index(_reg(jid))
+            idx = sources.index(_reg_for(job, pl["version"]))
             title = job.get("title") or jid
             safe = re.sub(r'[\\/:*?"<>|]', "_", title)
             if fmt == "html":
@@ -555,7 +623,7 @@ def main(argv=None):
     httpd = None
     for port in [a.port] + list(range(a.port + 1, a.port + 20)):
         try:
-            httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler); PORT = port; break
+            httpd = Server(("127.0.0.1", port), Handler); PORT = port; break
         except OSError:
             continue
     if not httpd: sys.exit("错误: 找不到可用端口")

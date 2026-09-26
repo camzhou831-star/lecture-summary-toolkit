@@ -2,7 +2,7 @@
 """网页工作台的测试:不需要 whisper/tesseract/网络。运行: python3 -m unittest discover -s tests -v
 覆盖:字幕解析与检查、仅课件模式不产生课堂来源、扫描版 PDF 的提示、材料分块与去重、回复检查(缺块/重复/错块/无效引用/截断/🎯)、
      安全渲染、阶段恢复(失败后只重跑失败的阶段)、输入变化使缓存失效、重启后识别中断任务、本地服务的访问控制、有/无视频时的来源面板。"""
-import http.client, json, os, shutil, sys, tempfile, threading, time, unittest
+import http.client, json, os, re, shutil, sys, tempfile, threading, time, unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 DEMO = os.path.join(ROOT, "examples", "demo")
@@ -70,39 +70,84 @@ class Materials(unittest.TestCase):
         self.assertNotRegex(full, r"\[S\d+|\[F\d+|\[H\d+")
         self.assertIn("没有老师口述", full)
         p = materials.prompt_upload(self.meta, "slides", "full")
-        self.assertIn("不要使用 🎯 和 ⭐", p)
+        self.assertIn("不要使用 ⭐", p); self.assertIn("[P..]", p); self.assertNotIn("老师反复讲", p)
         for t in T.section_titles("full", "slides"): self.assertIn(t, p)
     def test_chunks_cut_at_gap_and_cover_everything(self):
         chunks = materials.build_chunks(self.meta, reg_lecture(), target=60)
         self.assertGreater(len(chunks), 1)
         allt = "\n".join(c["text"] for c in chunks)
-        for sid in ("S1", "S2", "S3"): self.assertEqual(allt.count(f"[{sid} ·"), 1)
-        self.assertEqual(allt.count("UNIQUEPAGETWO"), 1)
+        for sid in ("S1", "S2", "S3"): self.assertEqual(allt.count(f"[{sid} ·"), 1)    # 正文里每段转写只出现一次;承接上文里不带可引用的方括号编号
         self.assertTrue(all(f"part={c['no']}/{len(chunks)}" in c["text"] for c in chunks))
+
+    def test_every_chunk_is_self_contained(self):
+        """单独拿出中间块/最后一块:块里引用到的课件页,正文必须在同一块里;不能出现「见第 k 块」"""
+        for target in (60, 120, 400):
+            chunks = materials.build_chunks(self.meta, reg_lecture(), target=target)
+            pages = {p["id"]: p["text"] for p in reg_lecture()["decks"][0]["pages"]}
+            for c in chunks:
+                t = c["text"]
+                self.assertNotRegex(t, r"见第 \d+ 块")
+                for pid in set(re.findall(r"\[(P\d+-\d+)\]", t)):   # 块里所有可引用的课件编号(含承接上文)
+                    self.assertIn(pages[pid], t, f"第 {c['no']} 块引用了 {pid} 但没有它的正文")
+                self.assertIn("本课术语", t) if self.meta.get("glossary") else None
+                if c["no"] > 1: self.assertIn("## 承接上文", t)
+
+    def test_chunk_keeps_glossary_and_missing_image_notes(self):
+        meta = dict(self.meta, glossary=["prime path"])
+        reg = reg_lecture(); reg["cam"] = [{"id": "H1", "file": "cam/t00340s.jpg", "t": 340, "kind": "page_end"}]
+        for c in materials.build_chunks(meta, reg, target=60):
+            self.assertIn("本课术语(用户确认的正确写法):prime path", c["text"])
+        last = materials.build_chunks(meta, reg, target=60)[-1]["text"] if False else "\n".join(c["text"] for c in materials.build_chunks(meta, reg, target=60))
+        self.assertIn("[H1]", last); self.assertIn("没有文字;内容需要看图,资料里无法提供", last)
+        self.assertIn("文字很少,可能是图表/代码/手写,内容不确定", materials.build_full(meta, reg))
 
 class Checks(unittest.TestCase):
     jid = "20260101-0000-abcd"
     def summary(self, body, mode="video", template="concise"):
         heads = "\n".join(f"{t}\n内容 [S1]" if mode != "slides" else f"{t}\n内容 [P1-1]" for t in T.section_titles(template, mode))
-        return f"<!-- LSK:summary job={self.jid} -->\n# 标题\n{heads}\n{body}\n<!-- LSK:END -->"
+        return f"【LSK 笔记 job={self.jid}】\n# 标题\n{heads}\n{body}\n【LSK 结束】"
     def levels(self, iss): return [(i["level"], i["msg"]) for i in iss if i["level"] != "info"]
+    def msgs(self, *a): return " ".join(m for _, m in self.levels(checks.check_summary(*a)))
     def test_clean_pass(self):
         iss = checks.check_summary(self.summary(""), reg_lecture(), "concise", "video", self.jid)
         self.assertEqual(self.levels(iss), [])
         self.assertIn("不代表内容一定正确", iss[-1]["msg"])
-    def test_bad_citation_and_target(self):
-        iss = checks.check_summary(self.summary("- 🎯 考这个 [P1-2]\n- 还有 [S99]"), reg_lecture(), "concise", "video", self.jid)
-        msgs = " ".join(m for _, m in self.levels(iss))
-        self.assertIn("[S99] 不存在", msgs); self.assertIn("🎯 标记没有引用", msgs)
-    def test_slides_mode_rejects_lecture_claims(self):
-        body = "- 🎯 老师强调这个 [P1-2]\n- ⭐ 重点 [P1-1]\n- 看 [S1] 和 12:30"
-        iss = checks.check_summary(self.summary(body, "slides", "full"), reg_slides(), "full", "slides", self.jid)
-        msgs = " ".join(m for _, m in self.levels(iss))
-        for k in ("仅课件模式出现了 🎯", "仅课件模式出现了 ⭐", "仅课件模式出现了转写", "老师…", "像时间戳"): self.assertIn(k, msgs)
+    def test_exam_info_rules(self):
+        r = reg_lecture()
+        # 转写或课件都可以作为明确考试信息的依据;依据原文能在来源里找到就不提醒
+        self.assertEqual(self.msgs(self.summary("- 🎯 考素路径 ——依据:「this will be on the exam」[S2]"), r, "concise", "video", self.jid), "")
+        self.assertEqual(self.msgs(self.summary("- 🎯 考定义 ——依据:「Prime paths definition」[P1-2]"), r, "concise", "video", self.jid), "")
+        m = self.msgs(self.summary("- 🎯 考这个 ——依据:「quiz covers everything」[S1]"), r, "concise", "video", self.jid)
+        self.assertIn("没有找到", m); self.assertNotIn("没有引用", m)          # 找不到原文只提醒,不判错
+        self.assertIn("没有给出依据原文", self.msgs(self.summary("- 🎯 考这个 [S2]"), r, "concise", "video", self.jid))
+        self.assertIn("没有引用可核对的来源", self.msgs(self.summary("- 🎯 考这个"), r, "concise", "video", self.jid))
+        self.assertIn("[S99] 不存在", self.msgs(self.summary("- 还有 [S99]"), r, "concise", "video", self.jid))
+    def test_slides_mode(self):
+        rs = reg_slides()
+        ok = self.summary("- 🎯 课件写明考试范围 ——依据:「Prime paths definition」[P1-2]", "slides", "full")
+        self.assertEqual(self.msgs(ok, rs, "full", "slides", self.jid), "")          # 仅课件模式允许课件明确支持的考试信息
+        body = "- 🎯 老师强调这个 [S1]\n- ⭐ 重点 [P1-1]\n- 在 12:30"
+        m = self.msgs(self.summary(body, "slides", "full"), rs, "full", "slides", self.jid)
+        for k in ("只能引用课件", "仅课件模式出现了转写", "老师…", "像时间戳", "⭐"): self.assertIn(k, m)
+    def test_heading_variants_tolerated(self):
+        t = f"【LSK 笔记 job={self.jid}】\n# 标题\n### 1. 一句话概括:\nx [S1]\n## **核心概念**\n1. a [S1]\n## 主要例题(课上)\n无\n## 🎯 课堂重点\n无\n## 五、待复习问题\n- q\n【LSK 结束】"
+        self.assertEqual(self.levels(checks.check_summary(t, reg_lecture(), "concise", "video", self.jid)), [])
+    def test_markers_old_and_missing_end(self):
+        old = self.summary("").replace(f"【LSK 笔记 job={self.jid}】", f"<!-- LSK:summary job={self.jid} template=concise -->").replace("【LSK 结束】", "<!-- LSK:END -->")
+        self.assertEqual(self.levels(checks.check_summary(old, reg_lecture(), "concise", "video", self.jid)), [])
+        no_end = self.summary("").replace("【LSK 结束】", "")
+        lv = self.levels(checks.check_summary(no_end, reg_lecture(), "concise", "video", self.jid))
+        self.assertEqual([l for l, _ in lv], ["warn"])                                  # 结构完整只缺结束标记:只提醒
+        no_mark = self.summary("").replace(f"【LSK 笔记 job={self.jid}】", "")
+        self.assertIn("无法自动确认", " ".join(m for _, m in self.levels(checks.check_summary(no_mark, reg_lecture(), "concise", "video", self.jid))))
+        html = mdrender.render(self.summary(""), sources.index(reg_lecture()))
+        self.assertNotIn("LSK", html)
     def test_truncation_and_missing_sections(self):
-        t = f"<!-- LSK:summary job={self.jid} -->\n# 标题\n## 一句话概括\n半截 [S1]"
-        msgs = " ".join(m for _, m in self.levels(checks.check_summary(t, reg_lecture(), "concise", "video", self.jid)))
-        self.assertIn("截断", msgs); self.assertIn("缺少小节「核心概念」", msgs)
+        t = f"【LSK 笔记 job={self.jid}】\n# 标题\n## 一句话概括\n半截 [S1]"
+        lv = self.levels(checks.check_summary(t, reg_lecture(), "concise", "video", self.jid))
+        msgs = " ".join(m for _, m in lv)
+        self.assertIn("很可能被截断", msgs); self.assertIn("缺少小节「核心概念」", msgs)
+        self.assertIn(("error", [m for _, m in lv if "截断" in m][0]), lv)
     def test_wrong_job(self):
         t = self.summary("").replace(self.jid, "20250101-0000-zzzz")
         self.assertIn("不一致", " ".join(m for _, m in self.levels(checks.check_summary(t, reg_lecture(), "concise", "video", self.jid))))
@@ -110,7 +155,7 @@ class Checks(unittest.TestCase):
         msgs = " ".join(m for _, m in self.levels(checks.check_summary(self.summary("在 99:00 讲的"), reg_lecture(), "concise", "video", self.jid)))
         self.assertIn("超出录播时长", msgs)
     def test_parts(self):
-        p2 = f"<!-- LSK:part 2/3 job={self.jid} -->\n## 本段要点\n- x [S1]\n<!-- LSK:END -->"
+        p2 = f"【LSK 分段 2/3 job={self.jid}】\n## 本段章节\n- a [S1]\n## 本段要点\n- x [S1]\n## 本段例题\n无\n## 本段考点信号\n无\n【LSK 结束】"
         self.assertIn("粘贴在第 1/3 块", " ".join(i["msg"] for i in checks.check_part(p2, 1, 3, reg_lecture(), "video", self.jid)))
         self.assertEqual([i for i in checks.check_part(p2, 2, 3, reg_lecture(), "video", self.jid) if i["level"] == "error"], [])
         st = " ".join(i["msg"] for i in checks.parts_status({"1": p2, "2": p2}, 3))

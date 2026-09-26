@@ -4,7 +4,7 @@
 输出 ocr.json: [{"file","t","page","pages","text","chars"}, ...] 按时间排序
 - page/pages 来自 Okular 工具栏的 "12 of 20"(没有则为 null)
 - text 已去掉桌面/菜单栏噪声行
-- 合并规则: A 相邻同页码只留文字最多的一帧;B 前一帧 90% 以上的词都在后一帧里 -> 前一帧是"未放完的动画/同一页",删掉;
+- 合并规则: A 相邻同页码且文字大体重合(较短一帧 ≥50% 的词在另一帧里)只留文字最多的一帧;B 前一帧 90% 以上的词都在后一帧里 -> 前一帧是"未放完的动画/同一页",删掉;
   C 全局:同一页后面再出现且内容不更多 -> 删,非课件画面(终端/浏览器)与已保留的高度相似(Jaccard>=0.7) -> 删
 """
 import argparse, json, os, re, subprocess, sys
@@ -80,6 +80,12 @@ def main():
         while i < len(entries) - 1:
             e1, e2 = entries[i], entries[i + 1]
             same_page = e1["page"] is not None and e1["pages"] == e2["pages"] and e1["page"] == e2["page"]
+            # 工具栏页码相同但内容不同(课件前面盖着编辑器/终端,老师在现场敲代码)不能合并:
+            # 要求较短一帧至少一半的词出现在另一帧里,才算"同一页的不同版本"
+            if same_page:
+                wa, wb = words(e1["text"]), words(e2["text"])
+                small, big = (wa, wb) if len(wa) <= len(wb) else (wb, wa)
+                same_page = not small or len(small & big) / len(small) >= 0.5
             if same_page:
                 drop = i if e1["chars"] <= e2["chars"] else i + 1
                 removed.append(entries[drop]["file"]); del entries[drop]; continue

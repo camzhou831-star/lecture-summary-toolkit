@@ -34,15 +34,23 @@ def read_json(path, default=None):
     except FileNotFoundError: return default
     except (json.JSONDecodeError, UnicodeDecodeError): return default
 
+FULL_HASH_LIMIT = 64 << 20    # 64 MB 以下(字幕、课件、配置)算完整内容哈希
+
 def file_fingerprint(path):
-    """大文件不整体算哈希:大小 + 修改时间 + 头尾各 1 MB 的 sha1。足以识别"换了文件/文件被改过"。"""
-    st = os.stat(path)
-    h = hashlib.sha1(f"{st.st_size}:{int(st.st_mtime)}".encode())
+    """只看内容、不看修改时间(文件被移动/复制后仍能认出是同一个文件)。
+    ≤64 MB:完整内容 sha256。更大的视频:大小 + 头尾各 1 MB + 均匀分布的 32 个 256 KB 块(约 10 MB 读取);
+    限制:只改动了未被采样的中间片段的视频识别不出来(录播文件实际上很少这样被改)。"""
+    size = os.path.getsize(path)
+    h = hashlib.sha256(f"{size}:".encode())
     with open(path, "rb") as f:
+        if size <= FULL_HASH_LIMIT:
+            for buf in iter(lambda: f.read(1 << 20), b""): h.update(buf)
+            return "f" + h.hexdigest()[:20]
         h.update(f.read(1 << 20))
-        if st.st_size > 2 << 20:
-            f.seek(-(1 << 20), os.SEEK_END); h.update(f.read(1 << 20))
-    return h.hexdigest()[:16]
+        for k in range(1, 33):
+            f.seek(size * k // 33); h.update(f.read(256 << 10))
+        f.seek(-(1 << 20), os.SEEK_END); h.update(f.read(1 << 20))
+    return "s" + h.hexdigest()[:20]
 
 def fingerprint(*parts):
     return hashlib.sha1(json.dumps(parts, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()[:16]

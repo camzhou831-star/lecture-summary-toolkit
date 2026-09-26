@@ -1,10 +1,10 @@
 """导出:通用 Markdown(默认)、Obsidian Markdown(可选)、独立 HTML(可打印成 PDF)。"""
 import html, os, re, urllib.parse
 from .sources import ID_RE, ONE_ID, label, time_of
-from .checks import strip_wrapping
+from .checks import strip_wrapping, MARKER_ONLY_LINE
 from . import mdrender
 
-MARKER_LINE = re.compile(r"^\s*<!--\s*LSK:.*-->\s*$", re.M)
+MARKER_LINE = re.compile(MARKER_ONLY_LINE.pattern, re.M | re.I)
 
 def _clean(text):
     return MARKER_LINE.sub("", strip_wrapping(text)).strip() + "\n"

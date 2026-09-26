@@ -91,7 +91,7 @@ def label(src):
     """引用在预览/导出里显示的文字"""
     k = src["kind"]
     if k == "S": return f"{hms(src['start'])}"
-    if k == "P": return f"{src['deck']} 第{src['page']}页"
+    if k == "P": return f"{src['deck']} PDF第{src['page']}页"   # PDF 页序;印刷页码无法可靠确认,不显示
     if k == "F": return f"截图 {hms(src['t'])}"
     if k == "H": return f"手写 {hms(src['t'])}"
     return src.get("id", "?")

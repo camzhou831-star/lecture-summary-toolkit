@@ -1,7 +1,8 @@
 """AI 材料:把来源登记表整理成给网页版 AI 读的资料 + 提示词。
 - 上传文件流程(首选):一份完整资料文件 + 一段短提示词
-- 分段复制流程(备用):按章节/主题边界切块,每块自带提示词与上下文;最后给一段整合提示词
-同一课件页的正文在整份资料里只出现一次,之后只引用编号。"""
+- 分段复制流程(备用):按启发式切口(课间静音 > 课件跳页 > 换页,以分钟/课件页为最小单元)切块,
+  每块自带提示词、所需的课件正文和「承接上文」,可以单独发送;最后给一段整合提示词
+去重:完整资料里同一课件页正文只出现一次;分块时只在块内去重,不跨块引用。"""
 import os
 from .util import hms
 from . import templates as T
@@ -110,11 +111,12 @@ def _render_unit(u, reg, pages_by_id, state, chunk_no):
                 pid = f["slide"]; p = pages_by_id.get(pid)
                 if p and pid not in state:
                     state[pid] = chunk_no
-                    out.append(f"  📄 [{f['id']}] {hms(f['t'])} 画面是课件 [{pid}]({p['deck']} 第 {p['page']} 页),该页文字:")
+                    out.append(f"  📄 [{f['id']}] {hms(f['t'])} 画面是课件 [{pid}]({p['deck']} PDF 第 {p['page']} 页),该页文字:")
                     out += ["      " + l for l in _clean_lines(p["text"], PAGE_TEXT_CAP)]
+                elif p:
+                    out.append(f"  📄 [{f['id']}] {hms(f['t'])} 画面又回到课件 [{pid}](该页文字见本资料上文)")
                 else:
-                    where = "上文" if state.get(pid) == chunk_no else f"第 {state.get(pid)} 块"
-                    out.append(f"  📄 [{f['id']}] {hms(f['t'])} 画面是课件 [{pid}](该页文字见{where})")
+                    out.append(f"  📄 [{f['id']}] {hms(f['t'])} 画面是课件 [{pid}](这一页的文字没有提供)")
             else:
                 lines = _clean_lines(f.get("text"), OCR_CAP)
                 hint = "(文字很少,可能是图表/代码/手写,内容不确定)" if f.get("chars", 0) < 60 else ""
@@ -129,7 +131,7 @@ def _render_unit(u, reg, pages_by_id, state, chunk_no):
             state[p["id"]] = chunk_no
             tag = "(课件中这一页没有出现在录播画面里)" if u.get("appendix") else ""
             body = _clean_lines(p["text"], PAGE_TEXT_CAP)
-            out.append(f"[{p['id']}] {d['name']} 第 {p['page']} 页{tag}")
+            out.append(f"[{p['id']}] {d['name']} PDF 第 {p['page']} 页{tag}")
             out += (["    " + l for l in body] if body else ["    (这一页没有可提取的文字,可能是图片或扫描页)"])
     return out
 
@@ -194,14 +196,37 @@ def plan_chunks(reg, target=DEFAULT_CHUNK_CHARS):
     if cur: chunks.append(cur)
     return [[units[k] for k in c] for c in chunks] or [[]]
 
+def _bridge(reg, prev_units, pbid):
+    """承接上文:上一块最后一段转写 + 最后显示的课件页标题,让连续讲解/跨块例题有上下文。只供理解,不要求 AI 为它写笔记。"""
+    segs = [it[1] for u in prev_units for it in u["items"] if it[0] == "seg"]
+    slides = [it[1]["slide"] for u in prev_units for it in u["items"] if it[0] == "frame" and it[1].get("slide")]
+    pages = [it[1] for u in prev_units for it in u["items"] if it[0] == "page"]
+    out = []
+    if segs:
+        t = segs[-1]["text"]
+        out.append(f"({segs[-1]['id']} · {hms(segs[-1]['start'])} 的结尾)…{t[-600:] if len(t) > 600 else t}")
+    if slides and slides[-1] in pbid:
+        p = pbid[slides[-1]]
+        first = next((l.strip() for l in p["text"].splitlines() if l.strip()), "")
+        out.append(f"上一块结束时画面停在课件 {slides[-1]}(标题:{first[:80]})")
+    if pages and not segs:
+        p = pages[-1]; first = next((l.strip() for l in p["text"].splitlines() if l.strip()), "")
+        out.append(f"上一块最后一页是 {p['id']}(标题:{first[:80]})")
+    if not out: return []
+    return ["## 承接上文(上一块的结尾,只用来理解本块开头;不要为它写笔记,也不要引用这里的编号)", ""] + out + [""]
+
 def build_chunks(meta, reg, target=DEFAULT_CHUNK_CHARS):
+    """每块都能单独发给 AI:块内需要的课件正文都在块内(去重只在块内进行),来源编号全局一致。
+    切分是启发式的(以分钟/课件页为最小单元,切口优先选课间静音 > 课件跳页 > 换页),不保证不切断一段连续讲解,
+    所以第 2 块起附上「承接上文」。"""
     plan = plan_chunks(reg, target)
     n = len(plan)
     pbid = _pages_by_id(reg)
-    state = {}
     out = []
     for k, units in enumerate(plan, 1):
+        state = {}                     # 每块单独去重
         body = _header(meta, reg, part=(k, n), rng=_range_label(reg, units))
+        if k > 1: body += _bridge(reg, plan[k - 2], pbid)
         body += _section_block(reg, units, pbid, state, k)
         body.append(f"<!-- LSK:material-end part={k}/{n} -->")
         out.append({"no": k, "total": n, "range": _range_label(reg, units), "text": "\n".join(body)})
@@ -218,9 +243,9 @@ def _rules(meta, mode):
         "3. 核心要点、例题、考点每条都至少引用一个来源编号;不要引用资料里不存在的编号。",
     ]
     if slides:
-        r.append("4. 这份资料只有课件,没有老师口述:**不要使用 🎯 和 ⭐**,不要写「老师强调」「课上提到」「考试会考」;你建议复习的内容用 💡 开头,表示这是你的推测。")
+        r.append("4. 这份资料只有课件,没有老师口述,不要写「老师强调」「课上提到」。考点分两类:🎯 明确考试信息——只有课件原文明确写了考试/测验范围、题型、时间等才算,写成「🎯 内容 ——依据:「课件原文片段」[P..]」;💡 建议复习——你的推测。不要使用 ⭐(课堂重点需要老师口述)。")
     else:
-        r.append("4. 考点分三类,用行首符号标出:🎯 老师明确说会考/必须掌握(必须引用老师说这句话的转写编号 [S..]);⭐ 课堂重点(老师反复讲或明显强调,引用对应转写);💡 建议复习(你的推测,不是老师说的)。拿不准是不是老师说的,就用 💡。")
+        r.append("4. 考点分三类,用行首符号标出:🎯 明确考试信息(转写或课件原文明确说了考/不考、考试范围、题型、时间),写成「🎯 内容 ——依据:「原文片段(保留原语言)」[S..] 或 [P..]」;⭐ 课堂重点(老师反复讲或明显强调,引用对应转写);💡 建议复习(你的推测)。拿不准是否明确,就用 💡。")
     r += [
         "5. 转写里的疑似错字(尤其专有名词)写成「原文(转写疑似:正确写法)」,不要直接改写;资料开头给了术语表时以术语表为准。",
         "6. 公式、代码、图表在资料里不完整时写「(见 [F7],文字不完整)」,不要自己补全。标了「手写页」的内容你看不到,不要编造。",
@@ -232,7 +257,7 @@ def _rules(meta, mode):
 def _format_lines(sections, first_line):
     out = [f"回复的第一行必须是:{first_line}", "然后用 Markdown,按下面的结构输出(小节标题一字不改,顺序不变):", ""]
     for t, d in sections: out.append(f"{t}\n({d})")
-    out += ["", "回复的最后一行必须是:<!-- LSK:END -->(用来确认回复没有被截断)"]
+    out += ["", "回复的最后一行必须是:【LSK 结束】(用来确认回复没有被截断)"]
     return out
 
 def prompt_upload(meta, mode, template):
@@ -240,7 +265,7 @@ def prompt_upload(meta, mode, template):
     title = "# <标题:课程 · 主题>"
     lines = [f"我上传了一个文件「{meta.get('material_filename', 'AI材料.md')}」,里面是一节课的整理资料。请读完整个文件,写一份{T.TEMPLATE_NAMES.get(template, '完整版')}学习笔记。", "",
              "要求:"] + _rules(meta, mode) + [""]
-    lines += _format_lines([(title, "一行标题")] + secs, f"<!-- LSK:summary job={meta['job_id']} template={template} -->")
+    lines += _format_lines([(title, "一行标题")] + secs, f"【LSK 笔记 job={meta['job_id']}】")
     return "\n".join(lines)
 
 def prompt_single_paste(meta, mode, template):
@@ -252,14 +277,14 @@ def prompt_single_paste(meta, mode, template):
 def prompt_chunk(meta, mode, k, n):
     lines = [f"下面是一节课整理资料的第 {k}/{n} 块。请只根据这一块写**这一段的局部笔记**(之后我会把 {n} 段笔记交给你整合)。", "",
              "要求:"] + _rules(meta, mode) + [""]
-    lines += _format_lines(T.PART_SECTIONS, f"<!-- LSK:part {k}/{n} job={meta['job_id']} -->")
+    lines += _format_lines(T.PART_SECTIONS, f"【LSK 分段 {k}/{n} job={meta['job_id']}】")
     return "\n".join(lines)
 
 def prompt_merge(meta, mode, template, parts):
     secs = T.sections(template, mode)
     lines = [f"下面是同一节课分 {len(parts)} 段写的局部笔记(按顺序)。请把它们整合成一份{T.TEMPLATE_NAMES.get(template)}学习笔记:合并重复内容,保持时间顺序,**保留所有来源编号**,不要新增局部笔记里没有的内容。", "",
              "要求:"] + _rules(meta, mode) + [""]
-    lines += _format_lines([("# <标题:课程 · 主题>", "一行标题")] + secs, f"<!-- LSK:summary job={meta['job_id']} template={template} -->")
+    lines += _format_lines([("# <标题:课程 · 主题>", "一行标题")] + secs, f"【LSK 笔记 job={meta['job_id']}】")
     lines += ["", "=" * 20 + " 局部笔记开始 " + "=" * 20, ""]
     for i, p in enumerate(parts, 1):
         lines += [f"----- 第 {i}/{len(parts)} 段 -----", p.strip(), ""]

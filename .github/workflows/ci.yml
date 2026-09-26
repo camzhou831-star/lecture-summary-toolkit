@@ -9,8 +9,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - run: pip install pillow
-      - name: 单元测试(不需要 whisper/tesseract)
+      - run: pip install pillow -r requirements-web.txt
+      - name: 单元测试(不需要 whisper/tesseract;课件 PDF 用 pypdf)
         run: python3 -W ignore::ResourceWarning -m unittest discover -s tests -v
       - name: 双端一致性:AGENTS.md 必须由 SKILL.md 生成
         run: bash 工具/sync_agents.sh && git diff --exit-code AGENTS.md CLAUDE.md

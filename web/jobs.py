@@ -12,12 +12,17 @@ STAGE_NAMES = {
     "sources": "整理来源编号", "material": "生成 AI 材料",
 }
 OCR_VERSION = "ocr_frames-v1"
+# 处理逻辑的版本:改了某阶段的代码、输出格式变化时加一,已有任务重跑时这一阶段及之后会重做
+CODE_VERSION = {"subtitle": 1, "sources": 1, "material": 2}
 
 class StageError(Exception):
     def __init__(self, what, next_step="", detail=""):
         super().__init__(what); self.what, self.next_step, self.detail = what, next_step, detail
 
 class Cancelled(Exception):
+    pass
+
+class AlreadyQueued(Exception):
     pass
 
 def jobs_root():
@@ -32,14 +37,33 @@ _lock = threading.RLock()
 def load(jid):
     return read_json(os.path.join(job_dir(jid), "job.json"))
 
+class JobGone(KeyError):
+    """任务已被删除:后台线程/请求不能再写它,更不能把目录重新建出来"""
+
 def save(job):
     with _lock:
+        d = job_dir(job["id"])
+        if not os.path.isdir(d): raise JobGone(job["id"])
         job["updated"] = now()
-        atomic_write_json(os.path.join(job_dir(job["id"]), "job.json"), job)
+        atomic_write_json(os.path.join(d, "job.json"), job)
 
 def update(jid, fn):
+    """所有对 job.json 的修改都经过这里:读-改-写在同一把锁里完成,请求线程和后台线程不会互相覆盖"""
     with _lock:
-        job = load(jid); fn(job); save(job); return job
+        job = load(jid)
+        if job is None: raise JobGone(jid)
+        fn(job); save(job); return job
+
+def delete(jid):
+    """只删工作台里这个任务的目录;正在处理/排队的任务不能删。与状态检查在同一把锁里,避免和「开始」竞争"""
+    with _lock:
+        j = load(jid)
+        if j is None: raise JobGone(jid)
+        if j["state"] in ("running", "queued"): return False
+        real = os.path.realpath(job_dir(jid))
+        if not real.startswith(os.path.realpath(jobs_root()) + os.sep): raise ValueError("路径异常")
+        shutil.rmtree(real)
+        return True
 
 def list_jobs():
     out = []
@@ -166,6 +190,12 @@ def stage_check_env(job, ctx):
         raise StageError(f"缺少处理视频需要的程序:{', '.join(missing)}",
                          f"Mac:在「终端」里运行 brew install {pkgs}(没有 Homebrew 先看 https://brew.sh),装好后点「重试」。"
                          + ("也可以改用字幕模式,不需要语音识别。" if mode == "video" else ""))
+    if job["options"].get("frames", True) and job["inputs"].get("video"):
+        try:
+            import PIL  # noqa: F401  画面去重/手写帧需要 Pillow,与运行工作台的是同一个 Python
+        except ImportError:
+            raise StageError("运行工作台的 Python 缺少图像处理库 Pillow,无法处理录播画面",
+                             f"在终端运行:{sys.executable} -m pip install pillow;或在高级设置里关闭「抓取录播画面」")
     v = job["inputs"]["video"]["path"]
     if not os.path.exists(v):
         raise StageError(f"找不到视频文件:{os.path.basename(v)}(可能被移动、改名或外接硬盘没插)", "点「重新选择文件」指定视频的新位置")
@@ -353,7 +383,10 @@ def stage_material(job, ctx):
     from .util import atomic_write_text
     atomic_write_text(os.path.join(ctx.dir, "ai", "material.md"), full)
     for c in chunks: atomic_write_text(os.path.join(ctx.dir, "ai", f"chunk-{c['no']}.md"), c["text"])
-    info = {"chars": len(full), "chunks": [{"no": c["no"], "range": c["range"], "chars": len(c["text"])} for c in chunks], "generated": now()}
+    mfp = fingerprint(full, [c["text"] for c in chunks])
+    # 来源快照:旧版本笔记始终按它导入时的来源编号检查和回查,材料更新不会悄悄改变旧版本的状态
+    shutil.copyfile(os.path.join(ctx.dir, "sources.json"), os.path.join(ctx.dir, "ai", f"sources-{mfp}.json"))
+    info = {"fp": mfp, "chars": len(full), "chunks": [{"no": c["no"], "range": c["range"], "chars": len(c["text"])} for c in chunks], "generated": now()}
     def fn(j):
         old_n = j["ai"].get("parts_n")
         j["material"] = info
@@ -379,17 +412,49 @@ def stage_fp(job, stage, fps):
         "ocr": (fps.get("frames"), OCR_VERSION),
         "slides": ([s.get("fp") for s in inp.get("slides", [])], fps.get("ocr")),
         "sources": (fps.get("transcribe"), fps.get("subtitle"), fps.get("ocr"), fps.get("slides"), job["mode"]),
-        "material": (fps.get("sources"), job.get("title"), job.get("date"), job.get("note_lang"), opt.get("chunk_chars"),
+        # 档位、笔记语言只影响提示词(每次现生成),不影响材料正文,所以不在这里
+        "material": (fps.get("sources"), job.get("title"), job.get("date"), opt.get("chunk_chars"),
                      courses.glossary(job.get("course_id")), (courses.get(job.get("course_id")) or {}).get("name")),
     }[stage]
-    return fingerprint(stage, deps, (job.get("force") or {}).get(stage))   # force: 用户点了「重做这一步」
+    return fingerprint(stage, deps, (job.get("force") or {}).get(stage), CODE_VERSION.get(stage))   # force: 用户点了「重做这一步」
 
 def _outputs_ok(job, stage):
+    """已完成阶段的产物是否真的可用(能解析、字段齐全),不只看文件在不在。不可用就重做这一阶段。"""
     d = job_dir(job["id"]); w = os.path.join(d, "work")
-    need = {"transcribe": [os.path.join(w, "lecture.srt")], "subtitle": [os.path.join(w, "lecture.srt")],
-            "frames": [os.path.join(w, "frames")], "ocr": [], "slides": [os.path.join(w, "slides.json")],
-            "sources": [os.path.join(d, "sources.json")], "material": [os.path.join(d, "ai", "material.md")]}.get(stage, [])
-    return all(os.path.exists(p) for p in need)
+    try:
+        if stage in ("transcribe", "subtitle"):
+            p = os.path.join(w, "lecture.srt")
+            if not os.path.getsize(p): return False
+            cues, _ = subtitles.parse(subtitles.load_file(p))
+            return any(c.get("start") is not None and c.get("text") for c in cues)
+        if stage == "model":
+            return models.present(job["options"]["whisper_model"])
+        if stage == "frames":
+            fd = os.path.join(w, "frames")
+            jpgs = [f for f in os.listdir(fd) if f.endswith(".jpg")]
+            return bool(jpgs) and all(os.path.getsize(os.path.join(fd, f)) > 0 for f in jpgs)
+        if stage == "ocr":
+            fd = os.path.join(w, "frames")
+            if not os.path.isdir(fd) or not any(f.endswith(".jpg") for f in os.listdir(fd)): return True   # 没有画面时 OCR 是空操作
+            o = read_json(os.path.join(fd, "ocr.json"))
+            return isinstance(o, list) and bool(o) and all(isinstance(e, dict) and "file" in e and "t" in e and
+                                                           os.path.exists(os.path.join(fd, e["file"])) for e in o)
+        if stage == "slides":
+            sl = read_json(os.path.join(w, "slides.json"))
+            return isinstance(sl, list) and all(isinstance(x, dict) and isinstance(x.get("pages"), list) for x in sl)
+        if stage == "sources":
+            r = read_json(os.path.join(d, "sources.json"))
+            return isinstance(r, dict) and all(k in r for k in ("mode", "segments", "decks", "frames", "cam"))
+        if stage == "material":
+            info = job.get("material") or {}
+            files = ["material.md"] + [f"chunk-{c['no']}.md" for c in info.get("chunks", [])]
+            for f in files:
+                t = open(os.path.join(d, "ai", f), encoding="utf-8").read()
+                if "<!-- LSK:material-end" not in t: return False
+            return bool(info.get("chunks")) and os.path.exists(os.path.join(d, "ai", f"sources-{info.get('fp')}.json"))
+        return True
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
 
 # ---------------- 队列 ----------------
 
@@ -399,7 +464,9 @@ class Runner:
         self.t = threading.Thread(target=self._loop, daemon=True, name="lsk-runner"); self.t.start()
 
     def enqueue(self, jid):
+        """检查状态与标记排队在同一把锁里:并发的两次「开始」只会排队一次"""
         def fn(j):
+            if j["state"] in ("running", "queued"): raise AlreadyQueued(jid)
             j["state"] = "queued"; j["current"] = None
         update(jid, fn); self.q.put(jid)
 
@@ -424,6 +491,8 @@ class Runner:
                 if not j or j["state"] != "queued": continue
                 self.current = jid
                 self._run(jid)
+            except JobGone:
+                pass                        # 处理过程中任务被删:停止,不重建目录
             except Exception:
                 traceback.print_exc()
             finally:

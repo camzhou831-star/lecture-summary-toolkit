@@ -2,9 +2,9 @@
 先把全部文字做 HTML 转义,再加标签:模型回复里的 <script>、onerror= 等永远只会显示成文字,不会执行。"""
 import html, re
 from .sources import ID_RE, ONE_ID, label
-from .checks import strip_wrapping
+from .checks import strip_wrapping, MARKER_ONLY_LINE
 
-MARKER = re.compile(r"^\s*<!--\s*LSK:.*-->\s*$")
+MARKER = MARKER_ONLY_LINE
 
 def _inline(s, cite):
     """s 已转义"""

@@ -94,6 +94,15 @@ async function newCourse() {
 
 async function newJob() {
   await loadState();
+  const modes = S.state.modes || {};
+  document.querySelectorAll("#form-new .mode").forEach((lab) => {
+    const inp = lab.querySelector("input"), m = modes[inp.value];
+    lab.querySelectorAll(".dep").forEach((x) => x.remove());
+    if (!m) return;
+    if (!m.ok) lab.append(h("span", { class: "dep", style: "grid-column:2;color:var(--err)" }, "这台电脑暂时不能用:缺少 " + m.missing.join("、") + (m.hint ? "。" + m.hint : "")));
+    else if (m.hint) lab.append(h("span", { class: "dep", style: "grid-column:2;color:var(--warn)" }, m.hint));
+    else if (inp.value === "video" && !m.model) lab.append(h("span", { class: "dep", style: "grid-column:2" }, "第一次处理视频会下载约 1.6 GB 的语音模型"));
+  });
   const sel = $("#new-course"); courseOptions(sel, "");
   sel.onchange = async () => { if (sel.value === "__new") { const id = await newCourse(); courseOptions(sel, id || ""); } };
   const dlg = $("#dlg-new"); dlg.showModal();
@@ -215,7 +224,10 @@ function renderInputs() {
   const drop = h("div", { class: "drop" }, "也可以把文件拖到这里(字幕、PDF 直接拖;视频建议用上面的按钮选择,拖进来会复制一份占用磁盘)");
   drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); uploadFiles(e.dataTransfer.files); });
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); uploadFiles(Array.from(e.dataTransfer.files)); });
+  const fileIn = h("input", { type: "file", multiple: true, id: "file-upload", accept: ".srt,.vtt,.pdf,.md,.mp4,.mkv,.mov,.webm,.m4v,.m4a,.mp3,.wav", disabled: busy,
+    onchange: (e) => { const fs = Array.from(e.target.files); e.target.value = ""; uploadFiles(fs); } });   // FileList 是实时的,清空前先复制
+  drop.append(h("div", { class: "small" }, "或者 ", h("label", { class: "link-like" }, "从电脑上传文件", fileIn)));
   const missing = [];
   if (j.mode !== "slides" && !(inp.slides || []).length) missing.push("没有课件:笔记不会有课件页码来源");
   if (j.mode === "subtitle" && !inp.video) missing.push("没有视频:不能抓画面,点来源时不能跳转播放");
@@ -243,7 +255,8 @@ async function uploadFiles(files) {
   }
 }
 async function afterInput(r) {
-  if (r.suggest_code && !S.job.course_id) {
+  if (r.message) toast(r.message, 6000);
+  else if (r.suggest_code && !S.job.course_id) {
     toast(`文件名里识别到课程代码 ${r.suggest_code},可以在「课程」里新建这门课`, 5000);
   } else toast("已添加");
   S.job = r.job; render(); loadState();
@@ -355,7 +368,7 @@ function aiCard(j) {
         h("p", { class: "small" }, "可以把提示词和资料全文一起复制,直接粘贴发送。资料很长时 AI 可能读不全,这时请改用「分段复制」。"),
         h("button", { type: "button", onclick: async () => copy((await api("GET", `/api/jobs/${j.id}/prompt?kind=paste`)).text) }, "复制提示词 + 全部资料")));
   } else {
-    body.append(h("p", { class: "small" }, `资料按课程内容的自然分界(课间、跳页、新章节)切成 ${n} 段。在同一个 AI 对话里依次发送每一段,把每段的回复贴进对应的格子;全部贴好后复制「整合提示词」发送,最后把整合后的回复贴到 ④。`));
+    body.append(h("p", { class: "small" }, `资料切成了 ${n} 段:以分钟/课件页为单位,切口尽量选在课间静音、课件跳页或换页处(这是启发式规则,可能切在一段讲解中间,所以每段开头附了上一段的结尾)。每段都包含它需要的课件文字,可以单独发送、单独重做。在同一个 AI 对话里依次发送每一段,把每段的回复贴进对应的格子;全部贴好后复制「整合提示词」发送,最后把整合后的回复贴到 ④。`));
     const partsBox = h("div");
     body.append(partsBox);
     loadParts(partsBox, j, m);
@@ -398,11 +411,11 @@ function importCard(j) {
     ta,
     h("div", { class: "btns" },
       h("button", { type: "button", class: "primary", onclick: async () => {
-        try { S.summary = await api("POST", `/api/jobs/${j.id}/summary`, { text: ta.value, source: "paste" }); ta.value = ""; renderSummary(); toast("已保存为新版本"); refreshJob(false); }
+        try { S.summary = await api("POST", `/api/jobs/${j.id}/summary`, { text: ta.value, source: ta.dataset.source || "paste" }); ta.value = ""; delete ta.dataset.source; renderSummary(); toast("已保存为新版本"); refreshJob(false); }
         catch (e) { showErr(e); }
       } }, "检查并保存"),
       h("button", { type: "button", onclick: async () => {
-        try { const r = await api("POST", `/api/jobs/${j.id}/pick`, { role: "summary" }); if (r.text !== undefined) { ta.value = r.text; toast("已读入,点「检查并保存」"); } }
+        try { const r = await api("POST", `/api/jobs/${j.id}/pick`, { role: "summary" }); if (r.text !== undefined) { ta.value = r.text; ta.dataset.source = "file"; toast("已读入,点「检查并保存」"); } }
         catch (e) { showErr(e); }
       } }, "从 .md 文件导入")),
     h("p", { class: "muted small" }, "每次导入都会保存成一个新版本,旧版本不会被覆盖。"));
@@ -421,13 +434,15 @@ function renderSummary() {
   const pv = $("#preview"); const s = S.summary;
   if (!pv || !s || !s.version) return;
   const vsel = h("select", { onchange: (e) => loadSummary(parseInt(e.target.value, 10)) },
-    ...s.versions.slice().reverse().map((x) => h("option", { value: x.v, selected: x.v === s.version.v }, `第 ${x.v} 版 · ${x.created.replace("T", " ")}` + (x.errors ? ` · ${x.errors} 个问题` : ""))));
+    ...s.versions.slice().reverse().map((x) => h("option", { value: x.v, selected: x.v === s.version.v }, `第 ${x.v} 版 · ${x.created.replace("T", " ")}` + ({ paste: " · 粘贴", file: " · 文件", "model-session": " · 模型测试回复" }[x.source] || "") + (x.errors ? ` · ${x.errors} 个问题` : ""))));
   const errs = s.issues.filter((i) => i.level === "error").length, warns = s.issues.filter((i) => i.level === "warn").length;
   const note = h("div", { class: "note" }); note.innerHTML = s.html;   // 服务器端已整体转义
   note.addEventListener("click", (e) => { const b = e.target.closest(".cite[data-id]"); if (b) openEvidence(b.dataset.id); });
   const v = s.version.v, jid = S.jobId;
   pv.replaceChildren(
     h("div", { class: "row no-print" }, h("label", null, "版本", vsel)),
+    h("p", { class: "muted small no-print" }, `这一版按「${s.template_name}」的结构检查(导入时的档位)。`,
+      s.stale_material ? h("b", null, "本地材料在这一版导入之后重新生成过;这一版仍按导入时的来源编号检查和回查。") : null),
     h("details", { open: errs > 0 || warns > 0, class: "no-print" }, h("summary", null, `检查结果:${errs} 个问题,${warns} 个提醒`), h("ul", { class: "issues" }, ...s.issues.map(issueLi))),
     h("div", { class: "btns no-print" },
       h("a", { href: `/api/jobs/${jid}/export?fmt=md&v=${v}` }, "导出 Markdown"),
@@ -443,7 +458,8 @@ async function openEvidence(id) {
   const panel = $("#evidence"), body = $("#ev-body");
   panel.hidden = false; $("#ev-title").textContent = "来源 " + id; body.replaceChildren(h("p", { class: "muted" }, "加载中…"));
   let e;
-  try { e = await api("GET", `/api/jobs/${S.jobId}/source/${encodeURIComponent(id)}`); }
+  const ver = S.summary && S.summary.version ? `?v=${S.summary.version.v}` : "";
+  try { e = await api("GET", `/api/jobs/${S.jobId}/source/${encodeURIComponent(id)}${ver}`); }
   catch (err) { body.replaceChildren(h("p", null, err.error || "加载失败"), err.next ? h("p", { class: "muted small" }, err.next) : null); return; }
   const kids = [h("p", null, h("b", null, e.label), e.range ? h("span", { class: "muted small" }, "  " + e.range) : null)];
   if (e.video && e.t != null) {
