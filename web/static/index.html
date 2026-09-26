@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>课程笔记工作台</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">课程笔记工作台</div>
+  <nav>
+    <button type="button" class="link" id="btn-privacy">数据去向</button>
+    <button type="button" class="link" id="btn-help">使用说明</button>
+  </nav>
+</header>
+<div class="layout">
+  <aside class="side">
+    <button type="button" class="primary wide" id="btn-new">+ 新建任务</button>
+    <h3>历史任务</h3>
+    <ul id="job-list" class="job-list"></ul>
+    <p class="muted small" id="data-dir"></p>
+  </aside>
+  <main id="main">
+    <section id="welcome" class="card">
+      <h1>把一节课整理成可回查来源的学习笔记</h1>
+      <p>视频、字幕和课件都在<b>你的电脑上</b>处理。处理完会生成一份「AI 材料」,你把它交给自己在用的 ChatGPT 或 Claude 网页版,再把 AI 的回复贴回来,工作台会检查引用、生成可以点开核对的笔记。</p>
+      <ol class="steps-intro">
+        <li>新建任务,选材料:录播视频、字幕文件,或者只有课件</li>
+        <li>点「开始处理」,等本地处理完成</li>
+        <li>下载 AI 材料,复制提示词,一起发给网页版 AI</li>
+        <li>把 AI 的回复贴回来,检查、预览、导出</li>
+      </ol>
+      <button type="button" class="primary" id="btn-new-2">开始:新建任务</button>
+    </section>
+    <section id="job" hidden></section>
+  </main>
+  <aside id="evidence" class="evidence" hidden>
+    <div class="ev-head"><b id="ev-title">来源</b><button type="button" class="link" id="ev-close">关闭</button></div>
+    <div id="ev-body"></div>
+  </aside>
+</div>
+
+<dialog id="dlg-new">
+  <form method="dialog" id="form-new">
+    <h2>你手上有什么材料?</h2>
+    <div class="mode-pick">
+      <label class="mode"><input type="radio" name="mode" value="video" checked><b>录播视频</b><span>在本机把语音转成文字、抓取画面(需要 Mac;一节 2 小时的课通常要几分钟到十几分钟,取决于电脑)</span></label>
+      <label class="mode"><input type="radio" name="mode" value="subtitle"><b>字幕文件(.srt / .vtt)</b><span>录播平台能下载字幕时最快,不需要语音识别,也不下载语音模型</span></label>
+      <label class="mode"><input type="radio" name="mode" value="slides"><b>只有课件 PDF</b><span>只根据课件整理,笔记里不会有老师口述的内容</span></label>
+    </div>
+    <label>课程(可以不选)
+      <select name="course_id" id="new-course"></select>
+    </label>
+    <div class="row">
+      <label>笔记档位
+        <select name="template"><option value="full">完整版:详细解释、章节、例题、复习卡</option><option value="concise">简明版:核心概念、例题、重点、自测题</option></select>
+      </label>
+    </div>
+    <menu><button value="cancel" type="submit" class="secondary">取消</button><button value="ok" type="submit" class="primary">创建</button></menu>
+  </form>
+</dialog>
+
+<dialog id="dlg-course">
+  <form method="dialog" id="form-course">
+    <h2>新建课程</h2>
+    <label>课程名称 <input name="name" required placeholder="例如:系统编程"></label>
+    <label>课程代码(可不填)<input name="code" placeholder="例如:DEMO1004"></label>
+    <div class="row">
+      <label>授课语言 <select name="lang"><option value="en">英文</option><option value="zh">中文</option><option value="auto">不确定</option></select></label>
+      <label>笔记语言 <select name="note_lang"><option value="zh">中文</option><option value="en">English</option></select></label>
+      <label>默认档位 <select name="template"><option value="full">完整版</option><option value="concise">简明版</option></select></label>
+    </div>
+    <p class="muted small">同一门课的语言、档位和术语会被记住,下次自动使用。</p>
+    <menu><button value="cancel" type="submit" class="secondary">取消</button><button value="ok" type="submit" class="primary">保存</button></menu>
+  </form>
+</dialog>
+
+<dialog id="dlg-info"><div id="info-body"></div><menu><button type="button" class="primary" id="info-close">知道了</button></menu></dialog>
+
+<div id="toast" class="toast" hidden></div>
+</body>
+</html>

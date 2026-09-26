@@ -4,6 +4,18 @@
 
 *Local lecture-recording summarizer: whisper.cpp + Silero VAD transcription, slide OCR aligned to the transcript, and a shared skill file that drives either Claude Code or Codex CLI to write timestamped notes and flashcards. Chinese UI for now; English localisation is on the roadmap.*
 
+## 网页工作台(给不用命令行的同学)
+
+双击 `启动工作台.command`(Mac)或 `启动工作台.bat`(Windows,未实测),浏览器会打开本地页面:选材料 → 本地处理 → 下载「AI 材料」交给自己的 ChatGPT / Claude 网页版 → 把回复贴回来 → 检查来源、预览、导出。一页说明见 [`docs/使用说明.md`](docs/使用说明.md)。
+
+- 三种材料:录播视频(沿用下面的本地转写/抓帧/OCR 流水线,仅 Mac)、字幕 `.srt/.vtt`(跳过语音转写,不下载模型)、仅课件 PDF(不产生任何课堂/视频来源)
+- AI 只引用来源编号(`[S12]` 转写、`[P1-5]` 课件页、`[F7]` 截图、`[H3]` 手写页),链接与时间由程序生成;导入后检查编号是否存在、模式是否匹配、是否截断、是否缺小节、分块是否齐全
+- 任务按阶段保存在 `工作台数据/`(不进库),失败后只重跑失败的阶段,输入或参数变了自动重做受影响的阶段;关闭浏览器不影响处理,关闭工作台窗口后可「继续」
+- 只用 Python 标准库,只监听 127.0.0.1,会话 cookie + Host/Origin 校验 + 严格 CSP;代码在 `web/`,测试 `tests/test_web.py`
+- 手动启动:`python3 -m web`(`--port`、`--no-browser`;环境变量 `LSK_DATA` 改数据目录)
+
+原来的 Claude Code / Codex 流程不受影响,下面的用法照旧。
+
 ## 安装
 
 ```bash
@@ -37,7 +49,7 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
 - `工具/`:
   - `prepare.sh <视频> [语言码]` — **一键预处理**,依次调用下面各步,结束时打印单元/日期/周次与总结应存路径。已有 srt 时跳过转写、已有帧时跳过抓帧,其余步骤(compact、去重、增量 OCR、bundle)每次都跑,只要几秒;`FORCE=1` 全部重做。环境变量 `FRAME_MODE=20s`、`NO_VAD=1`、`GLOSSARY=<文件>` 透传
   - `transcribe.sh <视频> [语言码]` — ffmpeg 抽音频 + whisper-cpp 转写(8 线程);默认开 Silero VAD 静音检测、按文件名课程号自动加载 `glossary/<课程号>.txt` 术语表;whisper 失败时自动用基础参数重试一次。`NO_VAD=1` 关 VAD,`GLOSSARY=<文件>` 指定术语表
-  - `compact.sh <字幕.srt>` — 压成按分钟的 compact 文本,过滤 "Thank you." 等静音段幻觉
+  - `compact.sh <字幕.srt>` — 压成按分钟的 compact 文本,过滤 "Thank you." 等静音段幻觉(逻辑在 `compact.py`,纯 Python)
   - `extract_frames.sh <视频> [12s|0.20] [输出目录]` — 抓幻灯片帧,默认每 12 秒采样后去重;重跑先清旧帧
   - `dedup_frames.py <画面目录> [--threshold 2] [--window 5] [--dry-run]` — 16×16 感知哈希去掉几乎相同的帧(阈值很严,只删完全重复,保留后一张)
   - `ocr_frames.py <画面目录> [--jobs 4] [--no-merge] [--force]` — tesseract OCR 写入 `ocr.json`(增量,识别失败的帧下次重试),并做三层合并:相邻同页码取字多的、前帧文字被后帧包含则删前帧、整节课里同一页/同一终端或浏览器画面只留一次。2 小时课 12 秒采样约 400 张原始帧 → 100 张左右
@@ -93,7 +105,7 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
 ## 示例与测试
 
 - `examples/demo/` — 合成的两分钟示例讲座(原创幻灯片 + 语音合成),附全部产物与总结样例,`COURSE_ROOT=examples/demo bash 工具/prepare.sh "DEMO1001 - 01 Jan 26-s1-demo.mp4" en` 可复现。
-- `python3 -m unittest discover -s tests` — 21 个单元测试,秒级,不需要 whisper/tesseract。
+- `python3 -m unittest discover -s tests` — 55 个单元测试(含网页工作台 22 个),秒级,不需要 whisper/tesseract。
 - `bash tests/run_pipeline_demo.sh` — 用示例视频跑完整流水线并校验(CI 在 macOS runner 上用 tiny.en 模型跑)。
 - `bash tests/check_no_course_content.sh` — 防泄漏门禁,CI 与本地都可跑。
 - 示例视频可用 `python3 examples/demo/make_demo.py` 重新生成(需要 macOS `say`),脚本里就是全部旁白与幻灯片文字。

@@ -1,0 +1,4 @@
+# 网页工作台的可选依赖(本身只用 Python 标准库)。
+# 仅在电脑上没有 poppler(pdftotext)时需要,例如 Windows:python -m pip install -r requirements-web.txt
+# pypdf 为 BSD-3-Clause 许可,可随工具分发;不使用 PyMuPDF(AGPL)。版本经 2026-09-26 在 macOS 上验证。
+pypdf==6.19.0
