@@ -35,8 +35,10 @@ def stop_server(p):
     try: p.wait(10)
     except subprocess.TimeoutExpired: p.kill()
 
+SERVERS = []
+
 def main():
-    srv, url = start_server()
+    srv, url = start_server(); SERVERS.append(srv)
     base = url.split("/auth")[0]
     with sync_playwright() as pw:
         browser = pw.chromium.launch(channel="chrome", headless=True)
@@ -112,7 +114,7 @@ def main():
         stop_server(srv); step("转写进行中关闭工作台(SIGTERM)")
         st = json.load(open(os.path.join(DATA, "jobs", vjid, "job.json")))
         assert st["state"] == "interrupted", st["state"]
-        srv, url2 = start_server(); assert url2 == url                            # 会话 token 持久化,旧页面仍可用
+        srv, url2 = start_server(); SERVERS.append(srv); assert url2 == url                            # 会话 token 持久化,旧页面仍可用
         page.reload()
         expect(page.get_by_role("button", name="继续")).to_be_visible(timeout=10000); step("重启工作台后刷新:任务显示「中断」和「继续」")
         page.get_by_role("button", name="继续").click()
@@ -130,4 +132,7 @@ def main():
 
 if __name__ == "__main__":
     try: main()
-    finally: shutil.rmtree(work, ignore_errors=True)
+    finally:
+        for s in SERVERS:                      # 测试失败时也要关掉自己启动的工作台
+            if s.poll() is None: stop_server(s)
+        shutil.rmtree(work, ignore_errors=True)
