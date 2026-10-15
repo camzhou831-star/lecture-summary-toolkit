@@ -11,6 +11,7 @@ description: 自动总结长视频内容。输入本地视频/音频文件路径
 - `TOOLKIT` = 本工具仓库根目录。在仓库里打开 agent 时就是当前目录;若本技能是 `install.sh` 链接安装的,用 `readlink -f` 找到本 SKILL.md 的真实路径,其上两级就是 `TOOLKIT`(`$(dirname "$(dirname "$(dirname "$(readlink -f <SKILL.md>)")")")`)。
 - `COURSE_ROOT` = 课程数据目录(视频、画面、总结所在)。默认 = `TOOLKIT`;用户另有目录时 `export COURSE_ROOT=<目录>`。
 下文 `工具/xxx` 一律指 `$TOOLKIT/工具/xxx`,其余相对路径相对于 `COURSE_ROOT`;`prepare.sh` 会自动创建 `课程视频/ 画面/ 总结/`。
+- `lsk`(`工具/lsk.py`)— **总入口**:`doctor` 查环境、`run` 预处理(字幕或视频)、`finish` 收尾、`review` 审核包
 - `工具/prepare.sh` — **一键预处理**(转写+抓帧+compact+去重+OCR+课件PDF匹配+bundle),平时只需要跑这一个;结束时打印课程信息与总结应存路径
 - `工具/course_meta.py <文件名>` — 从文件名解析单元代码/日期/周次,给出总结路径;规则与年份、学期起始日在 `<COURSE_ROOT>/course.json`(可选,格式见脚本头注释)
 - `工具/match_slides.py <画面目录> <课件pdf或目录>` — 用课件 PDF 文字给帧定页码(prepare.sh 在 course.json 配了 `slides_dir` 时自动跑)
@@ -32,10 +33,17 @@ description: 自动总结长视频内容。输入本地视频/音频文件路径
    - 本地文件:用户给文件名或路径即可,`prepare.sh` 会在 `课程视频/`、`~/Downloads/` 里找,并把视频移入 `课程视频/`。
    - 在线链接(YouTube/B站等):先检查 `yt-dlp`(未装则 `brew install yt-dlp`),`yt-dlp -f "ba" -x --audio-format m4a -o "<COURSE_ROOT>/课程视频/%(title)s.%(ext)s" <URL>` 只下音频;先试 `--write-auto-subs --skip-download` 拿现成字幕。
 
-2. **预处理**(后台运行;2 小时录播约 3–4 分钟)
-   ```bash
-   bash "$TOOLKIT/工具/prepare.sh" "<视频文件名或路径>" en
-   ```
+2. **预处理**:统一用总入口 `lsk`(第一次先跑 `bash "$TOOLKIT/lsk" doctor` 看环境,缺什么按它给的命令装,装之前先征得用户同意)。
+   - **字幕模式**(推荐给新手;只有 `.srt` / `.vtt` 字幕,不需要 ffmpeg、whisper):
+     ```bash
+     bash "$TOOLKIT/lsk" run "<字幕文件>" [--unit DEMO1001 --date 2026-08-26] [--slides <本讲课件.pdf>] [--lang zh|en]
+     ```
+     文件名看不出单元和日期时它会要求 `--unit/--date`,问用户。只传本讲对应的那份课件,不要传整学期的课件文件夹。
+   - **视频模式**(实验性;需要 `lsk doctor --video` 全绿;2 小时录播约 3–4 分钟,后台运行):
+     ```bash
+     bash "$TOOLKIT/lsk" run "<视频文件名或路径>" --lang-code en
+     ```
+     等同于 `bash "$TOOLKIT/工具/prepare.sh" "<视频>" en`,细节如下。
    - 语言码:英文授课传 `en`;中文视频传 `zh`;不确定传 `auto`。
    - 转写已开 VAD(静音检测)和课程术语表(课程目录下 `glossary/<单元代码>.txt`,按文件名前缀自动选;新单元先建一份),静音段基本不再产生 "Thank you." 类幻觉;若讲义稿里仍有整分钟只是同一短句反复出现,按静音处理并在总结里注明。
    - **双路录像**(UWA LMS 同一节课有 `<名>.mp4` 和 `<名>-2.mp4`):把两个文件都放进 `课程视频/`(或都留在 Downloads),只传主文件名即可。约定 `<名>.mp4` 是讲台电脑屏幕、`-2` 是实物投影仪/摄像头;prepare.sh 自动从更响的一路取声音、屏幕路照常抓幻灯片、实物投影路用 `cam_frames.py` 挑手写页(每页写完一张 + 每 3 分钟一张进度帧,2 小时课约 20–50 张,无 OCR)。哪一路是哪种画面要以讲义稿和图片为准,有的课两路会反过来。
@@ -46,9 +54,7 @@ description: 自动总结长视频内容。输入本地视频/音频文件路径
 
 4. **收尾(必做)**
    ```bash
-   python3 "$TOOLKIT/工具/add_links.py" "<COURSE_ROOT>/总结/<单元代码>/<视频文件名>.md"
-   python3 "$TOOLKIT/工具/check_summary.py" "<COURSE_ROOT>/总结/<单元代码>/<视频文件名>.md"
-   python3 "$TOOLKIT/工具/exam_bank.py" "<单元代码或总结子目录名>"
+   bash "$TOOLKIT/lsk" finish "<COURSE_ROOT>/总结/<单元>/<名>.md"     # = add_links + check_summary + exam_bank
    ```
    - **考试信息交给用户确认**:总结里有考试信息(范围、题型、分值、扣分加分、截止日、考核安排)时,交付前按 `policy.md` 第 4 节逐条列给用户并注明来源,来源说法不一致的问用户以哪个为准。
    - `check_summary.py` 报的每一条 ❌ 都要处理(改时间戳、补小节、修引用)后再交付;⚠️ 是提醒。它不检查内容正确性,通过后在回复里如实说明"格式与时间戳校验通过"。

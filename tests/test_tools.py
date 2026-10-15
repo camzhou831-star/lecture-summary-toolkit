@@ -159,6 +159,45 @@ class Bilingual(unittest.TestCase):
         for hs in self.H.SECTIONS.values():
             for h in hs.values(): self.assertIn(f"`{h}`", policy, h)                       # 脚本认的标题必须和 policy 里写的一字不差
 
+class Lsk(unittest.TestCase):
+    LSK = os.path.join(ROOT, "lsk")
+    SRT = "1\n00:00:05,000 --> 00:00:09,000\nWelcome to week six.\n\n2\n00:01:10,000 --> 00:01:15,000\nThe test will be short answer.\n"
+    def test_vtt_to_srt(self):
+        m = load("lsk")
+        vtt = "WEBVTT\nKind: captions\n\nNOTE comment\n\n00:05.000 --> 00:09.000 align:start\n<c>Welcome</c> to week six.\n\n1:01:10.000 --> 1:01:15.000\nLate line\n"
+        self.assertEqual(m.vtt_to_srt(vtt), "1\n00:00:05,000 --> 00:00:09,000\nWelcome to week six.\n\n2\n01:01:10,000 --> 01:01:15,000\nLate line\n")
+    def test_run_finish_subtitle_mode(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "captions.srt"); open(src, "w").write(self.SRT)
+            env = {"COURSE_ROOT": os.path.join(d, "root")}
+            r = run(["bash", self.LSK, "run", src], env=env)
+            self.assertNotEqual(r.returncode, 0); self.assertIn("--unit DEMO1001 --date", r.stdout + r.stderr)   # 文件名看不出单元日期
+            r = run(["bash", self.LSK, "run", src, "--unit", "DEMO1001", "--date", "2026-08-26", "--lang", "en"], env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            vd = os.path.join(d, "root", "课程视频")
+            self.assertEqual(sorted(os.listdir(vd)), sorted(f"DEMO1001 2026-08-26.{e}" for e in ("srt", "compact.txt", "bundle.json", "grounded.md")))
+            self.assertIn("The test will be short answer.", open(os.path.join(vd, "DEMO1001 2026-08-26.grounded.md"), encoding="utf-8").read())
+            self.assertIn(os.path.join("总结", "DEMO1001", "DEMO1001 2026-08-26.en.md"), r.stdout)
+            open(src, "w").write(self.SRT.replace("short", "long"))                                      # 同名不同内容:不覆盖
+            r = run(["bash", self.LSK, "run", src, "--unit", "DEMO1001", "--date", "2026-08-26"], env=env)
+            self.assertNotEqual(r.returncode, 0); self.assertIn("--force", r.stdout + r.stderr)
+            os.makedirs(os.path.join(d, "root", "总结", "DEMO1001"))
+            summ = os.path.join(d, "root", "总结", "DEMO1001", "DEMO1001 2026-08-26.en.md")
+            body = ("# DEMO1001 Week 6 (2026-08-26) — x\n## ⚠️ Course Notices\nNone\n## One-Sentence Summary\n## Key Points\n## Timeline\n- **[01:10] Test** — y\n"
+                    "## Quotes / Exam Signals\n- 🎯 [01:10] \"The test will be short answer.\"\n## Review Cards\n" + CheckSummary.CARDS(8))
+            open(summ, "w", encoding="utf-8").write(body)
+            r = run(["bash", self.LSK, "finish", summ], env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertTrue(os.path.isfile(os.path.join(d, "root", "总结", "DEMO1001", "Exam-Bank.en.md")))
+    def test_doctor_exit_codes(self):
+        with tempfile.TemporaryDirectory() as d:
+            env = {"PATH": "/usr/bin:/bin", "WHISPER_MODEL_DIR": d, "LANG": "en_AU.UTF-8"}
+            r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor"], env=env)
+            self.assertEqual(r.returncode, 0, r.stdout); self.assertIn("Subtitle mode: ready", r.stdout)
+            if not shutil.which("whisper-cli", path="/usr/bin:/bin"):
+                r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor", "--video"], env=env)
+                self.assertEqual(r.returncode, 2); self.assertIn("brew install whisper-cpp", r.stdout)
+
 class ReviewPack(unittest.TestCase):
     def test_pack_contents_and_errors(self):
         with tempfile.TemporaryDirectory() as d:
