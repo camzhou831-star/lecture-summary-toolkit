@@ -537,9 +537,16 @@ class DualAgent(unittest.TestCase):
             self.assertNotIn(rule, skill)
         self.assertIn("policy.md", open(os.path.join(sd, "review.md"), encoding="utf-8").read())
     def test_claude_md_import_target_exists(self):
-        s = open(os.path.join(ROOT, "CLAUDE.md"), encoding="utf-8").read()
-        m = re.search(r"^@(\S+)", s, re.M); self.assertIsNotNone(m)
-        self.assertTrue(os.path.exists(os.path.join(ROOT, m.group(1))))
+        for f in ("CLAUDE.md", "GEMINI.md"):
+            s = open(os.path.join(ROOT, f), encoding="utf-8").read()
+            m = re.search(r"^@(\S+)", s, re.M); self.assertIsNotNone(m, f)
+            self.assertTrue(os.path.exists(os.path.join(ROOT, m.group(1))), f)
+    def test_web_prompts_match_policy(self):
+        r = run([sys.executable, os.path.join(TOOLS, "build_prompts.py"), "--check"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for lang in ("zh", "en"):
+            p = open(os.path.join(ROOT, "prompts", f"web-prompt.{lang}.md"), encoding="utf-8").read()
+            self.assertIn("## 4. 考试信息", p); self.assertIn("## Key Points" if lang == "en" else "## 核心要点", p)
     def test_install_links_three_dirs(self):
         # 用隔离的 HOME 真跑 install.sh 的第 3 步(前两步靠 PATH 里的假 brew 跳过)
         with tempfile.TemporaryDirectory() as home:

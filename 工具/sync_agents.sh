@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 从 skills/video-summary/SKILL.md 生成仓库根目录的 AGENTS.md(Codex CLI 读)和 CLAUDE.md(Claude Code 读)
+# 从 skills/video-summary/SKILL.md 生成仓库根目录的 AGENTS.md(Codex CLI 读)、CLAUDE.md(Claude Code 读)、GEMINI.md(Gemini CLI 读),
+# 并从 policy.md 生成降级模式提示词 prompts/web-prompt.{zh,en}.md
 # 用法: bash 工具/sync_agents.sh   (改了 SKILL.md 之后跑一次;只在工具仓库里有意义)
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,4 +23,12 @@ cat > "$root/CLAUDE.md" <<'EOC'
 
 安装到全局技能目录后,在任何目录说"总结 xxx.mp4"即可触发:`bash install.sh` 会把它链接到 `~/.claude/skills/`、`~/.codex/skills/` 与 `~/.agents/skills/`。
 EOC
-echo "== 已生成 AGENTS.md ($(wc -l < "$root/AGENTS.md") 行) 与 CLAUDE.md"
+cat > "$root/GEMINI.md" <<'EOG'
+# 录播课总结工具(Gemini CLI 项目指令)
+
+工作流程见技能文件(与 Claude Code、Codex 共用同一份):
+
+@skills/video-summary/SKILL.md
+EOG
+python3 "$root/工具/build_prompts.py"
+echo "== 已生成 AGENTS.md ($(wc -l < "$root/AGENTS.md") 行)、CLAUDE.md、GEMINI.md"
