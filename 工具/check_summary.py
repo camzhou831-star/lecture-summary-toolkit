@@ -11,6 +11,34 @@ ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(os.path.dirname(os.path.
 MONTHS = {m: i for i, m in enumerate(["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], 1)}
 TIME_RE = re.compile(r"(\d+):(\d+):(\d+)[,.]\d+\s*-->\s*(\d+):(\d+):(\d+)")
 
+# 英文总结的语言提示(policy.md 第 6 节 Global English 标准;只提示不判失败)
+SPELLING = [("colour", "color"), ("behaviour", "behavior"), ("centre", "center"), ("favour", "favor"), ("modelling", "modeling"),
+            ("labelled", "labeled"), ("travelled", "traveled"), ("analyse", "analyze"), ("organis", "organiz"), ("optimis", "optimiz"),
+            ("minimis", "minimiz"), ("maximis", "maximiz"), ("normalis", "normaliz"), ("generalis", "generaliz"), ("visualis", "visualiz"),
+            ("randomis", "randomiz"), ("summaris", "summariz"), ("recognis", "recogniz")]
+AI_TELLS = ["delve", "crucial", "pivotal", "key takeaway", "tapestry", "it is worth noting", "in conclusion", "plays a vital role",
+            "navigate the complexities", "a testament to", "seamless"]
+
+def english_lint(lines):
+    """返回提示列表:英美拼写混用、正文残留中文、AI 套话。代码、行内代码、链接目标、直接引语不查"""
+    body, in_code = [], False
+    for ln, l in enumerate(lines, 1):
+        if l.strip().startswith("```"): in_code = not in_code; continue
+        if in_code: continue
+        t = re.sub(r"`[^`]*`", "", l)                       # 行内代码(文件名、路径)
+        t = re.sub(r"\]\(<[^>]*>\)|\]\([^)]*\)", "]", t)    # 链接目标
+        t = re.sub(r'"[^"]*"|“[^”]*”', "", t)                  # 直接引语保留原样
+        body.append((ln, t))
+    out = []
+    cjk = [ln for ln, t in body if re.search(r"[\u4e00-\u9fff]", t)]
+    if cjk: out.append(f"英文总结正文里有中文(可能漏翻),行 {', '.join(map(str, cjk[:8]))}{' …' if len(cjk) > 8 else ''}")
+    text = "\n".join(t for _, t in body).lower()
+    mixed = [f"{b}/{a}" for b, a in SPELLING if re.search(rf"\b{b}", text) and re.search(rf"\b{a}", text)]
+    if mixed: out.append(f"同一篇里英式美式拼写混用(统一成课程材料用的一种): {', '.join(mixed)}")
+    tells = [w for w in AI_TELLS if re.search(rf"\b{re.escape(w)}", text)]
+    if tells: out.append(f"AI 套话(policy.md 第 6 节,讲师原话除外): {', '.join(tells)}")
+    return out
+
 def srt_spans(path):
     spans = []
     for m in TIME_RE.finditer(open(path, encoding="utf-8", errors="ignore").read()):
@@ -95,6 +123,8 @@ def main():
         n = sum(1 for l in body if "::" in l or re.search(r"==[^=]+==", l))
         short = duration is not None and duration < 1800
         if n > 15 or (n < 8 and not short): problems.append((sec[0] + 1, f"复习卡 {n} 张,应为 8–15 张"))
+
+    if lang == "en": warnings += english_lint(lines)
 
     for w in warnings: print(f"  ⚠️ {w}")
     if problems:

@@ -37,7 +37,7 @@ You are working in a web chat. **You cannot run scripts and there is no screensh
 2. **列页→节映射草稿**(只在自己的工作区里列,不写进总结):讲义稿里出现过的每个课件页(`pN/M`)和非课件画面(终端、编辑器、手写页),各写一行"讲了什么 → 写进哪一节",封面、目录、纯过渡页写"跳过"。讲师停留超过 2 分钟的页不得跳过。
 3. **图片为主的页必须看图**:讲义稿标了"⚠️文字少,建议看图",或 OCR 明显是代码、图表、公式、表格时,打开 `画面/<视频名>/<文件名>` 看图,把图里的数值、示例、对比结论写成文字。只嵌截图不写文字等于没写。其余帧不要逐张看。
 4. **按第 2 节结构写**。
-5. **技术核查**(第 5 节清单逐项过一遍)。
+5. **技术核查**(第 5 节清单逐项过一遍)。英文总结再按第 6 节英文自查清单过一遍(同一次写作里完成,不另开一轮)。
 6. **跑检查**:`add_links.py`、`check_summary.py`,每条 ❌ 都处理。
 7. **考试信息交给用户确认**(第 4 节最后一条)。
 
@@ -74,7 +74,7 @@ You are working in a web chat. **You cannot run scripts and there is no screensh
 
 - **固定用语的英文写法**:没有通知写 `None`;转写疑似错字写 `(possible transcription error: xxx)`;讲师未展开写 `not elaborated by the lecturer`;口头简化写 `The lecturer simplified this as …; strictly, …`;疑似课件笔误写 `possibly a typo on the slide for …, to be confirmed with the lecturer`;待确认的考试信息写 `⚠️ To confirm: the recording says …, the slides say …`;来源标注照用 `[录播 MM:SS]` 的英文形式 `[Recording MM:SS]`、`[Slide pN]`、`[Other: <name>]`。
 - 复习卡语法不变(`question::answer`、`==cloze==`)。专有名词、代码、公式两种语言都保留原文。
-- 英文版同样遵守第 6 节文风:不写 "In this lecture, we delve into…" 一类开场,不用 crucial / pivotal / key takeaway 之类的拔高词,除非讲师原话如此。
+- 英文版的语言标准见第 6 节「英文总结:Global English 标准」。
 
 ## 3. Grounding(硬性)
 
@@ -118,3 +118,20 @@ You are working in a web chat. **You cannot run scripts and there is no screensh
 - 不夸大:不用"至关重要""核心关键""革命性"一类词,除非讲师原话如此。
 - 一句话只说一件事,能用讲义稿原词就用原词。
 - 以上几条借鉴 humanizer 规则(MIT 许可,基于 Wikipedia "Signs of AI writing")。
+
+### 英文总结:Global English 标准
+
+目标:**Natural for native speakers. Clear for non-native speakers. Accurate for academic use. Faithful to the original sources.** 读者包括各国英语母语者和以英语为第二语言的国际学生,不以某一个国家的写作习惯为准。
+
+- **国际通用的学术英语**:不用地区俚语、习语和文化隐喻;不为显得高级用生僻词;避免中文翻译腔(如 "carry out the study of"、"play an important role in" 堆砌)。
+- **拼写**:跟随课程材料(课件、Unit Outline)已用的拼写体系(英式、美式、澳式都可以);材料看不出时用英式拼写。全文一致。直接引语、代码、专有名词保留原拼写。
+- **兼顾非母语读者,但不降低专业性**:一句话说清一件事;复杂内容按"概念 → 关键原理 → 公式或例子 → 结果和意义"展开;可以有必要的复合句,但不要连着几句都是信息密度很高的长句。术语照用标准英文术语,不自造简化说法。
+- **术语解释**:影响理解的关键术语,第一次出现时可以加一句短解释。优先用课程材料里的定义;课程没给定义的,只能写教科书级的标准定义,不能借机添加课程没讲的事实;已经解释过的不重复。
+- **按栏目调整语气**:One-Sentence Summary 一句话讲清核心逻辑;Key Points 准确、有结构;Course Notices 直接明确,考试要求一字不漏;Timeline 简短、便于扫读,可用笔记式短语;Quotes / Exam Signals 保留讲师原话;Review Cards 问题自然、答案短而确定。不要把所有栏目都写成论文腔。
+- **少 AI 痕迹**:不用 delve、crucial、pivotal、key takeaway、tapestry、"It is worth noting that"、"In conclusion" 一类套话;连接词不过量;不为追求"地道"去改写本来已经准确清楚的句子。
+- **保真优先于润色**:润色不能改结论、不能把 may / maybe / typically 改成确定说法、不能改讲师直接引语、不能删知识点、不能改时间戳和引用的对应关系(第 3、4 节照常适用)。
+
+**英文自查清单**(写完过一遍;已经准确、自然、好懂的句子不改):
+1. Grammar 语法 2. Naturalness 母语者读着自然 3. Global accessibility 没有地区性障碍 4. ESL readability 非母语者能读懂 5. Academic accuracy 术语和解释准确 6. Conciseness 没有冗余 7. Source fidelity 原始信息完整、程度词未变 8. Format integrity Markdown、时间戳、引用、复习卡语法完整
+
+`check_summary.py` 会对英文总结做三项只提示、不判失败的检查:同一篇里英式美式拼写混用、正文里残留中文、上面列出的 AI 套话。

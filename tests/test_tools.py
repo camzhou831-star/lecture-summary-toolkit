@@ -116,6 +116,7 @@ class CheckSummary(unittest.TestCase):
 
 class Bilingual(unittest.TestCase):
     EN = "# DEMO1001 Week 6 (2026-08-26) — x\n## ⚠️ Course Notices\nNone\n## One-Sentence Summary\n## Key Points\n## Timeline\n- **[01:00] ok** — y\n## Quotes / Exam Signals\n## Review Cards\n"
+    EN_CARDS = "".join(f"- q{i}::a{i}\n" for i in range(8))
     def setUp(self): self.H = load("headings")
     def test_names(self):
         H = self.H
@@ -148,6 +149,27 @@ class Bilingual(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:                                            # 英文卡片数同样检查
             p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN + CheckSummary.CARDS(16))
             self.assertIn("复习卡 16 张", run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d}).stdout)
+    def test_english_language_hints(self):
+        bad = self.EN.replace("## Key Points\n", "## Key Points\n1. We delve into modelling the network; it is a crucial step. 讲师未展开.\n2. Later we discuss modeling choices `课程视频/x.srt`.\n"
+                              "3. The lecturer said \"this is crucial\" and the colour map stays.\n")
+        with tempfile.TemporaryDirectory() as d:
+            p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", bad + self.EN_CARDS)
+            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+            self.assertEqual(r.returncode, 0, r.stdout)                                   # 只提示,不判失败
+            self.assertIn("正文里有中文(可能漏翻),行 6\n", r.stdout)                        # 行内代码里的中文路径不算
+            self.assertIn("modelling/modeling", r.stdout); self.assertNotIn("colour/color", r.stdout)
+            self.assertIn("AI 套话", r.stdout); self.assertIn("delve, crucial", r.stdout)
+        with tempfile.TemporaryDirectory() as d:                                            # 干净的英文总结和中文总结都不出提示
+            p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN + self.EN_CARDS)
+            self.assertNotIn("⚠️", run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d}).stdout)
+        lint = load("check_summary").english_lint
+        self.assertEqual(lint(["The lecturer said \"we delve into it\".", "```", "colour = color", "```"]), [])   # 引语、代码块不查
+    def test_policy_has_global_english_standard(self):
+        policy = open(os.path.join(ROOT, "skills", "video-summary", "policy.md"), encoding="utf-8").read()
+        for must in ("Global English", "Natural for native speakers", "英文自查清单", "Source fidelity", "跟随课程材料"):
+            self.assertIn(must, policy)
+        review = open(os.path.join(ROOT, "skills", "video-summary", "review.md"), encoding="utf-8").read()
+        self.assertIn("Global English", review)
     def test_add_links_english(self):
         with tempfile.TemporaryDirectory() as d:
             p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN)
