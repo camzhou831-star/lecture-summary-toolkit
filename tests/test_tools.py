@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """单元测试:不需要 whisper/tesseract/网络,只用合成数据。运行: python3 -m unittest discover -s tests -v
-覆盖:course_meta 文件名与周次、compact 幻觉过滤与时间标签及新旧实现 golden、check_summary 三类错误、add_links 幂等与路径别名、
+覆盖:course_meta 文件名与周次、compact 幻觉过滤与时间标签及新旧实现 golden、check_summary 三类错误与复习卡数量、review_pack 审核包、add_links 幂等与路径别名、
      build_bundle 空档检测(含 VAD 填充段)与 --duration/--video、原子写入、ocr_frames 规则 A(现场写代码帧不被合并)、dedup_frames 严格去重、ocr_frames 页码模式、match_slides 词匹配、exam_bank 跨周考点库、cam_frames 手写帧挑选与 check_summary 的 cam/ 路径、
      双端一致性(AGENTS.md 由 SKILL 生成、CLAUDE.md 导入目标存在、技能 frontmatter)。"""
 import json, os, re, shutil, subprocess, sys, tempfile, unittest, importlib.util
@@ -93,9 +93,40 @@ class CheckSummary(unittest.TestCase):
             self.assertIn("与文件名日期", r.stdout)
     def test_passes(self):
         with tempfile.TemporaryDirectory() as d:
-            p = self._write(d, "# DEMO1001 第一周(2026-08-26)— x\n## ⚠️ 课程通知\n无\n## 一句话概括\n## 核心要点\n## 章节时间线\n- [01:00] ok\n## 金句 / 考点信号\n## 复习卡\n- q::a\n")
+            p = self._write(d, "# DEMO1001 第一周(2026-08-26)— x\n## ⚠️ 课程通知\n无\n## 一句话概括\n## 核心要点\n## 章节时间线\n- [01:00] ok\n## 金句 / 考点信号\n## 复习卡\n" + self.CARDS(8))
             r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
             self.assertEqual(r.returncode, 0, r.stdout)
+    @staticmethod
+    def CARDS(n):   # 问答卡与填空卡各一半,中间夹一行说明文字(不算卡)
+        return "说明:以下为复习卡\n" + "".join(f"- q{i}::a{i}\n" if i % 2 else f"- x = ==v{i}==\n" for i in range(n))
+    def test_card_count(self):
+        head = "# DEMO1001 第一周(2026-08-26)— x\n## ⚠️ 课程通知\n无\n## 一句话概括\n## 核心要点\n## 章节时间线\n- [01:00] ok\n## 金句 / 考点信号\n## 复习卡\n"
+        for n, ok, long in [(7, False, True), (8, True, True), (15, True, True), (16, False, True), (6, True, False), (16, False, False)]:
+            with tempfile.TemporaryDirectory() as d:
+                p = self._write(d, head + self.CARDS(n) + "## 附注\n- 不算::不算\n")
+                if long: open(os.path.join(d, "课程视频", "DEMO1001 - 26 Aug 20-s1-full.srt"), "w").write("1\n00:00:05,000 --> 01:00:00,000\nhello\n")
+                r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+                self.assertEqual(r.returncode == 0, ok, (n, r.stdout))
+                if not ok: self.assertIn(f"复习卡 {n} 张", r.stdout)
+
+class ReviewPack(unittest.TestCase):
+    def test_pack_contents_and_errors(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "课程视频")); os.makedirs(os.path.join(d, "总结", "X"))
+            n = "DEMO1001 - 26 Aug 20-s1-full"
+            summ = os.path.join(d, "总结", "X", n + ".md"); open(summ, "w").write("# s\n")
+            open(os.path.join(d, "课程视频", n + ".grounded.md"), "w").write("[00:00] g\n")
+            open(os.path.join(d, "课程视频", n + ".srt"), "w").write("1\n00:00:00,000 --> 00:00:01,000\nx\n")
+            out = os.path.join(d, "pack")
+            r = run([sys.executable, os.path.join(TOOLS, "review_pack.py"), summ, "--out", out], env={"COURSE_ROOT": d})
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(sorted(os.listdir(out)), ["grounded.md", "policy.md", "review.md", "summary.md", "transcript.srt"])
+            self.assertIn("--sandbox read-only", r.stdout)
+            r = run([sys.executable, os.path.join(TOOLS, "review_pack.py"), summ, "--out", out], env={"COURSE_ROOT": d})
+            self.assertNotEqual(r.returncode, 0)                               # 非空目录拒绝
+            os.remove(os.path.join(d, "课程视频", n + ".grounded.md"))
+            r = run([sys.executable, os.path.join(TOOLS, "review_pack.py"), summ], env={"COURSE_ROOT": d})
+            self.assertIn("找不到讲义稿", r.stdout + r.stderr)
 
 class AddLinks(unittest.TestCase):
     def test_idempotent_and_strict(self):
@@ -360,6 +391,14 @@ class DualAgent(unittest.TestCase):
         body = skill.split("---", 2)[2].lstrip("\n")
         agents = open(os.path.join(ROOT, "AGENTS.md"), encoding="utf-8").read()
         self.assertTrue(agents.rstrip().endswith(body.rstrip()), "AGENTS.md 与 SKILL.md 正文不一致,请跑 工具/sync_agents.sh")
+    def test_rules_live_in_policy_and_review(self):
+        sd = os.path.join(ROOT, "skills", "video-summary")
+        skill = open(os.path.join(sd, "SKILL.md"), encoding="utf-8").read()
+        for f in ("policy.md", "review.md"):
+            self.assertTrue(os.path.isfile(os.path.join(sd, f)), f); self.assertIn(f"skills/video-summary/{f}", skill)
+        for rule in ("Grounding", "固定结构", "技术核查清单"):                  # 写作规则只在 policy.md
+            self.assertNotIn(rule, skill)
+        self.assertIn("policy.md", open(os.path.join(sd, "review.md"), encoding="utf-8").read())
     def test_claude_md_import_target_exists(self):
         s = open(os.path.join(ROOT, "CLAUDE.md"), encoding="utf-8").read()
         m = re.search(r"^@(\S+)", s, re.M); self.assertIsNotNone(m)

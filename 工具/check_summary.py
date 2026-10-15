@@ -79,6 +79,17 @@ def main():
         for m in re.finditer(r"画面/([^/`)\]]+)/?", l):
             if not os.path.isdir(os.path.join(ROOT, "画面", m[1])): problems.append((ln, f"引用的画面文件夹不存在: 画面/{m[1]}"))
 
+    # 5. 复习卡数量(policy.md 规定 8–15 张,不足 30 分钟的录播不设下限;一行一张,问答卡含 ::,填空卡含 ==…==)
+    sec = [i for i, l in enumerate(lines) if l.startswith("## 复习卡")]
+    if sec:
+        body = []
+        for l in lines[sec[0] + 1:]:
+            if l.startswith("## "): break
+            body.append(l)
+        n = sum(1 for l in body if "::" in l or re.search(r"==[^=]+==", l))
+        short = duration is not None and duration < 1800
+        if n > 15 or (n < 8 and not short): problems.append((sec[0] + 1, f"复习卡 {n} 张,应为 8–15 张"))
+
     for w in warnings: print(f"  ⚠️ {w}")
     if problems:
         print(f"❌ {a.summary}: {len(problems)} 个问题")
