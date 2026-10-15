@@ -67,7 +67,7 @@ if [ -n "$cam" ]; then
 fi
 pids=()
 if [ "${FORCE:-0}" = 1 ] || [ ! -s "$base.srt" ]; then
-  echo "== [1/5] 转写 (后台)"; OUT_BASE="$base" bash "$TOOLS/transcribe.sh" "$audio_src" "$lang" > "$base.transcribe.log" 2>&1 & pids+=($!)
+  echo "== [1/5] 转写 (后台)"; COURSE_ROOT="$ROOT" OUT_BASE="$base" bash "$TOOLS/transcribe.sh" "$audio_src" "$lang" > "$base.transcribe.log" 2>&1 & pids+=($!)
 else echo "== [1/5] 转写: 已有 $name.srt,跳过(FORCE=1 可重做)"; fi
 if [ "$is_video" = 1 ]; then
   if [ "${FORCE:-0}" = 1 ] || [ -z "$(ls "$frames" 2>/dev/null | grep -c '\.jpg$' || true)" ] || [ "$(ls "$frames" 2>/dev/null | grep -c '\.jpg$')" = 0 ]; then

@@ -40,12 +40,18 @@ if [ "${NO_VAD:-0}" != "1" ]; then
   VAD_ARGS=(--vad -vm "$VAD_PATH" --vad-threshold 0.5 --vad-min-speech-duration-ms 250 --vad-speech-pad-ms 200)
 fi
 
-# 术语表:按文件名里的课程号(如 DEMO1001)自动选 工具/glossary/<课程号>.txt,喂给 whisper 的 --prompt 提高专有名词准确率
+# 术语表:按文件名里的课程号(如 DEMO1001)自动选 <COURSE_ROOT>/glossary/<课程号>.txt,喂给 whisper 的 --prompt 提高专有名词准确率
+# 术语表属于课程数据,放在课程目录里,不进工具仓库;为兼容旧布局,课程目录里没有时再找 工具/glossary/
 PROMPT_ARGS=()
 GLOSSARY="${GLOSSARY:-}"
+COURSE_ROOT_DIR="${COURSE_ROOT:-$(dirname "$TOOLS_DIR")}"
 if [ -z "$GLOSSARY" ]; then
   COURSE="$(basename "${OUT_BASE:-$INPUT}" | grep -oE '^[A-Z]{4}[0-9]{4}' || true)"
-  [ -n "$COURSE" ] && [ -f "$TOOLS_DIR/glossary/$COURSE.txt" ] && GLOSSARY="$TOOLS_DIR/glossary/$COURSE.txt"
+  if [ -n "$COURSE" ]; then
+    for g in "$COURSE_ROOT_DIR/glossary/$COURSE.txt" "$TOOLS_DIR/glossary/$COURSE.txt"; do
+      [ -f "$g" ] && { GLOSSARY="$g"; break; }
+    done
+  fi
 fi
 if [ -n "$GLOSSARY" ] && [ -f "$GLOSSARY" ]; then
   echo "== 术语表: $GLOSSARY" >&2

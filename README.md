@@ -36,7 +36,7 @@ bash 工具/prepare.sh "DEMO1001 - 26 Aug 20-s1-full.mp4" en
 - `总结/1002/`、`总结/1003/` — 各课程的总结、考点记录、知识点笔记
 - `工具/`:
   - `prepare.sh <视频> [语言码]` — **一键预处理**,依次调用下面各步,结束时打印单元/日期/周次与总结应存路径。已有 srt 时跳过转写、已有帧时跳过抓帧,其余步骤(compact、去重、增量 OCR、bundle)每次都跑,只要几秒;`FORCE=1` 全部重做。环境变量 `FRAME_MODE=20s`、`NO_VAD=1`、`GLOSSARY=<文件>` 透传
-  - `transcribe.sh <视频> [语言码]` — ffmpeg 抽音频 + whisper-cpp 转写(8 线程);默认开 Silero VAD 静音检测、按文件名课程号自动加载 `glossary/<课程号>.txt` 术语表;whisper 失败时自动用基础参数重试一次。`NO_VAD=1` 关 VAD,`GLOSSARY=<文件>` 指定术语表
+  - `transcribe.sh <视频> [语言码]` — ffmpeg 抽音频 + whisper-cpp 转写(8 线程);默认开 Silero VAD 静音检测、按文件名课程号自动加载课程目录下 `glossary/<课程号>.txt` 术语表(课程数据,不进本仓库);whisper 失败时自动用基础参数重试一次。`NO_VAD=1` 关 VAD,`GLOSSARY=<文件>` 指定术语表
   - `compact.sh <字幕.srt>` — 压成按分钟的 compact 文本,过滤 "Thank you." 等静音段幻觉
   - `extract_frames.sh <视频> [12s|0.20] [输出目录]` — 抓幻灯片帧,默认每 12 秒采样后去重;重跑先清旧帧
   - `dedup_frames.py <画面目录> [--threshold 2] [--window 5] [--dry-run]` — 16×16 感知哈希去掉几乎相同的帧(阈值很严,只删完全重复,保留后一张)
