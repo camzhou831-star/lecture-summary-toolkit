@@ -1,9 +1,11 @@
 ---
 name: video-summary
-description: 自动总结长视频内容。输入本地视频/音频文件路径(或在线视频链接),用 ffmpeg+whisper-cpp 本地转写字幕,再生成带时间戳的分章节总结(中文或英文)。当用户要求"总结视频"、"视频摘要"、"总结录播课"、"这个视频讲了什么"时使用。
+description: 自动总结长视频内容。输入本地视频/音频文件路径(或在线视频链接),用 ffmpeg+whisper-cpp 本地转写字幕,再生成带时间戳的分章节总结(中文或英文)。当用户要求"总结视频"、"视频摘要"、"总结录播课"、"这个视频讲了什么"时使用;also use when the user asks to "summarize this lecture / recording / video", "make lecture notes", or "what was this lecture about".
 ---
 
 # 长视频自动总结
+
+**和用户说话用用户的语言**:用户用英文提问就用英文回复(进度、提问、考试信息确认、报错解释都一样),不要因为本说明是中文就改用中文。脚本输出是中文的,转述给英文用户时翻译成英文。总结本身用什么语言见 `policy.md`「输出语言」。
 
 **先定位两个目录**(每次触发本技能第一步):
 - `TOOLKIT` = 本工具仓库根目录。在仓库里打开 agent 时就是当前目录;若本技能是 `install.sh` 链接安装的,用 `readlink -f` 找到本 SKILL.md 的真实路径,其上两级就是 `TOOLKIT`(`$(dirname "$(dirname "$(dirname "$(readlink -f <SKILL.md>)")")")`)。
