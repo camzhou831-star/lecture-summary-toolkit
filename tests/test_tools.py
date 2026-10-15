@@ -133,7 +133,7 @@ class Bilingual(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN + CheckSummary.CARDS(8))
             r = run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d, "PATH": tempfile.mkdtemp()})
-            self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.assertIn("时长 9 分钟", r.stdout)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.assertIn("时长 10 分钟", r.stdout)
     def test_check_summary_by_filename(self):
         cards = CheckSummary.CARDS(8)
         with tempfile.TemporaryDirectory() as d:
