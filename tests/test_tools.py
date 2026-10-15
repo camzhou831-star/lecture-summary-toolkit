@@ -128,6 +128,12 @@ class Bilingual(unittest.TestCase):
         open(os.path.join(d, "课程视频", "DEMO1001 - 26 Aug 20-s1-full.srt"), "w").write("1\n00:00:05,000 --> 00:10:00,000\nhello\n")
         open(os.path.join(d, "课程视频", "DEMO1001 - 26 Aug 20-s1-full.mp4"), "w").close()
         p = os.path.join(d, "总结", "X", fname); open(p, "w", encoding="utf-8").write(body); return p
+    def test_check_summary_without_ffprobe(self):
+        # 课程目录里有视频但没装 ffprobe(字幕模式的新手常见):不能崩,时长退回字幕结束时间
+        with tempfile.TemporaryDirectory() as d:
+            p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN + CheckSummary.CARDS(8))
+            r = run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d, "PATH": tempfile.mkdtemp()})
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.assertIn("时长 9 分钟", r.stdout)
     def test_check_summary_by_filename(self):
         cards = CheckSummary.CARDS(8)
         with tempfile.TemporaryDirectory() as d:
@@ -196,7 +202,8 @@ class Lsk(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout); self.assertIn("Subtitle mode: ready", r.stdout)
             if not shutil.which("whisper-cli", path="/usr/bin:/bin"):
                 r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor", "--video"], env=env)
-                self.assertEqual(r.returncode, 2); self.assertIn("brew install whisper-cpp", r.stdout)
+                self.assertEqual(r.returncode, 2)
+                self.assertIn("brew install whisper-cpp" if sys.platform == "darwin" else "github.com/ggml-org/whisper.cpp", r.stdout)
 
 class ReviewPack(unittest.TestCase):
     def test_pack_contents_and_errors(self):

@@ -54,7 +54,8 @@ def main():
         for ext in (".mp4", ".mkv", ".m4a", ".mp3"):
             v = os.path.join(ROOT, "课程视频", name + ext)
             if os.path.exists(v):
-                r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", v], capture_output=True, text=True)
+                try: r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", v], capture_output=True, text=True)
+                except FileNotFoundError: break      # 没装 ffprobe(字幕模式常见):用字幕最后一段的结束时间
                 try: duration = float(r.stdout.strip())
                 except ValueError: pass
                 break

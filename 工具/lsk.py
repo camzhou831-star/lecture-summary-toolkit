@@ -38,7 +38,14 @@ def has_module(m):
     try: __import__(m); return True
     except ImportError: return False
 
-def brew_or(pkg): return f"brew install {pkg}" if have("brew") or sys.platform == "darwin" else f"apt-get install {pkg}"
+# 安装命令:macOS 用 Homebrew;Linux 的 apt 包名不同,whisper.cpp 没有 apt 包
+INSTALL = {"poppler": ("brew install poppler", "sudo apt-get install poppler-utils"),
+           "ffmpeg": ("brew install ffmpeg", "sudo apt-get install ffmpeg"),
+           "whisper-cpp": ("brew install whisper-cpp", "build from https://github.com/ggml-org/whisper.cpp and put whisper-cli on PATH"),
+           "tesseract": ("brew install tesseract", "sudo apt-get install tesseract-ocr")}
+def brew_or(pkg):
+    mac, linux = INSTALL[pkg]
+    return mac if sys.platform == "darwin" or have("brew") else linux
 
 def doctor(a):
     t = MSG[a.lang or lang_default()]
