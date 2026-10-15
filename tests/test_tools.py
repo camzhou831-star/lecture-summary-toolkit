@@ -108,19 +108,29 @@ class CheckSummary(unittest.TestCase):
                 r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
                 self.assertEqual(r.returncode == 0, ok, (n, r.stdout))
                 if not ok: self.assertIn(f"复习卡 {n} 张", r.stdout)
+    def test_placeholder_times(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = self._write(d, "# DEMO1001 第一周(2026-08-26)— x\n## ⚠️ 课程通知\n- [19:51–20:xx] 通知\n## 一句话概括\n## 核心要点\n1. 讲指针(39:xx–40:XX)\n## 章节时间线\n- [01:00] ok\n## 金句 / 考点信号\n## 复习卡\n" + self.CARDS(8))
+            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+            self.assertEqual(r.returncode, 1); self.assertEqual(r.stdout.count("时间占位"), 3, r.stdout)
 
 class ReviewPack(unittest.TestCase):
     def test_pack_contents_and_errors(self):
         with tempfile.TemporaryDirectory() as d:
             os.makedirs(os.path.join(d, "课程视频")); os.makedirs(os.path.join(d, "总结", "X"))
             n = "DEMO1001 - 26 Aug 20-s1-full"
-            summ = os.path.join(d, "总结", "X", n + ".md"); open(summ, "w").write("# s\n")
-            open(os.path.join(d, "课程视频", n + ".grounded.md"), "w").write("[00:00] g\n")
+            summ = os.path.join(d, "总结", "X", n + ".md"); open(summ, "w").write("# s\n见 t00010s.jpg 与 cam/t00020s.jpg,还有 t00099s.jpg\n")
+            open(os.path.join(d, "课程视频", n + ".grounded.md"), "w").write("[00:00] g\n📄 t=30s · p2/9 · t00030s.jpg ⚠️文字少,建议看图\n📄 t=40s · p3/9 · t00040s.jpg\n")
+            fr = os.path.join(d, "画面", n); os.makedirs(os.path.join(fr, "cam"))
+            for f in ("t00010s.jpg", "cam/t00020s.jpg", "t00030s.jpg", "t00040s.jpg"): open(os.path.join(fr, f), "w").close()
             open(os.path.join(d, "课程视频", n + ".srt"), "w").write("1\n00:00:00,000 --> 00:00:01,000\nx\n")
             out = os.path.join(d, "pack")
             r = run([sys.executable, os.path.join(TOOLS, "review_pack.py"), summ, "--out", out], env={"COURSE_ROOT": d})
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(sorted(os.listdir(out)), ["grounded.md", "policy.md", "review.md", "summary.md", "transcript.srt"])
+            self.assertEqual(sorted(os.listdir(out)), ["grounded.md", "policy.md", "review.md", "summary.md", "transcript.srt", "画面"])
+            got = sorted(os.path.relpath(os.path.join(r_, f), os.path.join(out, "画面")) for r_, _, fs in os.walk(os.path.join(out, "画面")) for f in fs)
+            self.assertEqual(got, ["cam/t00020s.jpg", "t00010s.jpg", "t00030s.jpg"])   # 引用的 + ⚠️ 的;未标记的 t00040s 不带
+            self.assertIn("找不到 1 张截图", r.stdout)                              # t00099s 不存在
             self.assertIn("--sandbox read-only", r.stdout)
             r = run([sys.executable, os.path.join(TOOLS, "review_pack.py"), summ, "--out", out], env={"COURSE_ROOT": d})
             self.assertNotEqual(r.returncode, 0)                               # 非空目录拒绝

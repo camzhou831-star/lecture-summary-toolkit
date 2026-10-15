@@ -57,6 +57,8 @@ def main():
                 break
     else:
         problems.append((0, f"找不到字幕 {srt},跳过时间戳校验"))
+    for ln, l in enumerate(lines, 1):   # 占位时间(如 17:xx、39:xx–40:xx)是没查 srt 的估算
+        for m in re.finditer(r"(?<![\d:])\d{1,3}:[xX]{2}\b", l): problems.append((ln, f"时间占位 {m[0]},请换成 srt 里的实际时间"))
     ts_re = re.compile(r"(?<![\d:])(\d{1,3}):(\d{2})(?![\d:])")
     in_code = False
     for ln, l in enumerate(lines, 1):
