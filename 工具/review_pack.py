@@ -6,6 +6,8 @@
 输出: 审核包路径与档 1/2 的启动命令(见 skills/video-summary/review.md)
 """
 import argparse, os, re, shutil, sys, tempfile
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import headings as H
 ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # 默认为 工具/ 的上级目录
 FRAME_RE = re.compile(r"(?:cam/)?t\d{5}s(?:-\d+)?\.jpg")
 
@@ -22,7 +24,7 @@ def main():
     ap.add_argument("summary"); ap.add_argument("--grounded"); ap.add_argument("--srt"); ap.add_argument("--frames-dir"); ap.add_argument("--out")
     a = ap.parse_args()
     if not os.path.isfile(a.summary): sys.exit(f"错误: 找不到总结 {a.summary}")
-    name = os.path.splitext(os.path.basename(a.summary))[0]
+    name = H.video_name(a.summary)
     grounded = a.grounded or os.path.join(ROOT, "课程视频", name + ".grounded.md")
     if not os.path.isfile(grounded): sys.exit(f"错误: 找不到讲义稿 {grounded}(用 --grounded 指定)")
     srt = a.srt or os.path.join(ROOT, "课程视频", name + ".srt")

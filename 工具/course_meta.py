@@ -7,9 +7,11 @@
     "semester_start": "2026-07-20",     # 第 1 周周一,用来算周次
     "break_weeks_after": [6],           # 教学第 6 周之后放一周假(期中假),周次顺延;多个假期写 [6, 9](都指教学周)
     "filename_patterns": ["..."],       # 追加的文件名正则,需含命名组 unit, day, mon(或 month), 可选 year
+    "output_lang": "zh",                # 总结默认语言 zh / en(可选;单元里也可单独写,单元优先)
     "units": {"DEMO1001": {"alias": "1002", "slides_dir": "课件/DEMO1001"}}   # alias: 总结子文件夹用别名(不给则用单元代码)
   }
-输出(默认人类可读;--json 机器可读): unit, alias, date, year_source, week, notes_dir, notes_path
+输出(默认人类可读;--json 机器可读): unit, alias, date, year_source, week, notes_dir, notes_path(中文), notes_path_en(英文 .en.md),
+  output_lang(course.json 里的默认语言,没配为 null;实际用哪种语言的优先级见 skills/video-summary/policy.md)
 """
 import argparse, datetime, json, os, re, sys
 MONTHS = {m: i for i, m in enumerate(["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"], 1)}
@@ -77,7 +79,8 @@ def parse(name, cfg, year_override=None):
     alias = ucfg.get("alias", unit)
     return {"unit": unit, "alias": alias, "date": date.isoformat() if date else None, "year": year, "year_source": year_source,
             "week": week, "in_break": in_break, "warnings": warnings, "slides_dir": ucfg.get("slides_dir"), "notes_dir": os.path.join("总结", alias),
-            "notes_path": os.path.join("总结", alias, base + ".md"), "pattern": patterns.index(m.re.pattern) if m.re.pattern in patterns else None}
+            "notes_path": os.path.join("总结", alias, base + ".md"), "notes_path_en": os.path.join("总结", alias, base + ".en.md"),
+            "output_lang": ucfg.get("output_lang") or cfg.get("output_lang"), "pattern": patterns.index(m.re.pattern) if m.re.pattern in patterns else None}
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("name"); ap.add_argument("--root"); ap.add_argument("--year"); ap.add_argument("--json", action="store_true")
@@ -90,7 +93,7 @@ def main():
     else:
         print(f"单元 {r['unit']}(总结子文件夹 {r['alias']})· 日期 {r['date'] or '未知'}(年份来自:{r['year_source']})· 第 {r['week'] or '?'} 周" + (" [假期周]" if r['in_break'] else ""))
         for w in r["warnings"]: print(f"  ⚠️ {w}")
-        print(f"总结应存: {r['notes_path']}")
+        print(f"总结应存: {r['notes_path']}(中文)/ {r['notes_path_en']}(英文)" + (f";本课默认 {r['output_lang']}" if r["output_lang"] else ""))
         if r["slides_dir"]: print(f"课件目录: {r['slides_dir']}")
 
 if __name__ == "__main__":

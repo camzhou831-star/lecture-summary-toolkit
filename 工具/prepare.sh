@@ -111,6 +111,6 @@ rm -f "$base.transcribe.log" "$base.frames.log" "$base.cam.log"
 notes="总结/<单元代码>/$name.md"
 if [ -n "$meta" ]; then
   echo "== 课程信息: $(COURSE_ROOT="$ROOT" python3 "$TOOLS/course_meta.py" "$video" 2>/dev/null | head -1)"
-  notes="$(printf '%s' "$meta" | python3 -c 'import sys,json; print(json.load(sys.stdin)["notes_path"])')"
+  notes="$(printf '%s' "$meta" | python3 -c 'import sys,json; m=json.load(sys.stdin); print(m["notes_path_en"] if m.get("output_lang")=="en" else m["notes_path"])')"
 fi
-echo "== 全部完成,用时 $(( $(date +%s) - t0 )) 秒。下一步:读 $base.grounded.md 写总结,总结存 $notes,写完跑 工具/add_links.py 与 工具/check_summary.py"
+echo "== 全部完成,用时 $(( $(date +%s) - t0 )) 秒。下一步:读 $base.grounded.md 写总结,总结存 $notes(英文总结用 .en.md 结尾,语言优先级见 policy.md),写完跑 工具/add_links.py 与 工具/check_summary.py"

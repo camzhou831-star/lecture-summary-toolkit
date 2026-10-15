@@ -36,6 +36,26 @@
    - 填空卡:`MTBF = ==MTTF + MTTR==;可用性 = ==MTTF/(MTTF+MTTR)==`
    - 内容优先来自考点信号和老师明说会考的点;答案要短、可直接背。
 
+### 输出语言(中文或英文,二选一)
+
+- **怎么定**:本次用户明确要求 > 用户说过的语言偏好(如"我母语是英文""以后都用英文") > `course.json` 的 `output_lang`(`course_meta.py` 输出里有) > 以上都没有时问用户一次。
+- **文件名**:中文存 `<视频名>.md`,英文存 `<视频名>.en.md`(`course_meta.py` 的 `notes_path` / `notes_path_en`)。`check_summary.py` 按文件名检查对应语言的标题,两种语言不要混在一份里。
+- **结构完全相同**,只换语言。英文小节标题必须一字不差(脚本靠它识别):
+
+| 中文 | English |
+|---|---|
+| `# <单元代码> 第N周(YYYY-MM-DD)— <主题>` | `# <UNIT> Week N (YYYY-MM-DD) — <Topic>` |
+| `## ⚠️ 课程通知` | `## ⚠️ Course Notices` |
+| `## 一句话概括` | `## One-Sentence Summary` |
+| `## 核心要点` | `## Key Points` |
+| `## 章节时间线` | `## Timeline` |
+| `## 金句 / 考点信号` | `## Quotes / Exam Signals` |
+| `## 复习卡` | `## Review Cards` |
+
+- **固定用语的英文写法**:没有通知写 `None`;转写疑似错字写 `(possible transcription error: xxx)`;讲师未展开写 `not elaborated by the lecturer`;口头简化写 `The lecturer simplified this as …; strictly, …`;疑似课件笔误写 `possibly a typo on the slide for …, to be confirmed with the lecturer`;待确认的考试信息写 `⚠️ To confirm: the recording says …, the slides say …`;来源标注照用 `[录播 MM:SS]` 的英文形式 `[Recording MM:SS]`、`[Slide pN]`、`[Other: <name>]`。
+- 复习卡语法不变(`question::answer`、`==cloze==`)。专有名词、代码、公式两种语言都保留原文。
+- 英文版同样遵守第 6 节文风:不写 "In this lecture, we delve into…" 一类开场,不用 crucial / pivotal / key takeaway 之类的拔高词,除非讲师原话如此。
+
 ## 3. Grounding(硬性)
 
 - 每条核心要点、每个时间线条目的时间必须来自讲义稿的 `[HH:MM]` 标签或 srt,**不得估算或凑整**;页码来自讲义稿的 `pN/M`(带课件名的是 PDF 匹配结果,更可靠;不带的是 OCR 读工具栏的结果)。
@@ -52,7 +72,7 @@
 - **考试信息**包括:考试范围(考/不考/只讨论)、题型和出题方式、分值、扣分与加分、截止日、考核安排(lab、quiz、项目)。
 - **只写原话,不推断。** 程度词照原样保留:typically、often、may、maybe、"一般不会"。"只讨论"不能写成"只考";"题目里不会用到"不能写成"不考";"很重要"不能写成"会扣分"。
 - **不补例子。** 讲师只说"可能给图让你解释",就不能自己补"例如给 log-log 图"。
-- **每条标来源**:`[录播 MM:SS]`、`[课件 pN]`,或 `[其他资料:<名称>]`(如 Unit Outline、之前某讲)。来源不在本讲讲义稿里的,必须写明出处。
+- **每条标来源**:`[录播 MM:SS]`、`[课件 pN]`,或 `[其他资料:<名称>]`(英文总结用 `[Recording MM:SS]`、`[Slide pN]`、`[Other: <name>]`)(如 Unit Outline、之前某讲)。来源不在本讲讲义稿里的,必须写明出处。
 - **🎯 只给考试表态**:讲师明说考/不考/怎么考/不重要的原话才标 🎯。"这很重要""注意这里"写成"讲师强调",不标 🎯(🎯 会被 `exam_bank.py` 汇总进考点库)。
 - **写完交给用户确认。** 总结里有考试信息时,交付前把所有考试信息逐条列给用户,并注明来源;不同来源说法不一致(录播与课件、本讲与之前讲次或 Unit Outline)的,列出各方说法,问用户以哪个为准。用户确认前,总结里这一条写成"⚠️ 待确认:录播说……,课件说……"。不能交互的环境(如 `codex exec`)直接保留"⚠️ 待确认",并在回复里列出。
 

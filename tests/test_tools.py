@@ -114,6 +114,51 @@ class CheckSummary(unittest.TestCase):
             r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
             self.assertEqual(r.returncode, 1); self.assertEqual(r.stdout.count("时间占位"), 3, r.stdout)
 
+class Bilingual(unittest.TestCase):
+    EN = "# DEMO1001 Week 6 (2026-08-26) — x\n## ⚠️ Course Notices\nNone\n## One-Sentence Summary\n## Key Points\n## Timeline\n- **[01:00] ok** — y\n## Quotes / Exam Signals\n## Review Cards\n"
+    def setUp(self): self.H = load("headings")
+    def test_names(self):
+        H = self.H
+        self.assertEqual((H.lang_of("a/X - 1.en.md"), H.lang_of("X.md"), H.lang_of("X.english.md")), ("en", "zh", "zh"))
+        self.assertEqual((H.video_name("d/X - 26 Aug.en.md"), H.video_name("X - 26 Aug.md")), ("X - 26 Aug", "X - 26 Aug"))
+        self.assertEqual(H.summary_name("V", "en"), "V.en.md")
+        self.assertEqual((H.section_of("## ⚠️ 课程通知(07:08)"), H.section_of("## Timeline"), H.section_of("## Timeline", "zh"), H.section_of("## 其它")), ("notice", "timeline", None, None))
+    def _course(self, d, fname, body):
+        os.makedirs(os.path.join(d, "课程视频"), exist_ok=True); os.makedirs(os.path.join(d, "总结", "X"), exist_ok=True)
+        open(os.path.join(d, "课程视频", "DEMO1001 - 26 Aug 20-s1-full.srt"), "w").write("1\n00:00:05,000 --> 00:10:00,000\nhello\n")
+        open(os.path.join(d, "课程视频", "DEMO1001 - 26 Aug 20-s1-full.mp4"), "w").close()
+        p = os.path.join(d, "总结", "X", fname); open(p, "w", encoding="utf-8").write(body); return p
+    def test_check_summary_by_filename(self):
+        cards = CheckSummary.CARDS(8)
+        with tempfile.TemporaryDirectory() as d:
+            p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN + cards)
+            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+            self.assertEqual(r.returncode, 0, r.stdout)                                    # 找到同一视频的 srt,英文标题齐全
+        with tempfile.TemporaryDirectory() as d:                                            # 中文内容却叫 .en.md
+            zh = "# DEMO1001 第一周(2026-08-26)— x\n## ⚠️ 课程通知\n无\n## 一句话概括\n## 核心要点\n## 章节时间线\n- [01:00] ok\n## 金句 / 考点信号\n## 复习卡\n" + cards
+            p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", zh)
+            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+            self.assertEqual(r.returncode, 1); self.assertIn("小节标题大多是中文", r.stdout); self.assertIn("缺少小节 ## Key Points", r.stdout)
+        with tempfile.TemporaryDirectory() as d:                                            # 英文卡片数同样检查
+            p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN + CheckSummary.CARDS(16))
+            self.assertIn("复习卡 16 张", run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d}).stdout)
+    def test_add_links_english(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN)
+            r = run(["python3", os.path.join(TOOLS, "add_links.py"), p], env={"COURSE_ROOT": d}); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("[01:00](<../../课程视频/DEMO1001 - 26 Aug 20-s1-full.mp4#t=60>)", open(p, encoding="utf-8").read())
+    def test_course_meta_paths_and_lang(self):
+        m = load("course_meta")
+        cfg = {"year": 2026, "output_lang": "zh", "units": {"DEMO1001": {"alias": "1002", "output_lang": "en"}, "DEMO1004": {}}}
+        r = m.parse("DEMO1001 - 26 Aug 20-s1-full.mp4", cfg)
+        self.assertEqual((r["notes_path_en"], r["output_lang"]), (os.path.join("总结", "1002", "DEMO1001 - 26 Aug 20-s1-full.en.md"), "en"))
+        self.assertEqual(m.parse("DEMO1004 - 26 Aug 20-s1-full.mp4", cfg)["output_lang"], "zh")    # 单元没配就用顶层
+        self.assertIsNone(m.parse("DEMO1004 - 26 Aug 20-s1-full.mp4", {})["output_lang"])
+    def test_policy_lists_exact_headings(self):
+        policy = open(os.path.join(ROOT, "skills", "video-summary", "policy.md"), encoding="utf-8").read()
+        for hs in self.H.SECTIONS.values():
+            for h in hs.values(): self.assertIn(f"`{h}`", policy, h)                       # 脚本认的标题必须和 policy 里写的一字不差
+
 class ReviewPack(unittest.TestCase):
     def test_pack_contents_and_errors(self):
         with tempfile.TemporaryDirectory() as d:
@@ -355,6 +400,49 @@ x
         # 重跑幂等(考点库.md 自身不会被当成总结读进去)
         r2 = run(["python3", os.path.join(TOOLS, "exam_bank.py"), "1002", "--quiet"], env={"COURSE_ROOT": self.tmp})
         self.assertEqual(r2.returncode, 0); self.assertIn("1 份总结", open(os.path.join(self.tmp, "总结", "1002", "考点库.md"), encoding="utf-8").read())
+    EN_SUMMARY = """# DEMO1001 Week 6 (2026-08-26) — Logic Testing
+
+## ⚠️ Course Notices (07:08–07:35)
+
+1. Project brief released today (07:08).
+2. 🎯 The project does not require an SQA plan (36:00, slide p30).
+
+## One-Sentence Summary
+
+x
+
+## Key Points
+
+1. -
+
+## Timeline
+
+- **[07:08] Notices** — -
+
+## Quotes / Exam Signals
+
+- 🎯 Exam question type (73:09): write a test set satisfying RACC.
+
+## Review Cards
+
+- What does RACC mean?::flipping the major clause flips the predicate
+"""
+    def test_bilingual_dir_writes_two_banks(self):
+        d = os.path.join(self.tmp, "总结", "1002")
+        open(os.path.join(d, "DEMO1001 - 26 Aug 20-s1-full.en.md"), "w", encoding="utf-8").write(self.EN_SUMMARY)
+        r = run(["python3", os.path.join(TOOLS, "exam_bank.py"), "1002"], env={"COURSE_ROOT": self.tmp})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        zh = open(os.path.join(d, "考点库.md"), encoding="utf-8").read(); en = open(os.path.join(d, "Exam-Bank.en.md"), encoding="utf-8").read()
+        self.assertIn("1 份总结", zh); self.assertNotIn("SQA plan", zh)                       # 英文条目不混进中文考点库
+        self.assertIn("# DEMO1001 Exam Bank (auto-generated)", en); self.assertIn("from 1 summaries", en)
+        self.assertIn("## 🎯 Lecturer said what will / won't be examined, or how (2)", en)
+        self.assertIn("[36:00](<../../课程视频/DEMO1001 - 26 Aug 20-s1-full.mp4#t=2160>)", en)   # 英文总结链接到同一个视频
+        self.assertIn("What does RACC mean? → flipping", en); self.assertNotIn("复习卡", en); self.assertNotIn("老师", en)
+        self.assertEqual(json.load(open(os.path.join(d, "Exam-Bank.en.json"), encoding="utf-8"))["summaries"][0]["week"], 6)
+        r = run(["python3", os.path.join(TOOLS, "exam_bank.py"), "1002", "--quiet"], env={"COURSE_ROOT": self.tmp})   # 重跑不把两份考点库当总结
+        self.assertIn("from 1 summaries", open(os.path.join(d, "Exam-Bank.en.md"), encoding="utf-8").read())
+        r = run(["python3", os.path.join(TOOLS, "exam_bank.py"), "1002", "--out", os.path.join(self.tmp, "x.md")], env={"COURSE_ROOT": self.tmp})
+        self.assertNotEqual(r.returncode, 0); self.assertIn("--out 只能指定一份", r.stdout + r.stderr)
     def test_missing_dir(self):
         self.assertNotEqual(run(["python3", os.path.join(TOOLS, "exam_bank.py"), "9999"], env={"COURSE_ROOT": self.tmp}).returncode, 0)
 

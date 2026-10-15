@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """校验一份录播总结:时间戳是否越界/落在无语音段、截图引用是否存在、必需小节是否齐全、标题日期是否与视频文件名一致。
 用法: check_summary.py <总结.md> [--srt <字幕.srt>] [--frames-dir <画面目录>]
+中文总结 <视频名>.md、英文总结 <视频名>.en.md,按文件名决定检查哪套小节标题(见 headings.py)
 退出码: 0 全部通过;1 有问题(逐条打印,含行号)
 """
 import argparse, os, re, sys, subprocess
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import headings as H
 ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # 默认为 工具/ 的上级目录
 MONTHS = {m: i for i, m in enumerate(["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], 1)}
-REQUIRED = ["## 一句话概括", "## 核心要点", "## 章节时间线", "## 金句 / 考点信号", "## 复习卡"]
-WARN_HEADINGS = ["## ⚠️ 课程通知"]   # 缺了只提醒不判失败(旧总结没有)
 TIME_RE = re.compile(r"(\d+):(\d+):(\d+)[,.]\d+\s*-->\s*(\d+):(\d+):(\d+)")
 
 def srt_spans(path):
@@ -20,18 +21,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("summary"); ap.add_argument("--srt"); ap.add_argument("--frames-dir")
     a = ap.parse_args()
-    name = os.path.splitext(os.path.basename(a.summary))[0]
+    name = H.video_name(a.summary); lang = H.lang_of(a.summary)
     srt = a.srt or os.path.join(ROOT, "课程视频", name + ".srt")
     frames_dir = a.frames_dir or os.path.join(ROOT, "画面", name)
     text = open(a.summary, encoding="utf-8").read()
     lines = text.splitlines()
     problems = []; warnings = []
 
-    # 1. 小节
-    for h in REQUIRED:
-        if not any(l.startswith(h) for l in lines): problems.append((0, f"缺少小节 {h}"))
-    for h in WARN_HEADINGS:
-        if not any(l.startswith(h) for l in lines): warnings.append(f"没有 {h} 节(新总结应保留此节,没有通知就写\"无\")")
+    # 1. 小节(按文件名的语言;另一种语言的标题更多时说明文件名或标题写错了)
+    for k in H.REQUIRED:
+        if not any(H.section_of(l, lang) == k for l in lines): problems.append((0, f"缺少小节 {H.heading(k, lang)}"))
+    if not any(H.section_of(l, lang) == "notice" for l in lines):
+        warnings.append(f"没有 {H.heading('notice', lang)} 节(新总结应保留此节,没有通知就写\"无\" / \"None\")")
+    cnt = H.headings_lang(lines); other = "zh" if lang == "en" else "en"
+    if cnt[other] > cnt[lang]: problems.append((0, f"文件名表示{'英文' if lang == 'en' else '中文'}总结,但小节标题大多是{'中文' if other == 'zh' else '英文'};英文总结应命名为 <视频名>.en.md"))
 
     # 2. 标题日期 vs 文件名日期
     fm = re.search(r"- (\d{1,2}) ([A-Z][a-z]{2}) ", name)   # 文件名里的 "20-s1" 不是年份
@@ -82,7 +85,7 @@ def main():
             if not os.path.isdir(os.path.join(ROOT, "画面", m[1])): problems.append((ln, f"引用的画面文件夹不存在: 画面/{m[1]}"))
 
     # 5. 复习卡数量(policy.md 规定 8–15 张,不足 30 分钟的录播不设下限;一行一张,问答卡含 ::,填空卡含 ==…==)
-    sec = [i for i, l in enumerate(lines) if l.startswith("## 复习卡")]
+    sec = [i for i, l in enumerate(lines) if H.section_of(l, lang) == "card"]
     if sec:
         body = []
         for l in lines[sec[0] + 1:]:
