@@ -2,7 +2,8 @@
 """把转写(srt/compact)与幻灯片 OCR(ocr.json)按时间对齐,生成两份文件:
   课程视频/<视频名>.bundle.json  —— 机器可读:{video, duration, segments[], frames[]}
   课程视频/<视频名>.grounded.md  —— 给 Claude 读的"讲义稿":逐分钟转写,中间插入该分钟出现的幻灯片 OCR 文本
-用法: build_bundle.py <视频路径或 课程视频/<视频名>.srt> [--frames-dir <画面目录>]
+用法: build_bundle.py <视频路径或 课程视频/<视频名>.srt> [--frames-dir <画面目录>] [--duration 秒] [--video <视频路径>]
+  --duration / --video: 视频不和 srt 放在一起时(网页工作台)用来确定时长;都不给时在 srt 同目录找同名视频,再不行用最后一段转写的结束时间
 """
 import argparse, json, os, re, subprocess, sys, datetime
 ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # 默认为 工具/ 的上级目录
@@ -28,7 +29,7 @@ def parse_srt(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("input"); ap.add_argument("--frames-dir")
+    ap.add_argument("input"); ap.add_argument("--frames-dir"); ap.add_argument("--duration", type=float); ap.add_argument("--video")
     a = ap.parse_args()
     base = os.path.splitext(a.input)[0]
     name = os.path.basename(base)
@@ -40,17 +41,20 @@ def main():
     cam_path = os.path.join(frames_dir, "cam", "cam.json")   # 双路录像时实物投影(手写)帧,由 cam_frames.py 产出
     cam = []
     if os.path.exists(cam_path):
-        try: cam = json.load(open(cam_path))
+        try: cam = json.load(open(cam_path, encoding="utf-8"))
         except (json.JSONDecodeError, TypeError): print(f"⚠️ {cam_path} 损坏,本次不含手写帧;请重跑 cam_frames.py", file=sys.stderr)
     if os.path.exists(ocr_path):
-        try: frames = [f for f in json.load(open(ocr_path)) if not f.get("error")]
+        try: frames = [f for f in json.load(open(ocr_path, encoding="utf-8")) if not f.get("error")]
         except (json.JSONDecodeError, TypeError): print(f"⚠️ {ocr_path} 损坏,本次不含幻灯片;请重跑 ocr_frames.py --force", file=sys.stderr)
     segs = parse_srt(srt)
     if not segs: sys.exit(f"错误: {srt} 里没有任何带时间的转写段")
-    duration = None
-    for ext in (".mp4", ".mkv", ".m4a", ".mp3", ".webm", ".mov"):
-        if os.path.exists(base + ext):
-            r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", base + ext], capture_output=True, text=True)
+    duration = a.duration
+    cands = [a.video] if a.video else [base + ext for ext in (".mp4", ".mkv", ".m4a", ".mp3", ".webm", ".mov")]
+    for v in cands:
+        if duration is not None: break
+        if v and os.path.exists(v):
+            try: r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", v], capture_output=True, text=True)
+            except FileNotFoundError: break          # 没装 ffprobe(如 Windows 字幕模式):退回用转写结束时间
             try: duration = float(r.stdout.strip()); break
             except ValueError: pass
     if duration is None: duration = max(s["end"] for s in segs)
@@ -60,7 +64,8 @@ def main():
               "segments": segs,
               "cam_frames": [{"file": "cam/" + c["file"], "t": c["t"], "kind": c["kind"]} for c in cam],
               "frames": [{"file": f["file"], "t": f["t"], "page": f.get("page"), "pages": f.get("pages"), "deck": f.get("deck"), "also_at": f.get("also_at", []), "chars": f.get("chars", 0), "text": f.get("text", "")} for f in frames]}
-    json.dump(bundle, open(base + ".bundle.json", "w"), ensure_ascii=False, indent=0)
+    with open(base + ".bundle.json.tmp", "w", encoding="utf-8") as fh: json.dump(bundle, fh, ensure_ascii=False, indent=0)
+    os.replace(base + ".bundle.json.tmp", base + ".bundle.json")
 
     # grounded.md
     minutes = {}
@@ -115,7 +120,8 @@ def main():
                 out.append(f"    {line}")
             if len(lines) > cap: out.append(f"    …(还有 {len(lines) - cap} 行,见 bundle.json 或图片)")
         out.append("")
-    open(base + ".grounded.md", "w", encoding="utf-8").write("\n".join(out))
+    with open(base + ".grounded.md.tmp", "w", encoding="utf-8") as fh: fh.write("\n".join(out))
+    os.replace(base + ".grounded.md.tmp", base + ".grounded.md")
     print(f"== bundle: {len(segs)} 段转写, {len(frames)} 帧" + (f", {len(cam)} 手写帧" if cam else "") + f", 时长 {hms(duration or 0)}")
     print(f"   {base}.bundle.json\n   {base}.grounded.md")
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """单元测试:不需要 whisper/tesseract/网络,只用合成数据。运行: python3 -m unittest discover -s tests -v
-覆盖:course_meta 文件名与周次、compact 幻觉过滤与时间标签、check_summary 三类错误、add_links 幂等与路径别名、
-     build_bundle 空档检测(含 VAD 填充段)、dedup_frames 严格去重、ocr_frames 页码模式、match_slides 词匹配、exam_bank 跨周考点库、cam_frames 手写帧挑选与 check_summary 的 cam/ 路径、
+覆盖:course_meta 文件名与周次、compact 幻觉过滤与时间标签及新旧实现 golden、check_summary 三类错误、add_links 幂等与路径别名、
+     build_bundle 空档检测(含 VAD 填充段)与 --duration/--video、原子写入、ocr_frames 规则 A(现场写代码帧不被合并)、dedup_frames 严格去重、ocr_frames 页码模式、match_slides 词匹配、exam_bank 跨周考点库、cam_frames 手写帧挑选与 check_summary 的 cam/ 路径、
      双端一致性(AGENTS.md 由 SKILL 生成、CLAUDE.md 导入目标存在、技能 frontmatter)。"""
 import json, os, re, shutil, subprocess, sys, tempfile, unittest, importlib.util
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -65,6 +65,15 @@ class Compact(unittest.TestCase):
             r = run(["bash", os.path.join(TOOLS, "compact.sh"), srt]); self.assertEqual(r.returncode, 0, r.stderr)
             out = open(os.path.join(d, "a.compact.txt")).read().splitlines()
             self.assertEqual(out, ["[00:00] We'll start again at graph theory. Repeated content.", "[01:41] late line"])
+    def test_golden_matches_old_implementation(self):
+        # 期望输出由改写前(compact.sh 内嵌 Python,提交 3273de7)生成;compact.sh 包装与直接调 compact.py 都必须逐字节一致
+        fx = os.path.join(ROOT, "tests", "fixtures")
+        want = open(os.path.join(fx, "compact_edge.expected.txt"), "rb").read()
+        with tempfile.TemporaryDirectory() as d:
+            for cmd in (["bash", os.path.join(TOOLS, "compact.sh")], [sys.executable, os.path.join(TOOLS, "compact.py")]):
+                out = os.path.join(d, "o.txt")
+                r = run(cmd + [os.path.join(fx, "compact_edge.srt"), out]); self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(open(out, "rb").read(), want, cmd[-1])
 
 class CheckSummary(unittest.TestCase):
     def _write(self, d, body):
@@ -119,6 +128,46 @@ class BuildBundle(unittest.TestCase):
         d = tempfile.mkdtemp(); srt = os.path.join(d, "bad.srt"); open(srt, "w").write("no times\n")
         self.assertNotEqual(run(["python3", os.path.join(TOOLS, "build_bundle.py"), srt]).returncode, 0)
 
+    SRT = "1\n00:00:00,000 --> 00:00:05,000\nhello\n\n2\n00:01:00,000 --> 00:01:10,000\nlast line\n"
+    def _course(self):
+        d = tempfile.mkdtemp(); os.makedirs(os.path.join(d, "课程视频"))
+        srt = os.path.join(d, "课程视频", "X - clip.srt"); open(srt, "w").write(self.SRT)
+        return d, srt
+    def _run(self, d, srt, *extra, path=None):
+        env = {"COURSE_ROOT": d}
+        if path is not None: env["PATH"] = path
+        r = run([sys.executable, os.path.join(TOOLS, "build_bundle.py"), srt, "--frames-dir", os.path.join(d, "none"), *extra], env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.load(open(os.path.join(d, "课程视频", "X - clip.bundle.json")))
+    def _fake_ffprobe(self, seconds):
+        b = tempfile.mkdtemp(); f = os.path.join(b, "ffprobe")
+        open(f, "w").write(f"#!/bin/sh\necho {seconds}\n"); os.chmod(f, 0o755); return b
+    def test_duration_flag_wins(self):
+        d, srt = self._course()
+        self.assertEqual(self._run(d, srt, "--duration", "999")["duration"], 999)
+    def test_video_flag_uses_ffprobe_on_that_file(self):
+        d, srt = self._course(); v = os.path.join(d, "elsewhere.mp4"); open(v, "w").close()
+        self.assertAlmostEqual(self._run(d, srt, "--video", v, path=self._fake_ffprobe(123.5))["duration"], 123.5)
+    def test_missing_video_or_ffprobe_falls_back_to_last_segment(self):
+        d, srt = self._course()
+        self.assertEqual(self._run(d, srt, "--video", os.path.join(d, "nope.mp4"))["duration"], 70)
+        open(os.path.join(d, "课程视频", "X - clip.mp4"), "w").close()      # 同名视频在,但 PATH 里没有 ffprobe
+        self.assertEqual(self._run(d, srt, path=tempfile.mkdtemp())["duration"], 70)
+    def test_atomic_write_keeps_old_outputs_on_failure(self):
+        from unittest import mock
+        d, srt = self._course(); base = os.path.join(d, "课程视频", "X - clip")
+        for ext in (".bundle.json", ".grounded.md"): open(base + ext, "w").write("OLD")
+        old_env = os.environ.get("COURSE_ROOT"); os.environ["COURSE_ROOT"] = d
+        try:
+            bb = load("build_bundle")
+            with mock.patch.object(sys, "argv", ["build_bundle.py", srt, "--frames-dir", os.path.join(d, "none"), "--duration", "70"]), \
+                 mock.patch.object(bb.os, "replace", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError): bb.main()
+        finally:
+            if old_env is None: os.environ.pop("COURSE_ROOT", None)
+            else: os.environ["COURSE_ROOT"] = old_env
+        for ext in (".bundle.json", ".grounded.md"): self.assertEqual(open(base + ext).read(), "OLD", ext)
+
 class Frames(unittest.TestCase):
     def test_dedup_only_identical(self):
         from PIL import Image, ImageDraw
@@ -171,6 +220,33 @@ class Frames(unittest.TestCase):
             self.assertEqual((e["page"], e["pages"], e["deck"]), (1, 2, "deck")); self.assertEqual(e["toolbar"], {"page": 7, "pages": 9})   # 工具栏值不被 PDF 页码污染
             run(["python3", ms, d, "--clear"]); e = json.load(open(os.path.join(d, "ocr.json")))[0]
             self.assertEqual((e["page"], e["pages"]), (7, 9)); self.assertNotIn("deck", e)
+
+class OcrMergeRuleA(unittest.TestCase):
+    """工具栏页码相同但画面是盖在课件上的编辑器(现场写代码)时,不能被合并掉(DEMO1001 26 Aug 5712s 的真实案例)"""
+    def test_editor_over_same_page_is_kept(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as d:
+            slide = "Graph-based testing criteria node coverage edge coverage edge-pair coverage loop coverage heuristic"
+            editor = "if len myarray and or not isAlpha isEven for int i less than ninety nine"
+            rows = [("t00100s.jpg", 100, slide), ("t00112s.jpg", 112, editor), ("t00124s.jpg", 124, editor + " for int i")]
+            for f, t, _ in rows: Image.new("RGB", (8, 8)).save(os.path.join(d, f))
+            json.dump([{"file": f, "t": t, "page": 16, "pages": 20, "text": x, "chars": len(x)} for f, t, x in rows],
+                      open(os.path.join(d, "ocr.json"), "w"))
+            r = run([sys.executable, os.path.join(TOOLS, "ocr_frames.py"), d]); self.assertEqual(r.returncode, 0, r.stderr)
+            kept = [e["file"] for e in json.load(open(os.path.join(d, "ocr.json")))]
+            self.assertIn("t00100s.jpg", kept)                  # 课件页保留
+            self.assertIn("t00124s.jpg", kept)                  # 编辑器的最新状态保留(112s 被 124s 包含,按规则 B 删掉)
+            self.assertNotIn("t00112s.jpg", kept)
+    def test_same_page_same_content_still_merged(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as d:
+            a = "Graph-based testing criteria node coverage edge coverage"
+            rows = [("t00100s.jpg", 100, a), ("t00112s.jpg", 112, a + " edge-pair coverage loop")]
+            for f, t, _ in rows: Image.new("RGB", (8, 8)).save(os.path.join(d, f))
+            json.dump([{"file": f, "t": t, "page": 16, "pages": 20, "text": x, "chars": len(x)} for f, t, x in rows],
+                      open(os.path.join(d, "ocr.json"), "w"))
+            r = run([sys.executable, os.path.join(TOOLS, "ocr_frames.py"), d]); self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual([e["file"] for e in json.load(open(os.path.join(d, "ocr.json")))], ["t00112s.jpg"])
 
 class ExamBank(unittest.TestCase):
     SUMMARY = """# DEMO1001 第六周(2026-08-26)— 逻辑测试
