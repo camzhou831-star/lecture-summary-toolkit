@@ -27,4 +27,4 @@ for dir in "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.agents/skills"; 
     ln -sfn "$root/skills/video-summary" "$dir/video-summary"; echo "   $dir/video-summary -> $root/skills/video-summary"
   fi
 done
-echo "== 完成。把视频放进 $root/课程视频/,然后在 Claude Code 或 Codex 里说:总结 <文件名>.mp4"
+echo "== 完成。检查环境:bash $root/lsk doctor --video;然后在 Claude Code / Codex / Gemini CLI 里打开 $root,说:总结 <字幕或视频文件路径>"
