@@ -62,15 +62,15 @@ class Compact(unittest.TestCase):
                                  "3\n00:00:07,000 --> 00:00:09,000\nWe'll start again at graph theory.\n\n"
                                  "4\n00:00:10,000 --> 00:00:12,000\nRepeated content.\n\n5\n00:00:13,000 --> 00:00:15,000\nrepeated content\n\n"
                                  "6\n01:41:00,000 --> 01:41:02,000\nlate line\n")
-            r = run(["bash", os.path.join(TOOLS, "compact.sh"), srt]); self.assertEqual(r.returncode, 0, r.stderr)
+            r = run([sys.executable, os.path.join(TOOLS, "compact.py"), srt]); self.assertEqual(r.returncode, 0, r.stderr)
             out = open(os.path.join(d, "a.compact.txt")).read().splitlines()
             self.assertEqual(out, ["[00:00] We'll start again at graph theory. Repeated content.", "[01:41] late line"])
     def test_golden_matches_old_implementation(self):
-        # 期望输出由改写前(compact.sh 内嵌 Python,提交 3273de7)生成;compact.sh 包装与直接调 compact.py 都必须逐字节一致
+        # 期望输出由改写前的实现(当时内嵌在 compact.sh 里,提交 3273de7)生成;compact.py 必须与之逐字节一致
         fx = os.path.join(ROOT, "tests", "fixtures")
         want = open(os.path.join(fx, "compact_edge.expected.txt"), "rb").read()
         with tempfile.TemporaryDirectory() as d:
-            for cmd in (["bash", os.path.join(TOOLS, "compact.sh")], [sys.executable, os.path.join(TOOLS, "compact.py")]):
+            for cmd in ([sys.executable, os.path.join(TOOLS, "compact.py")],):
                 out = os.path.join(d, "o.txt")
                 r = run(cmd + [os.path.join(fx, "compact_edge.srt"), out]); self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertEqual(open(out, "rb").read(), want, cmd[-1])
@@ -226,6 +226,29 @@ class Lsk(unittest.TestCase):
                 r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor", "--video"], env=env)
                 self.assertEqual(r.returncode, 2)
                 self.assertIn("brew install whisper-cpp" if sys.platform == "darwin" else "github.com/ggml-org/whisper.cpp", r.stdout)
+
+class Release(unittest.TestCase):
+    def test_language_packages(self):
+        import zipfile
+        if run(["git", "-C", ROOT, "rev-parse", "HEAD"]).returncode != 0: self.skipTest("不是 git 仓库")
+        with tempfile.TemporaryDirectory() as d:
+            r = run([sys.executable, os.path.join(TOOLS, "build_release.py"), "v0.0.0-test", "--out", d])
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(sorted(os.listdir(d)), sorted(f"lecture-summary-{k}-v0.0.0-test-{lg}.zip" for k in ("toolkit", "web-prompts") for lg in ("zh", "en")))
+            for lg, other_readme, other_prompt in (("zh", "README.md", "web-prompt.en.md"), ("en", "README.zh.md", "web-prompt.zh.md")):
+                names = zipfile.ZipFile(os.path.join(d, f"lecture-summary-toolkit-v0.0.0-test-{lg}.zip")).namelist()
+                root = "lecture-summary-toolkit/"
+                self.assertNotIn(root + other_readme, names); self.assertFalse(any(n.endswith(other_prompt) for n in names))
+                self.assertFalse(any(n.startswith(root + "tests/") or n.startswith(root + ".github/") or n.endswith("release-notes.md") for n in names))
+                self.assertFalse(any(n.startswith(root + "docs/" + ("en" if lg == "zh" else "zh") + "/") for n in names))
+                dirs = [n for n in names if n.endswith("/")]
+                self.assertTrue(all(any(m != n and m.startswith(n) for m in names) for n in dirs), "包里不应有空目录")
+                z = zipfile.ZipFile(os.path.join(d, f"lecture-summary-toolkit-v0.0.0-test-{lg}.zip"))
+                self.assertEqual(json.loads(z.read(root + "course.json"))["output_lang"], lg)              # 预设总结语言
+                readme = z.read(root + ("README.zh.md" if lg == "zh" else "README.md")).decode()
+                self.assertNotIn("](README.md)" if lg == "zh" else "](README.zh.md)", readme)            # 不留指向被拿掉文件的链接
+                web = zipfile.ZipFile(os.path.join(d, f"lecture-summary-web-prompts-v0.0.0-test-{lg}.zip")).namelist()
+                self.assertEqual(sorted(os.path.basename(n) for n in web), sorted([f"web-prompt.{lg}.md", "VERSION", "使用说明.txt" if lg == "zh" else "README.txt"]))
 
 class ReviewPack(unittest.TestCase):
     def test_pack_contents_and_errors(self):

@@ -86,7 +86,7 @@ tail -n 2 "$base.transcribe.log" 2>/dev/null | sed 's/^/   /' || true
 tail -n 1 "$base.frames.log" 2>/dev/null | sed 's/^/   /' || true
 tail -n 1 "$base.cam.log" 2>/dev/null | sed 's/^/   /' || true
 
-echo "== [3/5] compact"; bash "$TOOLS/compact.sh" "$base.srt"
+echo "== [3/5] compact"; python3 "$TOOLS/compact.py" "$base.srt"
 if [ "$is_video" = 1 ] && [ -d "$frames" ]; then
   echo "== [4/5] 帧去重 + OCR"
   if [ "$fresh_frames" = 1 ]; then python3 "$TOOLS/dedup_frames.py" "$frames"; else echo "   去重: 本次未重新抓帧,跳过(去重不幂等,重跑会删掉已引用的帧)"; fi

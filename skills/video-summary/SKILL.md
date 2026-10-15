@@ -16,7 +16,7 @@ description: 自动总结长视频内容。输入本地视频/音频文件路径
 - `工具/course_meta.py <文件名>` — 从文件名解析单元代码/日期/周次,给出总结路径;规则与年份、学期起始日在 `<COURSE_ROOT>/course.json`(可选,格式见脚本头注释)
 - `工具/match_slides.py <画面目录> <课件pdf或目录>` — 用课件 PDF 文字给帧定页码(prepare.sh 在 course.json 配了 `slides_dir` 时自动跑)
 - `工具/cam_frames.py <视频> <输出目录>` — 双路录像时从实物投影仪那一路挑手写页关键帧(prepare.sh 检测到 `<名>-2.mp4` 时自动跑,产物在 `画面/<名>/cam/`)
-- `工具/transcribe.sh` / `compact.sh` / `extract_frames.sh` / `dedup_frames.py` / `ocr_frames.py` / `build_bundle.py` — prepare.sh 内部调用的各步骤,可单独跑
+- `工具/transcribe.sh` / `compact.py` / `extract_frames.sh` / `dedup_frames.py` / `ocr_frames.py` / `build_bundle.py` — prepare.sh 内部调用的各步骤,可单独跑
 - `工具/check_summary.py` — 总结写完后的校验(时间戳越界/落在静音段、截图引用、必需小节、复习卡 8–15 张、标题日期)
 - `工具/review_pack.py <总结>` — 审核前准备审核包(见 `review.md`)
 - `工具/headings.py` — 中英两套小节标题与文件名约定(检查脚本共用;英文标题必须与 `policy.md` 表格一字不差)

@@ -10,11 +10,11 @@
 
 | 你手上有…… | 下载 | 要安装东西吗? |
 |---|---|---|
-| 字幕(`.srt` / `.vtt`)+ **网页版 AI**(浏览器里的 ChatGPT、Claude、Gemini、Grok) | `lecture-summary-web-prompts-….zip` | 不用 |
-| 字幕 + **能操作本机文件的 AI 应用**(Codex、Claude Code / Claude 桌面版、Gemini CLI) | `lecture-summary-toolkit-….zip` | 一般不用:需要 Python 3,第一次运行时 macOS 可能提示安装"命令行开发者工具",点"安装"即可 |
-| 只有**录播视频**,没有字幕 | `lecture-summary-toolkit-….zip` | 要:视频模式,见下文(实验性) |
+| 字幕(`.srt` / `.vtt`)+ **网页版 AI**(浏览器里的 ChatGPT、Claude、Gemini、Grok) | `lecture-summary-web-prompts-…-zh.zip` | 不用 |
+| 字幕 + **能操作本机文件的 AI 应用**(Codex、Claude Code / Claude 桌面版、Gemini CLI) | `lecture-summary-toolkit-…-zh.zip` | 一般不用:需要 Python 3,第一次运行时 macOS 可能提示安装"命令行开发者工具",点"安装"即可 |
+| 只有**录播视频**,没有字幕 | `lecture-summary-toolkit-…-zh.zip` | 要:视频模式,见下文(实验性) |
 
-Releases 页面最下面的 "Source code (zip / tar.gz)" 是给开发者的,不用下。
+文件名带 `-zh` 的是中文版:说明是中文,默认写**中文总结**(带 `-en` 的是英文版)。Releases 页面最下面的 "Source code (zip / tar.gz)" 是给开发者的,不用下。
 
 **在访达(Finder)里双击 zip 解压。**(macOS 命令行自带的 `unzip` 会把里面的中文文件夹名弄成乱码。)
 
@@ -26,7 +26,7 @@ Releases 页面最下面的 "Source code (zip / tar.gz)" 是给开发者的,不�
 
 ## 第一句话对 AI 说什么
 
-**网页版**(不用安装):新开一个对话,上传字幕(和课件),打开 zip 里的 `web-prompt.zh.md`,全选复制,粘贴发送。详细步骤见 zip 里的 `README.txt`。
+**网页版**(不用安装):新开一个对话,上传字幕(和课件),打开 zip 里的 `web-prompt.zh.md`,全选复制,粘贴发送。详细步骤见 zip 里的 `使用说明.txt`。
 
 **完整版**:用你的 AI 应用打开解压出来的 `lecture-summary-toolkit` 文件夹(Codex:把文件夹作为项目打开;Claude Code / Gemini CLI:在这个文件夹里启动;Claude 桌面版:允许它访问这个文件夹),然后说:
 
@@ -75,4 +75,4 @@ Releases 页面最下面的 "Source code (zip / tar.gz)" 是给开发者的,不�
 
 ## 开发者
 
-流水线、脚本、测试,以及 `skills/video-summary/` 里规则的组织方式,见 [docs/developer.zh.md](docs/developer.zh.md)。MIT 许可。
+流水线、脚本、测试,以及 `skills/video-summary/` 里规则的组织方式,见 [docs/zh/开发者说明.md](docs/zh/开发者说明.md)。MIT 许可。

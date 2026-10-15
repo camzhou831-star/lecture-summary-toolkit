@@ -10,11 +10,11 @@ Go to the [Releases page](../../releases) and pick **one**:
 
 | You have… | Download | Install anything? |
 |---|---|---|
-| Subtitles (`.srt` / `.vtt`) and a **web AI** (ChatGPT, Claude, Gemini, Grok in the browser) | `lecture-summary-web-prompts-….zip` | No |
-| Subtitles, and an **AI app that can work with files on your Mac** (Codex, Claude Code / Claude desktop, Gemini CLI) | `lecture-summary-toolkit-….zip` | Usually no: it needs Python 3, and the first time macOS may offer to install "Command Line Tools" (click Install) |
-| Only the **video recording** (no subtitles) | `lecture-summary-toolkit-….zip` | Yes: video mode, see below (experimental) |
+| Subtitles (`.srt` / `.vtt`) and a **web AI** (ChatGPT, Claude, Gemini, Grok in the browser) | `lecture-summary-web-prompts-…-en.zip` | No |
+| Subtitles, and an **AI app that can work with files on your Mac** (Codex, Claude Code / Claude desktop, Gemini CLI) | `lecture-summary-toolkit-…-en.zip` | Usually no: it needs Python 3, and the first time macOS may offer to install "Command Line Tools" (click Install) |
+| Only the **video recording** (no subtitles) | `lecture-summary-toolkit-…-en.zip` | Yes: video mode, see below (experimental) |
 
-Ignore "Source code (zip / tar.gz)" at the bottom of the Releases page; that is for developers.
+The `-en` packages contain English instructions and write **English summaries** by default. (The `-zh` packages are the Chinese versions.) Ignore "Source code (zip / tar.gz)" at the bottom of the Releases page; that is for developers.
 
 **Unzip by double-clicking the file in Finder.** (The command-line `unzip` on macOS garbles the Chinese folder names inside.)
 
@@ -77,4 +77,4 @@ If you only have the recording, the toolkit can transcribe it on your Mac with w
 
 ## For developers
 
-See [docs/developer.zh.md](docs/developer.zh.md) (Chinese) for the pipeline, scripts, tests and how the rules in `skills/video-summary/` are organised. MIT licence.
+See [docs/zh/开发者说明.md](docs/zh/开发者说明.md) (Chinese only for now) for the pipeline, scripts, tests and how the rules in `skills/video-summary/` are organised. MIT licence.

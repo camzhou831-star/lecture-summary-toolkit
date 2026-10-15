@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 whisper 输出的 .srt 压缩成按分钟合并的 .compact.txt,并过滤常见幻觉行(compact.sh 的实现;纯 Python,Windows 也能跑)
+"""把 whisper 输出的 .srt 压缩成按分钟合并的 .compact.txt,并过滤常见幻觉行(纯 Python,Windows 也能跑)
 用法: compact.py <字幕.srt> [输出文件,默认同名 .compact.txt]
 输出格式: 每行 "[HH:MM] 该分钟内的全部文本"(方括号里是 时:分,例如 [01:41] = 1 小时 41 分),空白分钟省略
 """

@@ -30,6 +30,10 @@ MSG = {
 }
 
 def lang_default():
+    """提示语言:course.json 的 output_lang(中文包 / 英文包里已预设)优先,其次系统语言"""
+    try: lg = course_meta.load_config(ROOT).get("output_lang")
+    except SystemExit: lg = None
+    if lg in MSG: return lg
     return "zh" if (os.environ.get("LANG", "") + os.environ.get("LC_ALL", "")).lower().startswith("zh") else "en"
 
 def have(cmd): return shutil.which(cmd) is not None
