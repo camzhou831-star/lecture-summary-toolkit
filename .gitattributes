@@ -1,0 +1,4 @@
+# 打 Release zip 时不带的文件(git archive 遵守 export-ignore)
+tests/ export-ignore
+.github/ export-ignore
+.gitattributes export-ignore

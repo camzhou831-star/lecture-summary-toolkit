@@ -12,8 +12,8 @@ jobs:
       - run: pip install pillow
       - name: 单元测试(不需要 whisper/tesseract)
         run: python3 -W ignore::ResourceWarning -m unittest discover -s tests -v
-      - name: 双端一致性:AGENTS.md 必须由 SKILL.md 生成
-        run: bash 工具/sync_agents.sh && git diff --exit-code AGENTS.md CLAUDE.md
+      - name: 生成物一致性:AGENTS/CLAUDE/GEMINI.md 由 SKILL.md 生成,网页提示词由 policy.md 生成
+        run: bash 工具/sync_agents.sh && git diff --exit-code AGENTS.md CLAUDE.md GEMINI.md prompts/
       - name: 仓库里不能混入课程内容(媒体/转写/OCR/课件/总结只允许 examples/ 下的合成示例)
         run: bash tests/check_no_course_content.sh
   pipeline-demo:
