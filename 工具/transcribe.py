@@ -5,7 +5,7 @@
 环境变量: WHISPER_MODEL(默认 large-v3-turbo) WHISPER_MODEL_DIR  NO_VAD=1 关闭静音检测  GLOSSARY=<文件> 指定术语表  NO_GPU=1 强制 CPU
           OUT_BASE=<不带扩展名的输出路径> 让 srt/txt 用别的名字(双路录像时从另一路取声音,但产物仍归主文件名)
           WHISPER_THREADS 线程数(默认 min(8, CPU 核数))
-失败回退: GPU 崩溃(如 Metal 在 agent 沙箱内、Windows CUDA 版遇到驱动太旧或不支持的显卡)→ 自动用 --no-gpu 重试 → 再失败用基础参数重试
+失败回退: GPU 崩溃(如 Metal 在 agent 沙箱内、Windows GPU 版遇到驱动太旧或不支持的显卡)→ 自动用 --no-gpu 重试 → 再失败用基础参数重试 → Windows 上最后换 CPU 版 whisper.cpp
 Windows: whisper.cpp 按系统代码页读文件名,所以音频和输出都放在临时目录,模型路径换成 8.3 短路径
 """
 import os, re, shutil, subprocess, sys, tempfile
@@ -58,8 +58,8 @@ def main():
         dur = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", wav], capture_output=True, text=True).stdout.strip()
         log(f"== 音频时长: {dur.split('.')[0]} 秒,开始转写 (模型: {model_name}, VAD: {'开' if vad_args else '关'}, 线程: {threads}, GPU: {'关' if no_gpu else '开'})...")
 
-        def run_whisper(*extra):
-            cmd = [whisper, "-m", deps.short_path(model), "-f", wav, "-l", lang, "-t", threads, *extra,
+        def run_whisper(*extra, exe=whisper):
+            cmd = [exe, "-m", deps.short_path(model), "-f", wav, "-l", lang, "-t", threads, *extra,
                    "--output-srt", "--output-txt", "--output-file", out, "--no-prints"]
             return subprocess.run(cmd).returncode
         gpu = ["--no-gpu"] if no_gpu else []
@@ -70,6 +70,10 @@ def main():
         if rc != 0:
             log(f"== whisper-cli 仍失败(退出码 {rc}),改用不带 VAD/术语表的基础参数最后重试一次...")
             rc = run_whisper(*gpu)
+            cpu_cli = os.path.join(deps.whisper_win_dir("cpu"), "whisper-cli.exe")
+            if rc != 0 and deps.WINDOWS and os.path.isfile(cpu_cli) and os.path.normcase(cpu_cli) != os.path.normcase(whisper):
+                log(f"== GPU 版 whisper.cpp 启动不了(退出码 {rc},常见原因:显卡驱动太旧或没装),改用 CPU 版...")
+                rc = run_whisper("--no-gpu", *vad_args, *prompt_args, "--suppress-nst", exe=cpu_cli)
             if rc != 0: sys.exit(f"错误: whisper-cli 三次都失败(最后退出码 {rc}),放弃")
         if not (os.path.isfile(out + ".srt") and os.path.getsize(out + ".srt") > 0): sys.exit(f"错误: 转写没有产出 {base}.srt")
         for ext in (".srt", ".txt"):

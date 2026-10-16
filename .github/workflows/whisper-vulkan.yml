@@ -49,8 +49,10 @@ jobs:
           curl.exe -sSL -o mesa.7z "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z"
           7z x mesa.7z -omesa | Out-Null
           $icd = (Get-ChildItem mesa\x64 -Filter "lvp_icd.x86_64.json").FullName
-          Add-Content $env:GITHUB_ENV "VK_DRIVER_FILES=$icd"
-          Add-Content $env:GITHUB_ENV "VK_ICD_FILENAMES=$icd"
+          # 以管理员身份运行时 Vulkan 加载器忽略 VK_DRIVER_FILES 等环境变量,要像真驱动一样登记到注册表
+          New-Item -Path "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers" -Force | Out-Null
+          New-ItemProperty -Path "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers" -Name $icd -Value 0 -PropertyType DWord -Force | Out-Null
+          Get-Content $icd
       - name: 用 Vulkan 转写 jfk.wav(tiny.en)
         shell: pwsh
         run: |

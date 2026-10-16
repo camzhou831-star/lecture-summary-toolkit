@@ -4,7 +4,10 @@
                                                              并预设总结默认语言(根目录 course.json 的 output_lang)
   dist/lecture-summary-web-prompts-<版本>-zh.zip / -en.zip   网页版:只有对应语言的提示词和使用说明,不用安装
 tests/、.github/ 不进包(见 .gitattributes);docs/release-notes.md 只给 Release 页面用,也不进包。
-用法: build_release.py <版本,如 v0.1.0> [--out dist] [--ref HEAD]
+  dist/lecture-summary-toolkit-<版本>-zh-windows.zip / -en-windows.zip
+                                                             Windows 版:完整版 + vendor/ 里的 GPU 版 whisper.cpp(Vulkan,
+                                                             .github/workflows/whisper-vulkan.yml 编译);只有给了 --whisper-vulkan 才打
+用法: build_release.py <版本,如 v0.1.0> [--out dist] [--ref HEAD] [--whisper-vulkan whisper-vulkan-<tag>-x64.zip]
 """
 import argparse, io, json, os, re, subprocess, sys, zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -46,8 +49,8 @@ def dropped(rel, lang):
     return any(rel == d or (d.endswith("/") and rel.startswith(d)) for d in DROP[lang])
 
 
-def full_package(data, commit, version, lang, out):
-    path = os.path.join(out, f"lecture-summary-toolkit-{version}-{lang}.zip")
+def full_package(data, commit, version, lang, out, vendor=None):
+    path = os.path.join(out, f"lecture-summary-toolkit-{version}-{lang}{'-windows' if vendor else ''}.zip")
     bad = []
     with zipfile.ZipFile(io.BytesIO(data)) as src, zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as dst:
         kept = [i.filename for i in src.infolist() if not i.is_dir() and not dropped(i.filename.split("/", 1)[1], lang)]
@@ -63,6 +66,7 @@ def full_package(data, commit, version, lang, out):
                 body = text.encode("utf-8")
             dst.writestr(info, body)
         dst.writestr("lecture-summary-toolkit/VERSION", f"{version} ({commit}) {lang}\n")
+        if vendor: dst.write(vendor, "lecture-summary-toolkit/vendor/" + os.path.basename(vendor), zipfile.ZIP_STORED)   # 本身是 zip,不再压缩
         dst.writestr("lecture-summary-toolkit/course.json", json.dumps({"output_lang": lang}, indent=2) + "\n")   # 总结默认语言,用户可改
     if bad:
         os.remove(path); sys.exit("❌ 发现疑似课程内容,已中止打包: " + ", ".join(bad[:10]))
@@ -80,7 +84,13 @@ def web_package(ref, commit, version, lang, out):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("version"); ap.add_argument("--out", default=os.path.join(ROOT, "dist")); ap.add_argument("--ref", default="HEAD")
+    ap.add_argument("--whisper-vulkan", help="Windows GPU 版 whisper.cpp 的 zip(CI 编译产物);给了才打 -windows 包")
     a = ap.parse_args()
+    if a.whisper_vulkan:                               # 文件名和哈希必须与 deps.py 登记的一致,lsk setup 才认
+        sys.path.insert(0, os.path.join(ROOT, "工具")); import deps
+        want = deps.WHISPER_WIN["vulkan"]
+        if os.path.basename(a.whisper_vulkan) != os.path.basename(want["file"]): sys.exit(f"错误: 文件名应为 {os.path.basename(want['file'])}")
+        if deps.sha256_of(a.whisper_vulkan) != want["sha256"]: sys.exit("错误: whisper-vulkan zip 的 SHA-256 与 工具/deps.py 登记的不符")
     if not re.fullmatch(r"v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?", a.version): sys.exit(f"错误: 版本号应形如 v0.1.0,收到 {a.version}")
     if git("status", "--porcelain", "--untracked-files=no").strip():
         print("⚠️ 工作区有未提交的改动;Release 只包含已提交的内容", file=sys.stderr)
@@ -88,7 +98,9 @@ def main():
     data = git("archive", "--format=zip", "--prefix=lecture-summary-toolkit/", a.ref)
     commit = git("rev-parse", "--short", a.ref).decode().strip()
     for lang in LANGS:
-        for p in (full_package(data, commit, a.version, lang, a.out), web_package(a.ref, commit, a.version, lang, a.out)):
+        pkgs = [full_package(data, commit, a.version, lang, a.out), web_package(a.ref, commit, a.version, lang, a.out)]
+        if a.whisper_vulkan: pkgs.append(full_package(data, commit, a.version, lang, a.out, a.whisper_vulkan))
+        for p in pkgs:
             try: shown = os.path.relpath(p, ROOT)
             except ValueError: shown = p   # Windows:输出目录和仓库不在同一个盘
             print(f"== {shown}  {os.path.getsize(p) / 1024:.0f} KB")
