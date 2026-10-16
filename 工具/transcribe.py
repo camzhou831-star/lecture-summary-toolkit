@@ -40,6 +40,8 @@ def main():
     model_name = env.get("WHISPER_MODEL", "large-v3-turbo")
     whisper = deps.find("whisper-cli")
     if not whisper: sys.exit(f"错误: 找不到 whisper-cli;安装: {deps.how('whisper-cli')}")
+    mode_cli, mode_args, mode_env = deps.mode_args() if deps.WINDOWS else (None, [], {})   # lsk setup 自检选出的 GPU 设置
+    if mode_cli and os.path.isfile(mode_cli): whisper = mode_cli
     ffmpeg, ffprobe = deps.exe("ffmpeg"), deps.exe("ffprobe")
     model = deps.ensure_model(model_name)
 
@@ -67,13 +69,16 @@ def main():
         r = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", inp, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav])
         if r.returncode != 0: sys.exit("错误: ffmpeg 提取音频失败")
         dur = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", wav], capture_output=True, text=True).stdout.strip()
-        log(f"== 音频时长: {dur.split('.')[0]} 秒,开始转写 (模型: {model_name}, VAD: {'开' if vad_args else '关'}, 线程: {threads}, GPU: {'关' if no_gpu else '开'})...")
+        gpu_on = not no_gpu and "--no-gpu" not in mode_args
+        log(f"== 音频时长: {dur.split('.')[0]} 秒,开始转写 (模型: {model_name}, VAD: {'开' if vad_args else '关'}, 线程: {threads}, GPU: {'开' if gpu_on else '关'}"
+            + (f", 设置: {deps.load_settings().get('mode')}" if deps.WINDOWS and deps.load_settings() else "") + ")...")
 
         def run_whisper(*extra, exe=whisper):
-            cmd = [exe, "-m", deps.short_path(model), "-f", wav, "-l", lang, "-t", threads, *extra,
+            cmd = [exe, "-m", deps.short_path(model), "-f", wav, "-l", lang, "-t", threads, *mode_args, *extra,
                    "--output-srt", "--output-txt", "--output-file", out, "--no-prints"]
-            return subprocess.run(cmd).returncode
+            return subprocess.run(cmd, env=dict(os.environ, **mode_env)).returncode
         gpu = ["--no-gpu"] if no_gpu else []
+        if "--no-gpu" in mode_args: gpu, mode_args[:] = ["--no-gpu"], [x for x in mode_args if x != "--no-gpu"]
         rc = run_whisper(*gpu, *vad_args, *prompt_args, "--suppress-nst")
         if rc != 0 and not gpu:
             log(f"== whisper-cli 失败(退出码 {rc}),改用 CPU(--no-gpu)重试...")   # 沙箱里 Metal 会段错误、CUDA 驱动或显卡不支持;慢很多,但能跑

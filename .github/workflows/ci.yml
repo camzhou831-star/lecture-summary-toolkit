@@ -67,3 +67,48 @@ jobs:
       - name: 合成示例完整流水线(视频模式)
         env: { WHISPER_MODEL: tiny.en }
         run: python tests/run_pipeline_demo.py
+  pipeline-demo-windows-gpu:
+    # Windows GPU 路径:安装包 vendor/ 里的 Vulkan 版 whisper.cpp(私有 Release whisper-vulkan-b5130 固定存档)
+    # CI 没有显卡,用 Mesa lavapipe(软件 Vulkan,慢);它在默认设置下会出乱码,正好检验 lsk setup 的 GPU 自检能自动换设置
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env: { WHISPER_MODEL: tiny.en, GGML_VK_VISIBLE_DEVICES: "0", MESA_VERSION: 26.2.4 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: python -m pip install pillow pypdf
+      - name: ffmpeg 与 tesseract
+        run: choco install ffmpeg tesseract -y --no-progress
+      - name: vendor/ 放入 Vulkan 版 whisper.cpp
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: gh release download whisper-vulkan-b5130 -p whisper-vulkan-b5130-x64.zip -D vendor
+      - name: 软件 Vulkan 驱动(Mesa lavapipe,登记到注册表)
+        shell: pwsh
+        run: |
+          curl.exe -sSL -o mesa.7z "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z"
+          7z x mesa.7z -o"$env:RUNNER_TEMP\mesa" | Out-Null
+          $icd = (Get-ChildItem "$env:RUNNER_TEMP\mesa\x64" -Filter "lvp_icd.x86_64.json").FullName
+          New-Item -Path "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers" -Force | Out-Null
+          New-ItemProperty -Path "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers" -Name $icd -Value 0 -PropertyType DWord -Force | Out-Null
+      - name: 缓存 whisper tiny.en 模型
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/whisper-models
+          key: whisper-tiny-en-win-v1
+      - name: install.cmd(装 Vulkan 版 + GPU 自检)
+        shell: pwsh
+        run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          $o = cmd /c "install.cmd --lang en" 2>&1 | Out-String
+          $o
+          if ($o -notmatch "GPU transcription: llvmpipe") { throw "GPU 自检没有选出可用的 Vulkan 设置" }
+          Get-Content "$HOME\.local\share\lecture-summary-toolkit\whisper-settings.json"
+      - name: 合成示例完整流水线(视频模式,Vulkan)
+        shell: pwsh
+        run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          $o = python tests/run_pipeline_demo.py 2>&1 | Out-String
+          $o
+          if ($LASTEXITCODE -ne 0) { throw "示例流水线失败" }
+          if ($o -notmatch "GPU: 开") { throw "转写没有走 GPU" }

@@ -5,7 +5,7 @@
 - ensure_model(name) / ensure_vad():下载 whisper 模型与 Silero VAD 模型(先写 .tmp,完成后再改名)
 - short_path(p):Windows 上把含中文的路径换成 8.3 短路径,whisper.cpp 按系统代码页读文件名,中文路径会打不开
 """
-import hashlib, os, shutil, subprocess, sys, tempfile, urllib.request, zipfile
+import hashlib, json, os, re, shutil, subprocess, sys, tempfile, urllib.request, zipfile
 WINDOWS = sys.platform == "win32"
 DATA = os.environ.get("LSK_DATA_DIR") or os.path.join(os.path.expanduser("~"), ".local", "share", "lecture-summary-toolkit")
 MODEL_DIR = os.environ.get("WHISPER_MODEL_DIR") or os.path.join(os.path.expanduser("~"), ".local", "share", "whisper-models")
@@ -14,14 +14,14 @@ VAD_NAME = "ggml-silero-v5.1.2.bin"
 VAD_URL = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/" + VAD_NAME
 # Windows 版 whisper.cpp,都是 b5130(= v1.9.4,2026-09-11);换版本时同时改文件名 / URL 和哈希
 #   vulkan:GPU 版,NVIDIA / AMD / Intel(含核显)通用;官方不发 Windows Vulkan 包,由本仓库 .github/workflows/whisper-vulkan.yml 编译,
-#           随 Windows 安装包放在 vendor/ 下(不联网);lsk setup 默认装它
+#           固定存档在本仓库 Release whisper-vulkan-b5130(私有),随 Windows 安装包放在 vendor/ 下(不联网);lsk setup 默认装它
 #   cuda  :NVIDIA 专用的官方包(约 675 MB,自带 CUDA 运行库),lsk setup --cuda 才装;RTX 50 系是否支持未验证
 #   cpu   :官方纯 CPU 包(约 8 MB);GPU 版装好后也会装它,GPU 版启动不了(比如没有显卡驱动)时转写自动换它
 WHISPER_TAG = "b5130"
 WHISPER_REL = f"https://github.com/ggml-org/whisper.cpp/releases/download/{WHISPER_TAG}/"
 VENDOR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "vendor")
-WHISPER_WIN = {"vulkan": {"file": os.path.join(VENDOR, f"whisper-vulkan-{WHISPER_TAG}-x64.zip"), "size": "VULKAN_SIZE",
-                          "sha256": "VULKAN_SHA256"},
+WHISPER_WIN = {"vulkan": {"file": os.path.join(VENDOR, f"whisper-vulkan-{WHISPER_TAG}-x64.zip"), "size": "18 MB",
+                          "sha256": "4e18f91f73c8d0a922352586138c5e7c3d357cc9b20c2b42385c2317c382963e"},
                "cuda": {"url": WHISPER_REL + "whisper-cublas-12.4.0-bin-x64.zip", "size": "675 MB",
                         "sha256": "af520ddd034d985b55dfeea3e465ed93653ba2aee1a55e865033edc548c272a7"},
                "cpu": {"url": WHISPER_REL + "whisper-bin-x64.zip", "size": "8 MB",
@@ -37,18 +37,87 @@ def gpus():
     skip = ("basic display", "basic render", "remote", "hyper-v", "virtual", "parsec", "citrix")
     return [l.strip() for l in r.stdout.splitlines() if l.strip() and not any(k in l.lower() for k in skip)]
 
-def probe_whisper(cli, model):
-    """用 1 秒静音试跑 whisper-cli,看它实际用的是哪个后端。返回 (能跑, 后端名或 None, 显卡名或 None, 出错时的最后几行)"""
-    import re, wave
+def probe_whisper(cli, model, wav=None, args=(), env=None):
+    """试跑 whisper-cli(默认 1 秒静音),看它实际用的是哪个后端。返回 (能跑, 后端名或 None, 显卡名或 None, 转写文字, 出错时的最后几行)"""
+    import wave
     with tempfile.TemporaryDirectory() as d:
-        wav = os.path.join(d, "silence.wav")
-        with wave.open(wav, "wb") as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(b"\0" * 32000)
-        try: r = subprocess.run([cli, "-m", short_path(model), "-f", wav, "-l", "en"], capture_output=True, text=True, errors="replace", timeout=600)
-        except (OSError, subprocess.SubprocessError) as e: return False, None, None, str(e)
+        if not wav:
+            wav = os.path.join(d, "silence.wav")
+            with wave.open(wav, "wb") as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(b"\0" * 32000)
+        try: r = subprocess.run([cli, "-m", short_path(model), "-f", short_path(wav), "-l", "en", *args], capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", timeout=900, env=dict(os.environ, **(env or {})))
+        except (OSError, subprocess.SubprocessError) as e: return False, None, None, "", str(e)
     log = r.stdout + r.stderr
     backend = re.search(r"whisper_backend_init_gpu: using (\S+) backend", log)
     name = re.search(r"ggml_vulkan: \d+ = (.+?) \(|Device \d+: ([^,]+),|GPU name:\s+\S+ \((.+?)\)", log)
-    return r.returncode == 0, backend and backend[1], name and next(g for g in name.groups() if g), "\n".join(log.strip().splitlines()[-5:])
+    text = " ".join(m[1] for m in re.finditer(r"^\[[\d:.]+ --> [\d:.]+\]\s*(.*)$", r.stdout, re.M))
+    return r.returncode == 0, backend and backend[1], name and next(g for g in name.groups() if g), text, "\n".join(log.strip().splitlines()[-5:])
+
+# ---------- Windows GPU 自检 ----------
+# 各家显卡驱动对 Vulkan 的支持参差不齐(CI 上 Mesa lavapipe 在 flash attention + 矩阵加速(coopmat)组合下输出乱码),
+# 所以 lsk setup 用示例视频的一段已知旁白逐个试下面的设置,取第一个转写正确的,存进 SETTINGS,transcribe.py 照着用
+SETTINGS = os.path.join(DATA, "whisper-settings.json")
+GPU_MODES = {"gpu":                  ([], {}),
+             "gpu-no-coopmat":       ([], {"GGML_VK_DISABLE_COOPMAT": "1"}),
+             "gpu-no-fa":            (["-nfa"], {}),
+             "gpu-no-coopmat-no-fa": (["-nfa"], {"GGML_VK_DISABLE_COOPMAT": "1"})}
+DEMO = os.path.join(os.path.dirname(VENDOR), "examples", "demo", "课程视频", "DEMO1001 - 01 Jan 26-s1-demo")
+CHECK_SECONDS = 45
+
+def load_settings():
+    try:
+        with open(SETTINGS, encoding="utf-8") as f: return json.load(f)
+    except (OSError, ValueError): return {}
+
+def mode_args(settings=None):
+    """transcribe.py 用:按自检结果给出 (whisper-cli 路径或 None, 额外参数, 额外环境变量)。None 表示照常(用 find 找到的)"""
+    st = load_settings() if settings is None else settings
+    m = st.get("mode")
+    if m == "cpu": return os.path.join(whisper_win_dir("cpu"), "whisper-cli.exe"), ["--no-gpu"], {}
+    args, env = GPU_MODES.get(m, ([], {}))
+    return None, list(args), dict(env)
+
+def _words(t): return re.findall(r"[a-z']+", t.lower())
+
+def check_text(text, reference):
+    """自检通过:参考旁白的词有 80% 以上出现在转写里,并且转写带句末标点(防整篇无标点)"""
+    ref, got = _words(reference), set(_words(text))
+    return bool(ref) and sum(w in got for w in ref) / len(ref) >= 0.8 and bool(re.search(r"[.?!]", text))
+
+def calibrate(model, log=print):
+    """Windows:逐个试 GPU 设置,都不行就用 CPU 版;结果写进 SETTINGS 并返回。没有示例视频或 ffmpeg 时返回 None"""
+    srt, mp4 = DEMO + ".srt", DEMO + ".mp4"
+    if not (os.path.isfile(srt) and os.path.isfile(mp4) and find("ffmpeg")): return None
+    ref = []
+    for m in re.finditer(r"(\d+):(\d+):(\d+),\d+ --> (\d+):(\d+):(\d+),\d+\s*\n(.+?)(?:\n\n|\Z)", open(srt, encoding="utf-8").read(), re.S):
+        if int(m[4]) * 3600 + int(m[5]) * 60 + int(m[6]) <= CHECK_SECONDS: ref.append(m[7])
+    reference = " ".join(ref)
+    prompt = ["--prompt", "Welcome back, everyone. Today we will continue with the lecture."]   # 与 transcribe 的英文开头句一致
+    with tempfile.TemporaryDirectory() as d:
+        wav = os.path.join(d, "check.wav")
+        if subprocess.run([exe("ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", mp4, "-t", str(CHECK_SECONDS),
+                           "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav]).returncode != 0: return None
+        tried = []
+        gpu_cli = next((os.path.join(whisper_win_dir(k), "whisper-cli.exe") for k in GPU_KINDS
+                        if os.path.isfile(os.path.join(whisper_win_dir(k), "whisper-cli.exe"))), None)
+        if gpu_cli:
+            for mode, (args, env) in GPU_MODES.items():
+                ok, backend, gpu, text, tail = probe_whisper(gpu_cli, model, wav, [*args, *prompt], env)
+                good = ok and backend and check_text(text, reference)
+                log(f"   {'✅' if good else '❌'} {mode}: " + (f"{gpu or backend}  " if backend else "没用上显卡 / no GPU  " if ok else "启动失败 / failed  ")
+                    + (text[:70] if ok else tail.splitlines()[-1] if tail else ""))
+                tried.append(mode)
+                if good: return _save({"mode": mode, "build": whisper_win_kind(gpu_cli), "gpu": gpu or backend, "tried": tried})
+                if ok and not backend: break                  # 根本没找到显卡,其它 GPU 设置也不会有用
+        cpu_cli = os.path.join(whisper_win_dir("cpu"), "whisper-cli.exe")
+        ok, _, _, text, tail = probe_whisper(cpu_cli, model, wav, ["--no-gpu", *prompt])
+        log(f"   {'✅' if ok and check_text(text, reference) else '❌'} cpu: " + (text[:70] if ok else tail))
+        return _save({"mode": "cpu", "build": "cpu", "gpu": None, "tried": tried + ["cpu"]})
+
+def _save(st):
+    os.makedirs(DATA, exist_ok=True)
+    with open(SETTINGS, "w", encoding="utf-8") as f: json.dump(st, f, ensure_ascii=False, indent=2)
+    return st
 
 def whisper_win_kind(path):
     """whisper-cli.exe 属于哪个包(cpu / cuda);不是我们装的返回 None"""

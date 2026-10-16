@@ -258,6 +258,17 @@ class VideoPipeline(unittest.TestCase):
         g = "Welcome to DEMO9999. Key terms: C, gcc."; self.assertEqual(m.lead_prompt(g, "en"), g)   # 已有标点:不动
         sh = open(os.path.join(TOOLS, "transcribe.sh"), encoding="utf-8").read()                    # 两份实现用同一句
         for lead in m.LEAD.values(): self.assertIn(lead, sh)
+    def test_gpu_self_test_rules(self):                                                          # lsk setup 的 GPU 自检:判定与设置
+        deps = load("deps")
+        ref = "Welcome to this short demo lecture. Everything you hear and see here was generated for testing"
+        self.assertTrue(deps.check_text("Welcome to this short demo lecture. Everything you hear and see here was generated for testing.", ref))
+        self.assertFalse(deps.check_text("The American", ref))                                       # lavapipe 默认设置的乱码
+        self.assertFalse(deps.check_text(ref.lower().replace(".", ""), ref))                           # 词都对但整篇无标点
+        self.assertEqual(deps.mode_args({}), (None, [], {}))
+        self.assertEqual(deps.mode_args({"mode": "gpu-no-coopmat-no-fa"}), (None, ["-nfa"], {"GGML_VK_DISABLE_COOPMAT": "1"}))
+        cli, args, env = deps.mode_args({"mode": "cpu"})
+        self.assertEqual((os.path.dirname(cli), args), (deps.whisper_win_dir("cpu"), ["--no-gpu"]))
+        self.assertTrue(os.path.isfile(deps.DEMO + ".srt") and os.path.isfile(deps.DEMO + ".mp4"))   # 自检用的示例视频在包里
     def test_whisper_win_kind(self):                                                             # doctor 靠它标 (CUDA GPU) / (CPU)
         deps = load("deps")
         for kind in ("cpu", "cuda"): self.assertEqual(deps.whisper_win_kind(os.path.join(deps.whisper_win_dir(kind), "whisper-cli.exe")), kind)

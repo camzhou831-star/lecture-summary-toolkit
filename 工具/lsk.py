@@ -213,13 +213,20 @@ def setup(a):
     print(f"== 模型 / model: ggml-{name}.bin → {MODEL_DIR}")
     model = deps.ensure_model(name); deps.ensure_vad()
     cli = deps.find("whisper-cli")
-    if cli:                                            # 试跑 1 秒静音,看实际用上的是 GPU 还是 CPU
+    if WINDOWS and cli:                                # 用示例视频的已知旁白逐个试 GPU 设置,记下第一个转写正确的(各家显卡驱动表现不一)
+        print(f"== GPU 自检 / GPU self-test(示例视频前 {deps.CHECK_SECONDS} 秒)...")
+        st = deps.calibrate(model, log=print)
+        if st is None: print("   ⚠️ 没有示例视频或 ffmpeg,跳过自检 / self-test skipped")
+        elif st["mode"] == "cpu":
+            print("   ⚠️ 没能用上显卡,转写走 CPU(慢,2 小时录播约一小时)/ GPU not usable, transcription runs on the CPU (slow)"
+                  f"。检测到的显卡 / GPUs: {', '.join(deps.gpus()) or '无 / none'};先更新显卡驱动再重跑 lsk setup / update the GPU driver and run lsk setup again")
+        else: print(f"   ✅ GPU 转写 / GPU transcription: {st['gpu']}(设置 / mode: {st['mode']})")
+    elif cli:                                          # 试跑 1 秒静音,看实际用上的是 GPU 还是 CPU
         print("== 试跑 whisper.cpp / test run ...")
-        ok, backend, gpu, tail = deps.probe_whisper(cli, model)
-        if not ok: print(f"   ⚠️ whisper.cpp{win_build()} 启动失败 / failed to start" + (",转写时会自动改用 CPU 版 / will fall back to the CPU build" if WINDOWS else "") + f":\n{tail}")
+        ok, backend, gpu, _, tail = deps.probe_whisper(cli, model)
+        if not ok: print(f"   ⚠️ whisper.cpp 启动失败 / failed to start:\n{tail}")
         elif backend: print(f"   ✅ GPU 转写 / GPU transcription: {gpu or backend}({backend})")
-        else: print("   ⚠️ 没用上显卡,转写走 CPU(慢)/ no usable GPU, transcription runs on the CPU (slow)" +
-                    (f"。检测到的显卡 / GPUs: {', '.join(deps.gpus()) or '无 / none'};先更新显卡驱动再重跑 lsk setup / update the GPU driver and run lsk setup again" if WINDOWS else ""))
+        else: print("   ⚠️ 没用上显卡,转写走 CPU(慢)/ no usable GPU, transcription runs on the CPU (slow)")
     a.video = True
     return doctor(a)
 
