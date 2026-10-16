@@ -37,7 +37,7 @@
 | V1 | `lsk.cmd doctor --video` | 列出 ffmpeg、whisper-cli、tesseract、Pillow、whisper 模型,缺的每项后面有安装命令(winget / pip / `lsk setup`) |
 | V2 | 按提示装:`winget install Gyan.FFmpeg`、`winget install UB-Mannheim.TesseractOCR`、`py -m pip install pillow pypdf` | 都装成功;记下哪一步要管理员权限、有没有弹窗 |
 | V3 | **不关当前窗口**,再跑 `lsk.cmd doctor --video` | ffmpeg 和 tesseract 变成 ✅(刚装完 PATH 还没刷新,工具应该自己找得到) |
-| V4 | `lsk.cmd setup` | 从安装包解压 GPU 版 whisper.cpp(Vulkan),再下 CPU 兜底版(约 8 MB)和模型(约 1.6 GB,有进度百分比);最后试跑一次,打印 `✅ GPU 转写: <你的显卡名>`。如果打印的是"没用上显卡"或"启动失败",把整段输出发我,并写上显卡型号和驱动版本 |
+| V4 | `lsk.cmd setup` | 从安装包解压 GPU 版 whisper.cpp(Vulkan),再下 CPU 兜底版(约 8 MB)和模型(约 1.6 GB,有进度百分比);最后做 GPU 自检(用示例视频前 45 秒):逐行打印 `✅/❌ gpu…: <显卡名> <转写开头>`,结尾 `✅ GPU 转写: <你的显卡名>(设置: gpu…)`。**把自检这几行原样发我**(哪一档通过对我们很有用);如果结尾是"没能用上显卡",再附上显卡型号和驱动版本 |
 | V5 | 把示例视频复制到 `课程视频\`,`lsk.cmd run "DEMO1001 - 01 Jan 26-s1-demo.mp4"` | 依次出现 [1/5]…[5/5],最后 `全部完成`;`画面\DEMO1001 - 01 Jan 26-s1-demo\` 里有几张 `t000xxs.jpg` |
 | V6 | 记事本打开 `课程视频\DEMO1001 - 01 Jan 26-s1-demo.grounded.md` | 有英文转写(含 "prime path"),有 `📄 t=… p2/6 …` 这样的幻灯片行 |
 | V7 | 真实录播:放进 `课程视频\`,`lsk.cmd run "<文件名>.mp4"` | 能跑完;记下总用时、显卡型号、CPU 型号、内存;转写那行显示 `GPU: 开` 后有没有出现"改用 CPU(--no-gpu)重试"(出现说明 GPU 版没跑起来,把它上面的报错原文发我);任务管理器里"GPU"的 CUDA 占用有没有上去 |
