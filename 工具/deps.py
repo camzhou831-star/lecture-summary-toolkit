@@ -25,7 +25,7 @@ def _win_dirs(cmd):
             "ffprobe": [links, e(r"%ProgramData%\chocolatey\bin")],
             "tesseract": [e(r"%ProgramFiles%\Tesseract-OCR"), e(r"%LOCALAPPDATA%\Programs\Tesseract-OCR"), e(r"%ProgramFiles(x86)%\Tesseract-OCR")],
             "whisper-cli": [WHISPER_WIN_DIR],
-            "pdftotext": [links]}.get(cmd, [])
+            "pdftotext": [links], "yt-dlp": [links]}.get(cmd, [])
 
 def find(cmd):
     p = shutil.which(cmd)

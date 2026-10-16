@@ -9,7 +9,7 @@
 **和用户说话用用户的语言**:用户用英文提问就用英文回复(进度、提问、考试信息确认、报错解释都一样),不要因为本说明是中文就改用中文。脚本输出是中文的,转述给英文用户时翻译成英文。总结本身用什么语言见 `policy.md`「输出语言」。
 
 **先定位两个目录**(每次触发本技能第一步):
-- `TOOLKIT` = 本工具仓库根目录。在仓库里打开 agent 时就是当前目录;若本技能是 `install.sh` 链接安装的,用 `readlink -f` 找到本 SKILL.md 的真实路径,其上两级就是 `TOOLKIT`(`$(dirname "$(dirname "$(dirname "$(readlink -f <SKILL.md>)")")")`)。
+- `TOOLKIT` = 本工具仓库根目录。在仓库里打开 agent 时就是当前目录;若本技能是 `install.sh` 链接安装的,用 `readlink -f` 找到本 SKILL.md 的真实路径,其上两级就是 `TOOLKIT`(`$(dirname "$(dirname "$(dirname "$(readlink -f <SKILL.md>)")")")`);Windows 上 `install.cmd` 建的是目录联接(junction),改用 `python -c "import os,sys;print(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[1])))))" <SKILL.md>`。
 - `COURSE_ROOT` = 课程数据目录(视频、画面、总结所在)。默认 = `TOOLKIT`;用户另有目录时 `export COURSE_ROOT=<目录>`。
 下文 `工具/xxx` 一律指 `$TOOLKIT/工具/xxx`,其余相对路径相对于 `COURSE_ROOT`;`prepare.sh` 会自动创建 `课程视频/ 画面/ 总结/`。
 - `lsk`(`工具/lsk.py`)— **总入口**:`doctor` 查环境、`run` 预处理(字幕或视频)、`finish` 收尾、`review` 审核包
@@ -32,10 +32,10 @@
 
 1. **确定输入**
    - 本地文件:用户给文件名或路径即可,`prepare.sh` 会在 `课程视频/`、`~/Downloads/` 里找,并把视频移入 `课程视频/`。
-   - 在线链接(YouTube/B站等):先检查 `yt-dlp`(未装则 `brew install yt-dlp`),`yt-dlp -f "ba" -x --audio-format m4a -o "<COURSE_ROOT>/课程视频/%(title)s.%(ext)s" <URL>` 只下音频;先试 `--write-auto-subs --skip-download` 拿现成字幕。
+   - 在线链接(YouTube/B站等):先检查 `yt-dlp`(未装则 macOS `brew install yt-dlp`,Windows `winget install -e --id yt-dlp.yt-dlp`,装完新开终端或用 `%LOCALAPPDATA%\Microsoft\WinGet\Links\yt-dlp.exe`),`yt-dlp -f "ba" -x --audio-format m4a -o "<COURSE_ROOT>/课程视频/%(title)s.%(ext)s" <URL>` 只下音频;先试 `--write-auto-subs --skip-download` 拿现成字幕。
 
 2. **预处理**:统一用总入口 `lsk`(第一次先跑 `bash "$TOOLKIT/lsk" doctor` 看环境,缺什么按它给的命令装,装之前先征得用户同意)。
-   - **Windows**:下面所有 `bash "$TOOLKIT/lsk" …` 换成 `"$TOOLKIT\lsk.cmd" …`(或 `python "$TOOLKIT\工具\lsk.py" …`),参数相同。视频模式在 Windows 上走 `工具/prepare.py`(Python 版,产物与 prepare.sh 相同):先按 `lsk doctor --video` 的提示用 winget 装 ffmpeg 和 tesseract,再跑 `lsk setup` 下载 whisper.cpp 与模型;Windows 只用 CPU 转写,比 Mac 慢得多,提前告诉用户。
+   - **Windows**:下面所有 `bash "$TOOLKIT/lsk" …` 换成 `"$TOOLKIT\lsk.cmd" …`(或 `python "$TOOLKIT\工具\lsk.py" …`),参数相同。视频模式在 Windows 上走 `工具/prepare.py`(Python 版,产物与 prepare.sh 相同):先按 `lsk doctor --video` 的提示用 winget 装 ffmpeg 和 tesseract,再跑 `lsk setup` 下载 whisper.cpp 与模型(或让用户双击 `install.cmd` 一次做完,并把技能装进 Claude Code / Codex);Windows 只用 CPU 转写,比 Mac 慢得多,提前告诉用户。
    - **字幕模式**(推荐给新手;只有 `.srt` / `.vtt` 字幕,不需要 ffmpeg、whisper):
      ```bash
      bash "$TOOLKIT/lsk" run "<字幕文件>" [--unit DEMO1001 --date 2026-08-26] [--slides <本讲课件.pdf>] [--lang zh|en]

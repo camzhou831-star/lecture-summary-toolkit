@@ -3,7 +3,7 @@
 覆盖:course_meta 文件名与周次、compact 幻觉过滤与时间标签及新旧实现 golden、check_summary 三类错误与复习卡数量、review_pack 审核包、add_links 幂等与路径别名、
      build_bundle 空档检测(含 VAD 填充段)与 --duration/--video、原子写入、ocr_frames 规则 A(现场写代码帧不被合并)、dedup_frames 严格去重、ocr_frames 页码模式、match_slides 词匹配、exam_bank 跨周考点库、cam_frames 手写帧挑选与 check_summary 的 cam/ 路径、
      双端一致性(AGENTS.md 由 SKILL 生成、CLAUDE.md 导入目标存在、技能 frontmatter)。"""
-import json, os, re, shutil, subprocess, sys, tempfile, unittest, importlib.util
+import contextlib, io, json, os, re, shutil, subprocess, sys, tempfile, unittest, importlib.util
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.join(ROOT, "工具")
 sys.path.insert(0, TOOLS)
@@ -236,6 +236,18 @@ class Lsk(unittest.TestCase):
                 self.assertEqual(r.returncode, 2)
                 self.assertIn("brew install whisper-cpp" if sys.platform == "darwin" else "github.com/ggml-org/whisper.cpp", r.stdout)
 
+    def test_link_skill(self):                                                                    # install.cmd / lsk install 的技能链接(Windows 是 junction)
+        m = load("lsk")
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "toolkit", "video-summary"); os.makedirs(src); open(os.path.join(src, "SKILL.md"), "w").write("x")
+            parent = os.path.join(d, "home", ".claude", "skills")
+            for _ in range(2):                                                                    # 第二次:已是链接,替换
+                with contextlib.redirect_stdout(io.StringIO()): self.assertTrue(m.link_skill(src, parent))
+                self.assertEqual(os.path.realpath(os.path.join(parent, "video-summary")), os.path.realpath(src))
+            self.assertTrue(os.path.isfile(src + os.sep + "SKILL.md"))                           # 删链接不动目标
+            other = os.path.join(d, "home", ".codex", "skills", "video-summary"); os.makedirs(other)   # 真目录:跳过
+            with contextlib.redirect_stdout(io.StringIO()): self.assertFalse(m.link_skill(src, os.path.dirname(other)))
+
 class VideoPipeline(unittest.TestCase):
     """视频模式的纯 Python 部分(不需要 ffmpeg / whisper;真流水线见 tests/run_pipeline_demo.py)"""
     def test_frame_filter_modes(self):
@@ -282,7 +294,7 @@ class Release(unittest.TestCase):
                 with zipfile.ZipFile(os.path.join(d, f"lecture-summary-toolkit-v0.0.0-test-{lg}.zip")) as z:
                     self.assertEqual(json.loads(z.read(root + "course.json"))["output_lang"], lg)              # 预设总结语言
                     readme = z.read(root + ("README.zh.md" if lg == "zh" else "README.md")).decode()
-                    cmd = z.read(root + "lsk.cmd"); self.assertEqual(cmd.count(b"\r\n"), cmd.count(b"\n"))  # Windows 批处理必须全是 CRLF
+                    for f in ("lsk.cmd", "install.cmd"): cmd = z.read(root + f); self.assertEqual(cmd.count(b"\r\n"), cmd.count(b"\n"), f)  # Windows 批处理必须全是 CRLF
                 self.assertNotIn("](README.md)" if lg == "zh" else "](README.zh.md)", readme)            # 不留指向被拿掉文件的链接
                 with zipfile.ZipFile(os.path.join(d, f"lecture-summary-web-prompts-v0.0.0-test-{lg}.zip")) as z: web = z.namelist()
                 self.assertEqual(sorted(os.path.basename(n) for n in web), sorted([f"web-prompt.{lg}.md", "VERSION", "使用说明.txt" if lg == "zh" else "README.txt"]))

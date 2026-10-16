@@ -3,6 +3,8 @@
 用法:
   lsk doctor [--video] [--lang zh|en]          检查环境:字幕模式要什么、视频模式还缺什么,缺的给出安装命令
   lsk setup                                    视频模式准备:下载 whisper 模型与 VAD 模型;Windows 上还会下载 whisper.cpp(官方预编译版)
+  lsk install [--skills-only]                  Windows 一键安装(install.cmd 调它):winget 装 ffmpeg / tesseract、pip 装 pillow / pypdf、
+                                               lsk setup,再把技能链接到 Claude Code 与 Codex 的技能目录;macOS / Linux 转去跑 install.sh
   lsk run <字幕.srt|.vtt|视频> [--unit DEMO1001 --date 2026-08-26] [--slides <课件.pdf|目录>] [--lang en] [--force]
                                                字幕模式:放好字幕 → compact → 讲义稿(+ 课件逐页文字);视频模式调用 prepare.sh(Windows 上是 prepare.py;实验性)
   lsk finish <总结.md>                          写完总结后:加回跳链接 → 检查 → 重生成考点库
@@ -198,6 +200,45 @@ def setup(a):
     a.video = True
     return doctor(a)
 
+# ---------- install ----------
+SKILL_DIRS = [os.path.join(os.path.expanduser("~"), *d) for d in ((".claude", "skills"), (".codex", "skills"), (".agents", "skills"))]   # 与 install.sh 相同
+
+def link_skill(src, parent):
+    """在 parent 下建 video-summary → src 的目录联接(junction:不需要管理员或开发者模式);已是链接就换成新的,是真目录就跳过"""
+    dst = os.path.join(parent, "video-summary")
+    os.makedirs(parent, exist_ok=True)
+    if os.path.lexists(dst):
+        try: os.readlink(dst)                          # Python 3.8+ 在 Windows 上也能读 junction;普通目录会抛 OSError
+        except (OSError, ValueError):
+            print(f"   {dst} 已存在且不是链接,跳过(如需替换请先手动删除) / exists and is not a link, skipped"); return False
+        try: os.remove(dst)                            # 删的是链接本身,不动目标(符号链接用 remove,Windows 的 junction 要 rmdir)
+        except OSError: os.rmdir(dst)
+    if WINDOWS: ok = subprocess.run(["cmd", "/c", "mklink", "/J", dst, src], capture_output=True, **UTF8).returncode == 0
+    else: os.symlink(src, dst); ok = True
+    print(f"   {dst} -> {src}" if ok else f"   ❌ 链接失败 / link failed: {dst}")
+    return ok
+
+def install(a):
+    if not WINDOWS: return subprocess.call(["bash", os.path.join(os.path.dirname(TOOLS), "install.sh")])
+    if not a.skills_only:
+        print("== 1/3 依赖 / dependencies (ffmpeg, tesseract, pillow, pypdf)")
+        winget = shutil.which("winget")
+        for cmd, pkg in (("ffmpeg", "Gyan.FFmpeg"), ("tesseract", "UB-Mannheim.TesseractOCR")):
+            if have(cmd): print(f"   {cmd} 已安装 / installed"); continue
+            if not winget: print(f"   ❌ 没有 winget,请手动安装 {cmd} / no winget, install {cmd} manually: https://learn.microsoft.com/windows/package-manager/winget/"); continue
+            subprocess.call([winget, "install", "-e", "--id", pkg, "--accept-package-agreements", "--accept-source-agreements"])
+        mods = [p for m, p in (("PIL", "pillow"), ("pypdf", "pypdf")) if not has_module(m)]
+        if mods: subprocess.call([sys.executable, "-m", "pip", "install", "--user", *mods])
+        print("== 2/3 whisper.cpp + 模型 / models")
+        rc = setup(a)
+        if rc: print("== 上面还有 ❌ 项;winget 刚装的程序如果没找到,关掉这个窗口、新开一个再运行 install.cmd / if something is still missing, open a new window and run install.cmd again")
+    print("== 3/3 技能 / skill → Claude Code, Codex")
+    src = os.path.join(os.path.dirname(TOOLS), "skills", "video-summary")
+    ok = all([link_skill(src, d) for d in SKILL_DIRS])
+    print("== 完成。之后在 Claude Code / Codex 里说「总结 <字幕或视频文件路径>」即可;移动本文件夹后要重跑 install.cmd")
+    print("   Done. In Claude Code / Codex, say \"summarize <subtitle or video path>\"; run install.cmd again if you move this folder.")
+    return 0 if ok else 1
+
 # ---------- finish / review ----------
 def finish(a):
     env = child_env()
@@ -219,10 +260,11 @@ def main():
     u = sp.add_parser("setup"); u.add_argument("--lang", choices=H.LANGS)
     r = sp.add_parser("run"); r.add_argument("input"); r.add_argument("--unit"); r.add_argument("--date"); r.add_argument("--slides")
     r.add_argument("--lang", choices=H.LANGS, help="总结语言 / summary language"); r.add_argument("--lang-code", default="en", help="视频模式转写语言码 en/zh/auto"); r.add_argument("--force", action="store_true")
+    i = sp.add_parser("install"); i.add_argument("--skills-only", action="store_true"); i.add_argument("--lang", choices=H.LANGS)
     f = sp.add_parser("finish"); f.add_argument("summary")
     v = sp.add_parser("review"); v.add_argument("summary")
     a = ap.parse_args()
-    sys.exit({"doctor": doctor, "setup": setup, "run": run, "finish": finish, "review": review}[a.cmd](a))
+    sys.exit({"doctor": doctor, "setup": setup, "install": install, "run": run, "finish": finish, "review": review}[a.cmd](a))
 
 if __name__ == "__main__":
     for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
