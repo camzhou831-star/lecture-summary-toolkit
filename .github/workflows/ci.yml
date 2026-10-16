@@ -111,4 +111,13 @@ jobs:
           $o = python tests/run_pipeline_demo.py 2>&1 | Out-String
           $o
           if ($LASTEXITCODE -ne 0) { throw "示例流水线失败" }
-          if ($o -notmatch "GPU: 开") { throw "转写没有走 GPU" }
+      - name: 单独转写一次,确认走 GPU 且没有退回 CPU
+        shell: pwsh
+        run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          Copy-Item "examples\demo\课程视频\DEMO1001 - 01 Jan 26-s1-demo.mp4" "$env:RUNNER_TEMP\gpu-check.mp4"
+          $o = python 工具/transcribe.py "$env:RUNNER_TEMP\gpu-check.mp4" en 2>&1 | Out-String
+          $o
+          if ($LASTEXITCODE -ne 0) { throw "转写失败" }
+          if ($o -notmatch "GPU: 开, 设置: gpu") { throw "转写没有按自检结果走 GPU" }
+          if ($o -match "--no-gpu|CPU 版") { throw "转写退回了 CPU" }

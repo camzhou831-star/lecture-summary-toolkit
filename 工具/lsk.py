@@ -258,7 +258,10 @@ def install(a):
             if not winget: print(f"   ❌ 没有 winget,请手动安装 {cmd} / no winget, install {cmd} manually: https://learn.microsoft.com/windows/package-manager/winget/"); continue
             subprocess.call([winget, "install", "-e", "--id", pkg, "--accept-package-agreements", "--accept-source-agreements"])
         mods = [p for m, p in (("PIL", "pillow"), ("pypdf", "pypdf")) if not has_module(m)]
-        if mods: subprocess.call([sys.executable, "-m", "pip", "install", "--user", *mods])
+        if mods:
+            subprocess.call([sys.executable, "-m", "pip", "install", "--user", *mods])
+            import importlib, site                     # 刚装进用户目录的包,本进程要重新登记路径才 import 得到(后面 doctor 要查)
+            site.addsitedir(site.getusersitepackages()); importlib.invalidate_caches()
         print("== 2/3 whisper.cpp + 模型 / models")
         rc = setup(a)
         if rc: print("== 上面还有 ❌ 项;winget 刚装的程序如果没找到,关掉这个窗口、新开一个再运行 install.cmd / if something is still missing, open a new window and run install.cmd again")
