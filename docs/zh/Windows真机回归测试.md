@@ -1,12 +1,12 @@
-# Windows 真机回归测试(字幕模式 + 网页版)
+# Windows 真机回归测试(视频模式 + 字幕模式 + 网页版)
 
-> 写给帮忙在 Windows 电脑上测试的同学。代码已经改好(分支 `windows-subtitle`,PR #1),GitHub 上的 Windows CI 也通过了;这份清单是在**真实 Windows 电脑**上从头到尾走一遍,看普通用户会卡在哪。
+> 写给帮忙在 Windows 电脑上测试的同学。代码已经改好(分支 `windows-subtitle`,PR #1),GitHub 上的 Windows CI(含视频模式完整流程)也通过了;这份清单是在**真实 Windows 电脑**上从头到尾走一遍,看普通用户会卡在哪。**视频模式是重点。**
 > 你只需要测试、记录,不用改代码。遇到问题按最后一节的格式记下来发给我。
 
 ## 测试范围
 
-- **要测**:字幕模式完整版(`lsk run` → AI 写总结 → `lsk finish`)、网页版提示词。
-- **不测**:视频模式。Windows 上它应该直接提示"暂不支持",看到这句提示就算对。
+- **重点**:视频模式(把下载好的录播视频放进来 → 转写 + 抓幻灯片 → AI 写总结)。
+- **也要测**:字幕模式、网页版提示词。
 
 ## 准备
 
@@ -26,10 +26,24 @@
 | 3 | `lsk.cmd run <合成字幕.srt>` | 报错说看不出单元和日期,要求加 `--unit` 和 `--date`(提示里的 DEMO1001 只是例子) |
 | 4 | `lsk.cmd run <合成字幕.srt> --unit DEMO1001 --date 2026-01-01 --lang zh` | `== 完成`;`课程视频\` 里多出 `.srt`、`.compact.txt`、`.bundle.json`、`.grounded.md` 四个文件;最后打印总结该存的路径 |
 | 5 | 用记事本打开 `课程视频\DEMO1001 2026-01-01.grounded.md` | 中文和英文都正常,不是乱码 |
-| 6 | `lsk.cmd run 某个.mp4` | 直接提示 Windows 不支持视频模式,不报 Python 错误 |
 | 7 | 在 PowerShell 里再跑一次第 1 步 | 结果和 cmd 一样 |
 
-## 第二部分:让 AI 走完整流程
+## 第二部分:视频模式(重点)
+
+测试视频:仓库里的合成示例 `examples\demo\课程视频\DEMO1001 - 01 Jan 26-s1-demo.mp4`(2 分钟)。跑通后**再用一节你自己的真实录播**(1–2 小时)测一次,记下总用时;真实录播只在你自己电脑上跑,产物不要发出来。
+
+| # | 操作 | 应该看到 |
+|---|---|---|
+| V1 | `lsk.cmd doctor --video` | 列出 ffmpeg、whisper-cli、tesseract、Pillow、whisper 模型,缺的每项后面有安装命令(winget / pip / `lsk setup`) |
+| V2 | 按提示装:`winget install Gyan.FFmpeg`、`winget install UB-Mannheim.TesseractOCR`、`py -m pip install pillow pypdf` | 都装成功;记下哪一步要管理员权限、有没有弹窗 |
+| V3 | **不关当前窗口**,再跑 `lsk.cmd doctor --video` | ffmpeg 和 tesseract 变成 ✅(刚装完 PATH 还没刷新,工具应该自己找得到) |
+| V4 | `lsk.cmd setup` | 下载 whisper.cpp(约 8 MB)和模型(约 1.6 GB),有进度百分比;完成后 doctor 全部 ✅ |
+| V5 | 把示例视频复制到 `课程视频\`,`lsk.cmd run "DEMO1001 - 01 Jan 26-s1-demo.mp4"` | 依次出现 [1/5]…[5/5],最后 `全部完成`;`画面\DEMO1001 - 01 Jan 26-s1-demo\` 里有几张 `t000xxs.jpg` |
+| V6 | 记事本打开 `课程视频\DEMO1001 - 01 Jan 26-s1-demo.grounded.md` | 有英文转写(含 "prime path"),有 `📄 t=… p2/6 …` 这样的幻灯片行 |
+| V7 | 真实录播:放进 `课程视频\`,`lsk.cmd run "<文件名>.mp4"` | 能跑完;记下总用时、CPU 型号、内存;电脑会不会卡到没法用 |
+| V8 | 如果你的用户名或文件夹路径里有中文:在那个路径下再跑一次 V5 | 照样跑完(whisper.cpp 读中文路径是已知风险点) |
+
+## 第三部分:让 AI 走完整流程
 
 1. 用 AI 应用打开 `lecture-summary-toolkit` 文件夹,说:
    > 用中文总结这节课:<合成字幕的完整路径>,单元 DEMO1001,日期 2026-01-01
@@ -40,7 +54,7 @@
    - `总结\DEMO1001\` 下生成了 `考点库.md`。
 3. 再用英文版测一次(`--lang en` 或者对 AI 说"Summarize in English"),看 `.en.md` 和 `Exam-Bank.en.md`。
 
-## 第三部分:网页版
+## 第四部分:网页版
 
 1. 打开 ChatGPT / Claude 网页版,新开对话,上传合成字幕。
 2. 打开 `prompts\web-prompt.zh.md`(用记事本),全选复制,粘贴发送。
@@ -57,7 +71,7 @@
 电脑:Windows 10/11,系统语言,用 cmd 还是 PowerShell,AI 应用和版本
 ```
 
-测完全部通过也告诉我一声,并附上第 1、4 步的截图。
+测完全部通过也告诉我一声,并附上第 1、4、V4、V5 步的截图,以及 V7 的用时。
 
 ## 规矩
 
