@@ -21,6 +21,15 @@ def glossary_for(name, course_root):
         if os.path.isfile(g): return g
     return None
 
+LEAD = {"en": "Welcome back, everyone. Today we will continue with the lecture.",
+        "zh": "以下是一节课程录音的转写，使用简体中文和标点符号。"}
+def lead_prompt(prompt, lang):
+    """提示语里没有一句带标点的话时,按语言补一句开头:whisper 照提示语的风格输出,没有标点的提示(或没有提示)时,
+    偶尔会整篇不带标点和大小写(第一段没写标点,后面就一直不写;Metal / Vulkan / CPU 都遇到过)"""
+    lead = LEAD.get(lang)
+    if lead and not re.search(r"[.?!。？！]", prompt): prompt = f"{lead} {prompt}"
+    return prompt.rstrip()
+
 def log(msg): print(msg, file=sys.stderr, flush=True)
 
 def main():
@@ -38,12 +47,14 @@ def main():
     if env.get("NO_VAD", "0") != "1":
         vad_args = ["--vad", "-vm", deps.short_path(deps.ensure_vad()), "--vad-threshold", "0.5",
                     "--vad-min-speech-duration-ms", "250", "--vad-speech-pad-ms", "200"]
-    prompt_args = []                                 # 术语表:喂给 whisper 的 --prompt 提高专有名词准确率;术语表属于课程数据,不进工具仓库
+    prompt = ""                                      # 术语表:喂给 whisper 的 --prompt 提高专有名词准确率;术语表属于课程数据,不进工具仓库
     course_root = env.get("COURSE_ROOT") or os.path.dirname(TOOLS)
     glossary = env.get("GLOSSARY") or glossary_for(env.get("OUT_BASE") or inp, course_root)
     if glossary and os.path.isfile(glossary):
         log(f"== 术语表: {glossary}")
-        prompt_args = ["--prompt", open(glossary, encoding="utf-8").read().replace("\n", " ")]
+        prompt = open(glossary, encoding="utf-8").read().replace("\n", " ")
+    prompt = lead_prompt(prompt, lang)
+    prompt_args = ["--prompt", prompt] if prompt else []
     ncpu = os.cpu_count() or 4                        # CI 小机器上超额分配线程会拖慢甚至卡住
     threads = env.get("WHISPER_THREADS") or str(min(8, ncpu))
     base = env.get("OUT_BASE") or os.path.splitext(inp)[0]

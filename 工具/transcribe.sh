@@ -53,10 +53,21 @@ if [ -z "$GLOSSARY" ]; then
     done
   fi
 fi
+PROMPT=""
 if [ -n "$GLOSSARY" ] && [ -f "$GLOSSARY" ]; then
   echo "== 术语表: $GLOSSARY" >&2
-  PROMPT_ARGS=(--prompt "$(tr '\n' ' ' < "$GLOSSARY")")
+  PROMPT="$(tr '\n' ' ' < "$GLOSSARY")"
 fi
+# 提示语里没有一句带标点的话时,按语言补一句开头:whisper 照提示语的风格输出,没有标点的提示(或没有提示)时,
+# 偶尔会整篇不带标点和大小写(第一段没写标点,后面就一直不写;Metal / Vulkan / CPU 都遇到过)
+case "$LANG" in
+  en) LEAD="Welcome back, everyone. Today we will continue with the lecture." ;;
+  zh) LEAD="以下是一节课程录音的转写，使用简体中文和标点符号。" ;;
+  *)  LEAD="" ;;
+esac
+if [ -n "$LEAD" ] && ! printf '%s' "$PROMPT" | grep -q '[.?!。？！]'; then PROMPT="$LEAD $PROMPT"; fi
+PROMPT="${PROMPT% }"
+[ -n "$PROMPT" ] && PROMPT_ARGS=(--prompt "$PROMPT")
 
 # 线程数:默认 min(8, CPU 核数),可用 WHISPER_THREADS 覆盖(CI 小机器上超额分配线程会拖慢甚至卡住)
 NCPU="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"

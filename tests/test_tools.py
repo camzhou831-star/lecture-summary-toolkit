@@ -250,6 +250,14 @@ class Lsk(unittest.TestCase):
 
 class VideoPipeline(unittest.TestCase):
     """视频模式的纯 Python 部分(不需要 ffmpeg / whisper;真流水线见 tests/run_pipeline_demo.py)"""
+    def test_lead_prompt(self):                                                                   # 没有带标点的提示语时补一句,防止整篇无标点
+        m = load("transcribe")
+        self.assertTrue(m.lead_prompt("", "en").startswith("Welcome back, everyone."))
+        self.assertTrue(m.lead_prompt("prime path, test path, DEMO1001", "en").endswith("prime path, test path, DEMO1001"))
+        self.assertIn("简体中文", m.lead_prompt("", "zh")); self.assertEqual(m.lead_prompt("", "auto"), "")
+        g = "Welcome to DEMO9999. Key terms: C, gcc."; self.assertEqual(m.lead_prompt(g, "en"), g)   # 已有标点:不动
+        sh = open(os.path.join(TOOLS, "transcribe.sh"), encoding="utf-8").read()                    # 两份实现用同一句
+        for lead in m.LEAD.values(): self.assertIn(lead, sh)
     def test_whisper_win_kind(self):                                                             # doctor 靠它标 (CUDA GPU) / (CPU)
         deps = load("deps")
         for kind in ("cpu", "cuda"): self.assertEqual(deps.whisper_win_kind(os.path.join(deps.whisper_win_dir(kind), "whisper-cli.exe")), kind)
