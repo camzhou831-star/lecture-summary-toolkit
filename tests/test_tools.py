@@ -228,13 +228,40 @@ class Lsk(unittest.TestCase):
             env = {"PATH": "/usr/bin:/bin", "WHISPER_MODEL_DIR": d, "LANG": "en_AU.UTF-8"}
             r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor"], env=env)
             self.assertEqual(r.returncode, 0, r.stdout); self.assertIn("Subtitle mode: ready", r.stdout)
-            if WINDOWS:                                                                           # Windows:视频模式明确不支持
-                r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor", "--video"], env=env)
-                self.assertEqual(r.returncode, 2); self.assertIn("not supported on Windows", r.stdout)
+            if WINDOWS:                                                                           # Windows:缺的东西给 winget / lsk setup
+                r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor", "--video"], env=dict(env, LSK_DATA_DIR=d))
+                self.assertIn("lsk setup", r.stdout)
             elif not shutil.which("whisper-cli", path="/usr/bin:/bin"):
                 r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor", "--video"], env=env)
                 self.assertEqual(r.returncode, 2)
                 self.assertIn("brew install whisper-cpp" if sys.platform == "darwin" else "github.com/ggml-org/whisper.cpp", r.stdout)
+
+class VideoPipeline(unittest.TestCase):
+    """视频模式的纯 Python 部分(不需要 ffmpeg / whisper;真流水线见 tests/run_pipeline_demo.py)"""
+    def test_frame_filter_modes(self):
+        m = load("extract_frames")
+        self.assertIn("fps=1/12,mpdecimate", m.video_filter("12s")[1]); self.assertIn("gt(scene,0.20)", m.video_filter("0.20")[1])
+        self.assertEqual(m.video_filter("abc"), (None, None))
+        self.assertNotIn(":\\", m.video_filter("12s")[1]); self.assertIn("file=times.txt", m.video_filter("12s")[1])   # 滤镜里只用相对文件名
+    def test_rename_frames_same_second(self):
+        m = load("extract_frames")
+        with tempfile.TemporaryDirectory() as d:
+            tmp, out = os.path.join(d, "tmp"), os.path.join(d, "out"); os.makedirs(tmp); os.makedirs(out)
+            for i in (1, 2, 3): open(os.path.join(tmp, "raw_%05d.jpg" % i), "w").close()
+            m.rename_frames("frame:0 pts:0 pts_time:0\nkeep=1\nframe:1 pts:1 pts_time:12.6\nframe:2 pts:2 pts_time:12.9\n", tmp, out)
+            self.assertEqual(sorted(os.listdir(out)), ["t00000s.jpg", "t00012s-2.jpg", "t00012s.jpg"])
+    def test_glossary_lookup(self):
+        m = load("transcribe")
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "glossary")); g = os.path.join(d, "glossary", "DEMO1001.txt"); open(g, "w").write("mutation\ntesting\n")
+            self.assertEqual(m.glossary_for(os.path.join(d, "DEMO1001 - 26 Aug 20-s1-full"), d), g)
+            self.assertIsNone(m.glossary_for("lecture.mp4", d))
+    def test_deps_install_hints(self):
+        m = load("deps")
+        self.assertIn("winget" if WINDOWS else ("brew" if sys.platform == "darwin" else "apt"), m.how("ffmpeg"))
+        self.assertEqual(m.how("whisper-cli") == "lsk setup", WINDOWS)
+        self.assertEqual(m.short_path("/ascii/path"), "/ascii/path")
+        self.assertIsNone(m.find("definitely-not-a-real-command-xyz"))
 
 class Release(unittest.TestCase):
     def test_language_packages(self):

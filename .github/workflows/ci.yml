@@ -42,4 +42,27 @@ jobs:
           path: ~/.local/share/whisper-models
           key: whisper-tiny-en-v1
       - name: 合成示例完整流水线(tiny.en 模型;整体 12 分钟超时,超时后打印转写日志)
-        run: WHISPER_MODEL=tiny.en NO_GPU=1 perl -e 'alarm 720; exec @ARGV' bash tests/run_pipeline_demo.sh
+        run: WHISPER_MODEL=tiny.en NO_GPU=1 perl -e 'alarm 720; exec @ARGV' python3 tests/run_pipeline_demo.py
+  pipeline-demo-windows:
+    # Windows 视频模式:用户的装法(lsk setup 下载官方 whisper.cpp + 模型),ffmpeg / tesseract 用 choco 装;
+    # 不装 poppler,课件匹配走 pypdf;tesseract 不在 PATH 上,测 deps.find 去默认安装位置找
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: python -m pip install pillow pypdf
+      - name: ffmpeg 与 tesseract
+        run: choco install ffmpeg tesseract -y --no-progress
+      - name: 缓存 whisper tiny.en 模型
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/whisper-models
+          key: whisper-tiny-en-win-v1
+      - name: lsk setup(下载 whisper.cpp 与模型)
+        env: { WHISPER_MODEL: tiny.en }
+        run: python 工具/lsk.py setup
+      - name: 合成示例完整流水线(视频模式)
+        env: { WHISPER_MODEL: tiny.en }
+        run: python tests/run_pipeline_demo.py
