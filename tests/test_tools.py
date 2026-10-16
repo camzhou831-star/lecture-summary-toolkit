@@ -273,7 +273,7 @@ class ReviewPack(unittest.TestCase):
             r = run([sys.executable, os.path.join(TOOLS, "review_pack.py"), summ, "--out", out], env={"COURSE_ROOT": d})
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(sorted(os.listdir(out)), ["grounded.md", "policy.md", "review.md", "summary.md", "transcript.srt", "画面"])
-            got = sorted(os.path.relpath(os.path.join(r_, f), os.path.join(out, "画面")) for r_, _, fs in os.walk(os.path.join(out, "画面")) for f in fs)
+            got = sorted(os.path.relpath(os.path.join(r_, f), os.path.join(out, "画面")).replace(os.sep, "/") for r_, _, fs in os.walk(os.path.join(out, "画面")) for f in fs)
             self.assertEqual(got, ["cam/t00020s.jpg", "t00010s.jpg", "t00030s.jpg"])   # 引用的 + ⚠️ 的;未标记的 t00040s 不带
             self.assertIn("找不到 1 张截图", r.stdout)                              # t00099s 不存在
             self.assertIn("--sandbox read-only", r.stdout)

@@ -89,8 +89,11 @@ def main():
     commit = git("rev-parse", "--short", a.ref).decode().strip()
     for lang in LANGS:
         for p in (full_package(data, commit, a.version, lang, a.out), web_package(a.ref, commit, a.version, lang, a.out)):
-            print(f"== {os.path.relpath(p, ROOT)}  {os.path.getsize(p) / 1024:.0f} KB")
+            try: shown = os.path.relpath(p, ROOT)
+            except ValueError: shown = p   # Windows:输出目录和仓库不在同一个盘
+            print(f"== {shown}  {os.path.getsize(p) / 1024:.0f} KB")
 
 
 if __name__ == "__main__":
+    for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
     main()
