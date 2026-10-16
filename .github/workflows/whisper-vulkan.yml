@@ -1,0 +1,68 @@
+# 编译 Windows 版 whisper.cpp(Vulkan 后端:NVIDIA / AMD / Intel 显卡通用;官方 release 只有 CPU 和 CUDA 版)
+# 产物:whisper-vulkan-<tag>-x64.zip(whisper-cli.exe + dll,MSVC 运行库静态链接,只依赖显卡驱动自带的 vulkan-1.dll)
+# 验证:没有显卡的 CI 机器上装 Mesa lavapipe(软件 Vulkan 驱动),用 tiny.en 转写 whisper.cpp 自带的 jfk.wav,确认走的是 Vulkan 且文字正确
+name: whisper-vulkan
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/whisper-vulkan.yml"]
+env:
+  WHISPER_TAG: b5130          # 与 工具/deps.py 的 WHISPER_TAG 一致
+  VULKAN_SDK_VERSION: 1.4.357.0
+  MESA_VERSION: 26.2.4
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: { repository: ggml-org/whisper.cpp, ref: "${{ env.WHISPER_TAG }}", path: whisper.cpp }
+      - name: Vulkan SDK
+        shell: pwsh
+        run: |
+          $v = $env:VULKAN_SDK_VERSION
+          curl.exe -sSL -o "$env:RUNNER_TEMP\vk.exe" "https://sdk.lunarg.com/sdk/download/$v/windows/vulkansdk-windows-X64-$v.exe"
+          & "$env:RUNNER_TEMP\vk.exe" --root "C:\VulkanSDK\$v" --accept-licenses --default-answer --confirm-command install
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$v"
+          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$v\bin"
+      - name: 编译
+        shell: pwsh
+        working-directory: whisper.cpp
+        run: |
+          cmake -B build -DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DGGML_AVX2=ON -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF `
+                -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DBUILD_SHARED_LIBS=ON
+          cmake --build build --config Release -j 4 --target whisper-cli
+          Get-ChildItem build\bin\Release
+      - name: 打包
+        shell: pwsh
+        run: |
+          $out = "whisper-vulkan-$env:WHISPER_TAG-x64"
+          New-Item -ItemType Directory $out | Out-Null
+          Copy-Item whisper.cpp\build\bin\Release\whisper-cli.exe, whisper.cpp\build\bin\Release\*.dll $out
+          Copy-Item whisper.cpp\LICENSE "$out\LICENSE-whisper.cpp.txt"
+          Compress-Archive -Path "$out\*" -DestinationPath "$out.zip"
+          (Get-FileHash "$out.zip" -Algorithm SHA256).Hash.ToLower() | Tee-Object "$out.zip.sha256"
+          Get-ChildItem $out | Format-Table Name, Length
+      - name: 软件 Vulkan 驱动(Mesa lavapipe)
+        shell: pwsh
+        run: |
+          curl.exe -sSL -o mesa.7z "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z"
+          7z x mesa.7z -omesa | Out-Null
+          $icd = (Get-ChildItem mesa\x64 -Filter "lvp_icd.x86_64.json").FullName
+          Add-Content $env:GITHUB_ENV "VK_DRIVER_FILES=$icd"
+          Add-Content $env:GITHUB_ENV "VK_ICD_FILENAMES=$icd"
+      - name: 用 Vulkan 转写 jfk.wav(tiny.en)
+        shell: pwsh
+        run: |
+          curl.exe -sSL -o tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+          $dir = "whisper-vulkan-$env:WHISPER_TAG-x64"
+          $log = & "$dir\whisper-cli.exe" -m tiny.bin -f whisper.cpp\samples\jfk.wav -l en 2>&1 | Out-String
+          $log
+          if ($log -notmatch "ggml_vulkan: Found [1-9]") { throw "没有用上 Vulkan" }
+          if ($log -notmatch "(?i)ask not what your country can do for you") { throw "转写结果不对" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: whisper-vulkan-${{ env.WHISPER_TAG }}-x64
+          path: |
+            whisper-vulkan-${{ env.WHISPER_TAG }}-x64.zip
+            whisper-vulkan-${{ env.WHISPER_TAG }}-x64.zip.sha256
