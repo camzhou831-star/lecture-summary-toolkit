@@ -55,10 +55,12 @@ jobs:
         shell: pwsh
         run: |
           curl.exe -sSL -o tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+          vulkaninfo --summary
           $dir = "whisper-vulkan-$env:WHISPER_TAG-x64"
+          $env:GGML_VK_VISIBLE_DEVICES = "0"   # lavapipe 是"CPU 类型"的 Vulkan 设备,ggml 默认跳过,测试时强制用它;真显卡不需要
           $log = & "$dir\whisper-cli.exe" -m tiny.bin -f whisper.cpp\samples\jfk.wav -l en 2>&1 | Out-String
           $log
-          if ($log -notmatch "ggml_vulkan: Found [1-9]") { throw "没有用上 Vulkan" }
+          if ($log -notmatch "using Vulkan0 backend") { throw "没有用上 Vulkan" }
           if ($log -notmatch "(?i)ask not what your country can do for you") { throw "转写结果不对" }
       - uses: actions/upload-artifact@v4
         with:
