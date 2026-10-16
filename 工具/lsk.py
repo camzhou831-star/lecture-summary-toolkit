@@ -15,18 +15,24 @@ import course_meta, headings as H
 ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(TOOLS)
 VIDEO_EXTS = (".mp4", ".mkv", ".mov", ".webm", ".m4a", ".mp3", ".wav")
 MODEL_DIR = os.environ.get("WHISPER_MODEL_DIR") or os.path.expanduser("~/.local/share/whisper-models")
+WINDOWS = sys.platform == "win32"
+# 子进程统一用 UTF-8(Windows 默认 GBK / cp1252),输出按 UTF-8 解码
+def child_env(): return dict(os.environ, COURSE_ROOT=ROOT, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+UTF8 = {"encoding": "utf-8", "errors": "replace"}
 
 MSG = {
     "zh": {"ok": "可用", "missing": "缺少", "optional": "可选", "sub_ready": "字幕模式:可以用(只需要 Python)。",
            "vid_ready": "视频模式:可以用。", "vid_missing": "视频模式(实验性):还缺 {n} 项,装好后再用;只有字幕的话不用装。",
            "slides_none": "读课件 PDF 需要 pdftotext(poppler)或 Python 包 pypdf,二选一;没有的话只用字幕也能总结。",
            "clients": "检测到的 AI 客户端:{c}", "no_client": "没检测到命令行版 AI 客户端(Codex / Claude Code / Gemini CLI);用桌面版也可以,打开本文件夹即可。",
-           "py_old": "Python 版本太旧({v}),需要 3.9 以上", "how": "安装命令", "model_auto": "第一次处理视频时自动下载(约 1.6 GB)"},
+           "py_old": "Python 版本太旧({v}),需要 3.9 以上", "how": "安装命令", "model_auto": "第一次处理视频时自动下载(约 1.6 GB)",
+           "vid_windows": "视频模式:Windows 暂不支持,请用字幕模式(下载录播的字幕文件)或网页版。"},
     "en": {"ok": "ready", "missing": "missing", "optional": "optional", "sub_ready": "Subtitle mode: ready (only needs Python).",
            "vid_ready": "Video mode: ready.", "vid_missing": "Video mode (experimental): {n} item(s) missing. Not needed if you only have subtitles.",
            "slides_none": "Reading slide PDFs needs pdftotext (poppler) or the Python package pypdf; without them, subtitles alone still work.",
            "clients": "AI clients found: {c}", "no_client": "No command-line AI client found (Codex / Claude Code / Gemini CLI); a desktop app also works: open this folder in it.",
-           "py_old": "Python is too old ({v}); 3.9 or newer is required", "how": "install with", "model_auto": "downloaded automatically on the first video run (about 1.6 GB)"},
+           "py_old": "Python is too old ({v}); 3.9 or newer is required", "how": "install with", "model_auto": "downloaded automatically on the first video run (about 1.6 GB)",
+           "vid_windows": "Video mode: not supported on Windows yet. Use subtitle mode (download the recording's captions) or the web version."},
 }
 
 def lang_default():
@@ -34,7 +40,10 @@ def lang_default():
     try: lg = course_meta.load_config(ROOT).get("output_lang")
     except SystemExit: lg = None
     if lg in MSG: return lg
-    return "zh" if (os.environ.get("LANG", "") + os.environ.get("LC_ALL", "")).lower().startswith("zh") else "en"
+    env = (os.environ.get("LANG", "") + os.environ.get("LC_ALL", "")).lower()
+    if not env and WINDOWS:   # Windows 一般没有 LANG,看系统区域设置(如 Chinese (Simplified)_China)
+        import locale; env = (locale.getlocale()[0] or "").lower()
+    return "zh" if env.startswith(("zh", "chinese")) else "en"
 
 def have(cmd): return shutil.which(cmd) is not None
 
@@ -55,9 +64,19 @@ def doctor(a):
     t = MSG[a.lang or lang_default()]
     print(f"== lsk doctor  (COURSE_ROOT = {ROOT})")
     ok = sys.version_info >= (3, 9)
-    print(f"  {'✅' if ok else '❌'} python3 {sys.version.split()[0]}" + ("" if ok else "  " + t["py_old"].format(v=sys.version.split()[0])))
+    py_fix = "  " + t["py_old"].format(v=sys.version.split()[0]) + (f"  {t['how']}: winget install Python.Python.3.12  |  https://www.python.org/downloads/" if WINDOWS else "")
+    print(f"  {'✅' if ok else '❌'} python {sys.version.split()[0]}" + ("" if ok else py_fix))
     slides = have("pdftotext") or has_module("pypdf")
-    print(f"  {'✅' if slides else '➖'} pdftotext / pypdf ({t['optional']})" + ("" if slides else f"  {t['how']}: {brew_or('poppler')}  |  pip3 install pypdf"))
+    pdf_fix = "py -m pip install pypdf" if WINDOWS else f"{brew_or('poppler')}  |  pip3 install pypdf"
+    print(f"  {'✅' if slides else '➖'} pdftotext / pypdf ({t['optional']})" + ("" if slides else f"  {t['how']}: {pdf_fix}"))
+    clients = [c for c in ("codex", "claude", "gemini") if have(c)]
+    if WINDOWS:   # 视频模式依赖 bash 脚本 prepare.sh,Windows 不做,也就不查 ffmpeg / whisper
+        print("  " + (t["clients"].format(c=", ".join(clients)) if clients else t["no_client"]))
+        print("== " + (t["sub_ready"] if ok else t["py_old"].format(v=sys.version.split()[0])))
+        if not slides: print("   " + t["slides_none"])
+        print("== " + t["vid_windows"])
+        if not ok: return 1
+        return 2 if a.video else 0
     model = os.path.join(MODEL_DIR, "ggml-" + os.environ.get("WHISPER_MODEL", "large-v3-turbo") + ".bin")
     video = [("ffmpeg", have("ffmpeg") and have("ffprobe"), brew_or("ffmpeg")),
              ("whisper-cli", have("whisper-cli"), brew_or("whisper-cpp")),
@@ -67,7 +86,6 @@ def doctor(a):
     for name, good, fix in video:
         if fix is None: print(f"  {'✅' if good else '➖'} {name}" + ("" if good else "  " + t["model_auto"])); continue
         print(f"  {'✅' if good else '❌'} {name}" + ("" if good else f"  {t['how']}: {fix}"))
-    clients = [c for c in ("codex", "claude", "gemini") if have(c)]
     print("  " + (t["clients"].format(c=", ".join(clients)) if clients else t["no_client"]))
     print("== " + (t["sub_ready"] if ok else t["py_old"].format(v=sys.version.split()[0])))
     if not slides: print("   " + t["slides_none"])
@@ -111,7 +129,7 @@ def lecture_name(src, unit, date):
 def slides_text(path):
     """课件 PDF → [(页码, 文字)];pdftotext 优先,其次 pypdf;都没有返回 None"""
     if have("pdftotext"):
-        r = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True, text=True)
+        r = subprocess.run(["pdftotext", "-layout", "-enc", "UTF-8", path, "-"], capture_output=True, text=True, **UTF8)
         if r.returncode == 0: return list(enumerate(r.stdout.split("\f"), 1))[:-1] or [(1, r.stdout)]
     if has_module("pypdf"):
         import pypdf
@@ -145,9 +163,9 @@ def run(a):
         else: sys.exit(f"错误 / Error: 找不到文件 {a.input}")
     ext = os.path.splitext(src)[1].lower()
     if ext in VIDEO_EXTS:
+        if WINDOWS: sys.exit("错误 / Error: " + MSG["zh"]["vid_windows"] + "\n        " + MSG["en"]["vid_windows"])
         print("== 视频模式(实验性)/ video mode (experimental) → prepare.sh")
-        env = dict(os.environ, COURSE_ROOT=ROOT)
-        return subprocess.call(["bash", os.path.join(TOOLS, "prepare.sh"), src, a.lang_code], env=env)
+        return subprocess.call(["bash", os.path.join(TOOLS, "prepare.sh"), src, a.lang_code], env=child_env())
     if ext not in (".srt", ".vtt"): sys.exit(f"错误 / Error: 只支持 .srt / .vtt 字幕或视频文件,收到 {ext}")
     name = lecture_name(src, a.unit, a.date)
     vdir = os.path.join(ROOT, "课程视频"); os.makedirs(vdir, exist_ok=True)
@@ -163,7 +181,7 @@ def run(a):
     for step, cmd in (("2/3 compact", [sys.executable, os.path.join(TOOLS, "compact.py"), srt]),
                       ("3/3 讲义稿 / transcript script", [sys.executable, os.path.join(TOOLS, "build_bundle.py"), srt, "--frames-dir", os.path.join(ROOT, "画面", name)])):
         print(f"== {step}")
-        r = subprocess.run(cmd, env=dict(os.environ, COURSE_ROOT=ROOT), capture_output=True, text=True)
+        r = subprocess.run(cmd, env=child_env(), capture_output=True, text=True, **UTF8)
         if r.returncode != 0: sys.stderr.write(r.stdout + r.stderr); sys.exit(f"错误 / Error: {step} 失败")
     meta = course_meta.parse(name, course_meta.load_config(ROOT)) or {}
     slides = None
@@ -182,9 +200,9 @@ def run(a):
 
 # ---------- finish / review ----------
 def finish(a):
-    env = dict(os.environ, COURSE_ROOT=ROOT)
+    env = child_env()
     s = a.summary
-    r = subprocess.run([sys.executable, os.path.join(TOOLS, "add_links.py"), s], env=env, capture_output=True, text=True)
+    r = subprocess.run([sys.executable, os.path.join(TOOLS, "add_links.py"), s], env=env, capture_output=True, text=True, **UTF8)
     print("== 回跳链接 / links: " + (r.stdout.strip() or r.stderr.strip()))   # 没有视频时会跳过,不算失败
     rc = subprocess.call([sys.executable, os.path.join(TOOLS, "check_summary.py"), s], env=env)
     subprocess.call([sys.executable, os.path.join(TOOLS, "exam_bank.py"), s, "--quiet"], env=env)
@@ -192,7 +210,7 @@ def finish(a):
     return rc
 
 def review(a):
-    return subprocess.call([sys.executable, os.path.join(TOOLS, "review_pack.py"), a.summary], env=dict(os.environ, COURSE_ROOT=ROOT))
+    return subprocess.call([sys.executable, os.path.join(TOOLS, "review_pack.py"), a.summary], env=child_env())
 
 def main():
     ap = argparse.ArgumentParser(prog="lsk", description=__doc__.split("\n")[0])
@@ -206,4 +224,5 @@ def main():
     sys.exit({"doctor": doctor, "run": run, "finish": finish, "review": review}[a.cmd](a))
 
 if __name__ == "__main__":
+    for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
     main()
