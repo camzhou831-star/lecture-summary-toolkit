@@ -12,6 +12,8 @@
 一节 2 小时课通常剩 20–50 帧。
 """
 import argparse, json, os, re, shutil, subprocess, sys, tempfile
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import deps
 from PIL import Image, ImageChops, ImageFilter
 
 def paper_th(g):
@@ -97,7 +99,7 @@ def main():
     tmp = tempfile.mkdtemp(prefix="cam_", dir=a.out)
     try:
         print(f"== 实物投影抓帧: {a.video}(每 {a.interval}s 采样)")
-        r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", a.video, "-vf", f"fps=1/{a.interval},scale=1280:-2",
+        r = subprocess.run([deps.exe("ffmpeg"), "-hide_banner", "-loglevel", "error", "-i", a.video, "-vf", f"fps=1/{a.interval},scale=1280:-2",
                             "-fps_mode", "vfr", "-q:v", "4", os.path.join(tmp, "raw_%05d.jpg")])
         if r.returncode != 0: sys.exit("错误: ffmpeg 抽帧失败")
         raws = sorted(f for f in os.listdir(tmp) if f.startswith("raw_"))

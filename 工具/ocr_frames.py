@@ -8,6 +8,8 @@
   C 全局:同一页后面再出现且内容不更多 -> 删,非课件画面(终端/浏览器)与已保留的高度相似(Jaccard>=0.7) -> 删
 """
 import argparse, json, os, re, subprocess, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import deps
 from concurrent.futures import ThreadPoolExecutor
 
 NOISE = re.compile(r"(Applications|File View Edit|Show Sidebar|Zoom Out|Zoom In|Bookmarks Tools|Terminal Tabs Help|unpriv|^\W{0,3}$|Okular|Welcome - C|"
@@ -34,7 +36,7 @@ def frame_key(name):
 
 def ocr(path):
     with open(path, "rb") as fh:   # 经 stdin 喂图,避免 leptonica 在某些路径下打不开文件
-        r = subprocess.run(["tesseract", "stdin", "-", "-l", "eng", "--psm", "3"], stdin=fh, capture_output=True)
+        r = subprocess.run([deps.exe("tesseract"), "stdin", "-", "-l", "eng", "--psm", "3"], stdin=fh, capture_output=True)
     if r.returncode != 0:
         print(f"   ⚠️ tesseract 失败: {os.path.basename(path)}: {r.stderr.decode('utf-8', 'replace').strip().splitlines()[-1] if r.stderr else ''}", file=sys.stderr)
         return {"page": None, "pages": None, "text": "", "chars": 0, "error": True}

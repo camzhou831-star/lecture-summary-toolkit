@@ -6,6 +6,8 @@
   --duration / --video: 视频不和 srt 放在一起时(网页工作台)用来确定时长;都不给时在 srt 同目录找同名视频,再不行用最后一段转写的结束时间
 """
 import argparse, json, os, re, subprocess, sys, datetime
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import deps
 ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # 默认为 工具/ 的上级目录
 TIME_RE = re.compile(r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)")
 
@@ -53,7 +55,7 @@ def main():
     for v in cands:
         if duration is not None: break
         if v and os.path.exists(v):
-            try: r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", v], capture_output=True, text=True)
+            try: r = subprocess.run([deps.exe("ffprobe"), "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", v], capture_output=True, text=True)
             except FileNotFoundError: break          # 没装 ffprobe(如 Windows 字幕模式):退回用转写结束时间
             try: duration = float(r.stdout.strip()); break
             except ValueError: pass
