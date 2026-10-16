@@ -2,8 +2,9 @@
 """lsk — 课程总结工具的总入口(给智能体和新手用;一次调用做完一个阶段,不用记各个脚本)
 用法:
   lsk doctor [--video] [--lang zh|en]          检查环境:字幕模式要什么、视频模式还缺什么,缺的给出安装命令
+  lsk setup                                    视频模式准备:下载 whisper 模型与 VAD 模型;Windows 上还会下载 whisper.cpp(官方预编译版)
   lsk run <字幕.srt|.vtt|视频> [--unit DEMO1001 --date 2026-08-26] [--slides <课件.pdf|目录>] [--lang en] [--force]
-                                               字幕模式:放好字幕 → compact → 讲义稿(+ 课件逐页文字);视频模式调用 prepare.sh(实验性)
+                                               字幕模式:放好字幕 → compact → 讲义稿(+ 课件逐页文字);视频模式调用 prepare.sh(Windows 上是 prepare.py;实验性)
   lsk finish <总结.md>                          写完总结后:加回跳链接 → 检查 → 重生成考点库
   lsk review <总结.md>                          准备审核包(见 skills/video-summary/review.md)
 目录:COURSE_ROOT 环境变量,默认是本工具目录;字幕、讲义稿在 课程视频/,总结在 总结/<单元>/
@@ -11,10 +12,10 @@
 import argparse, datetime, os, re, shutil, subprocess, sys
 TOOLS = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, TOOLS)
-import course_meta, headings as H
+import course_meta, deps, headings as H
 ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(TOOLS)
 VIDEO_EXTS = (".mp4", ".mkv", ".mov", ".webm", ".m4a", ".mp3", ".wav")
-MODEL_DIR = os.environ.get("WHISPER_MODEL_DIR") or os.path.expanduser("~/.local/share/whisper-models")
+MODEL_DIR = deps.MODEL_DIR
 WINDOWS = sys.platform == "win32"
 # 子进程统一用 UTF-8(Windows 默认 GBK / cp1252),输出按 UTF-8 解码
 def child_env(): return dict(os.environ, COURSE_ROOT=ROOT, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
@@ -26,13 +27,13 @@ MSG = {
            "slides_none": "读课件 PDF 需要 pdftotext(poppler)或 Python 包 pypdf,二选一;没有的话只用字幕也能总结。",
            "clients": "检测到的 AI 客户端:{c}", "no_client": "没检测到命令行版 AI 客户端(Codex / Claude Code / Gemini CLI);用桌面版也可以,打开本文件夹即可。",
            "py_old": "Python 版本太旧({v}),需要 3.9 以上", "how": "安装命令", "model_auto": "第一次处理视频时自动下载(约 1.6 GB)",
-           "vid_windows": "视频模式:Windows 暂不支持,请用字幕模式(下载录播的字幕文件)或网页版。"},
+           "setup": "装好上面缺的程序后,运行 lsk setup 下载模型{w}"},
     "en": {"ok": "ready", "missing": "missing", "optional": "optional", "sub_ready": "Subtitle mode: ready (only needs Python).",
            "vid_ready": "Video mode: ready.", "vid_missing": "Video mode (experimental): {n} item(s) missing. Not needed if you only have subtitles.",
            "slides_none": "Reading slide PDFs needs pdftotext (poppler) or the Python package pypdf; without them, subtitles alone still work.",
            "clients": "AI clients found: {c}", "no_client": "No command-line AI client found (Codex / Claude Code / Gemini CLI); a desktop app also works: open this folder in it.",
            "py_old": "Python is too old ({v}); 3.9 or newer is required", "how": "install with", "model_auto": "downloaded automatically on the first video run (about 1.6 GB)",
-           "vid_windows": "Video mode: not supported on Windows yet. Use subtitle mode (download the recording's captions) or the web version."},
+           "setup": "After installing the missing programs above, run lsk setup to download the models{w}"},
 }
 
 def lang_default():
@@ -45,20 +46,11 @@ def lang_default():
         import locale; env = (locale.getlocale()[0] or "").lower()
     return "zh" if env.startswith(("zh", "chinese")) else "en"
 
-def have(cmd): return shutil.which(cmd) is not None
+def have(cmd): return deps.find(cmd) is not None
 
 def has_module(m):
     try: __import__(m); return True
     except ImportError: return False
-
-# 安装命令:macOS 用 Homebrew;Linux 的 apt 包名不同,whisper.cpp 没有 apt 包
-INSTALL = {"poppler": ("brew install poppler", "sudo apt-get install poppler-utils"),
-           "ffmpeg": ("brew install ffmpeg", "sudo apt-get install ffmpeg"),
-           "whisper-cpp": ("brew install whisper-cpp", "build from https://github.com/ggml-org/whisper.cpp and put whisper-cli on PATH"),
-           "tesseract": ("brew install tesseract", "sudo apt-get install tesseract-ocr")}
-def brew_or(pkg):
-    mac, linux = INSTALL[pkg]
-    return mac if sys.platform == "darwin" or have("brew") else linux
 
 def doctor(a):
     t = MSG[a.lang or lang_default()]
@@ -67,21 +59,14 @@ def doctor(a):
     py_fix = "  " + t["py_old"].format(v=sys.version.split()[0]) + (f"  {t['how']}: winget install Python.Python.3.12  |  https://www.python.org/downloads/" if WINDOWS else "")
     print(f"  {'✅' if ok else '❌'} python {sys.version.split()[0]}" + ("" if ok else py_fix))
     slides = have("pdftotext") or has_module("pypdf")
-    pdf_fix = "py -m pip install pypdf" if WINDOWS else f"{brew_or('poppler')}  |  pip3 install pypdf"
+    pdf_fix = deps.how("poppler") if WINDOWS else f"{deps.how('poppler')}  |  pip3 install pypdf"
     print(f"  {'✅' if slides else '➖'} pdftotext / pypdf ({t['optional']})" + ("" if slides else f"  {t['how']}: {pdf_fix}"))
     clients = [c for c in ("codex", "claude", "gemini") if have(c)]
-    if WINDOWS:   # 视频模式依赖 bash 脚本 prepare.sh,Windows 不做,也就不查 ffmpeg / whisper
-        print("  " + (t["clients"].format(c=", ".join(clients)) if clients else t["no_client"]))
-        print("== " + (t["sub_ready"] if ok else t["py_old"].format(v=sys.version.split()[0])))
-        if not slides: print("   " + t["slides_none"])
-        print("== " + t["vid_windows"])
-        if not ok: return 1
-        return 2 if a.video else 0
     model = os.path.join(MODEL_DIR, "ggml-" + os.environ.get("WHISPER_MODEL", "large-v3-turbo") + ".bin")
-    video = [("ffmpeg", have("ffmpeg") and have("ffprobe"), brew_or("ffmpeg")),
-             ("whisper-cli", have("whisper-cli"), brew_or("whisper-cpp")),
-             ("tesseract", have("tesseract"), brew_or("tesseract")),
-             ("Pillow", has_module("PIL"), "pip3 install pillow"),
+    video = [("ffmpeg", have("ffmpeg") and have("ffprobe"), deps.how("ffmpeg")),
+             ("whisper-cli", have("whisper-cli"), deps.how("whisper-cli")),
+             ("tesseract", have("tesseract"), deps.how("tesseract")),
+             ("Pillow", has_module("PIL"), deps.how("pillow")),
              (f"whisper model {os.path.basename(model)}", os.path.isfile(model), None)]
     for name, good, fix in video:
         if fix is None: print(f"  {'✅' if good else '➖'} {name}" + ("" if good else "  " + t["model_auto"])); continue
@@ -91,6 +76,7 @@ def doctor(a):
     if not slides: print("   " + t["slides_none"])
     missing = [n for n, g, _ in video[:4] if not g]   # 模型首次运行会自动下载,不算缺
     print("== " + (t["vid_ready"] if not missing else t["vid_missing"].format(n=len(missing))))
+    if missing or not os.path.isfile(model): print("   " + t["setup"].format(w=" (+ whisper.cpp)" if WINDOWS else ""))
     if not ok: return 1
     return 2 if (a.video and missing) else 0
 
@@ -163,7 +149,9 @@ def run(a):
         else: sys.exit(f"错误 / Error: 找不到文件 {a.input}")
     ext = os.path.splitext(src)[1].lower()
     if ext in VIDEO_EXTS:
-        if WINDOWS: sys.exit("错误 / Error: " + MSG["zh"]["vid_windows"] + "\n        " + MSG["en"]["vid_windows"])
+        if WINDOWS:   # Windows 用 Python 版;macOS / Linux 仍用原来的 bash 版
+            print("== 视频模式(实验性)/ video mode (experimental) → prepare.py")
+            return subprocess.call([sys.executable, os.path.join(TOOLS, "prepare.py"), src, a.lang_code], env=child_env())
         print("== 视频模式(实验性)/ video mode (experimental) → prepare.sh")
         return subprocess.call(["bash", os.path.join(TOOLS, "prepare.sh"), src, a.lang_code], env=child_env())
     if ext not in (".srt", ".vtt"): sys.exit(f"错误 / Error: 只支持 .srt / .vtt 字幕或视频文件,收到 {ext}")
@@ -198,6 +186,18 @@ def run(a):
     print("   写完后 / when written: lsk finish \"<总结路径 / summary path>\"")
     return 0
 
+# ---------- setup ----------
+def setup(a):
+    """视频模式的一次性准备:Windows 上下载 whisper.cpp;所有系统下载 whisper 模型(默认约 1.6 GB)与 VAD 模型。完成后再跑一遍 doctor --video"""
+    if not have("whisper-cli"):
+        if WINDOWS: deps.install_whisper_windows()
+        else: print(f"== 先安装 whisper.cpp / install whisper.cpp first: {deps.how('whisper-cli')}")
+    name = os.environ.get("WHISPER_MODEL", "large-v3-turbo")
+    print(f"== 模型 / model: ggml-{name}.bin → {MODEL_DIR}")
+    deps.ensure_model(name); deps.ensure_vad()
+    a.video = True
+    return doctor(a)
+
 # ---------- finish / review ----------
 def finish(a):
     env = child_env()
@@ -216,12 +216,13 @@ def main():
     ap = argparse.ArgumentParser(prog="lsk", description=__doc__.split("\n")[0])
     sp = ap.add_subparsers(dest="cmd", required=True)
     d = sp.add_parser("doctor"); d.add_argument("--video", action="store_true"); d.add_argument("--lang", choices=H.LANGS)
+    u = sp.add_parser("setup"); u.add_argument("--lang", choices=H.LANGS)
     r = sp.add_parser("run"); r.add_argument("input"); r.add_argument("--unit"); r.add_argument("--date"); r.add_argument("--slides")
     r.add_argument("--lang", choices=H.LANGS, help="总结语言 / summary language"); r.add_argument("--lang-code", default="en", help="视频模式转写语言码 en/zh/auto"); r.add_argument("--force", action="store_true")
     f = sp.add_parser("finish"); f.add_argument("summary")
     v = sp.add_parser("review"); v.add_argument("summary")
     a = ap.parse_args()
-    sys.exit({"doctor": doctor, "run": run, "finish": finish, "review": review}[a.cmd](a))
+    sys.exit({"doctor": doctor, "setup": setup, "run": run, "finish": finish, "review": review}[a.cmd](a))
 
 if __name__ == "__main__":
     for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
