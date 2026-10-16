@@ -245,18 +245,19 @@ class Release(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertEqual(sorted(os.listdir(d)), sorted(f"lecture-summary-{k}-v0.0.0-test-{lg}.zip" for k in ("toolkit", "web-prompts") for lg in ("zh", "en")))
             for lg, other_readme, other_prompt in (("zh", "README.md", "web-prompt.en.md"), ("en", "README.zh.md", "web-prompt.zh.md")):
-                names = zipfile.ZipFile(os.path.join(d, f"lecture-summary-toolkit-v0.0.0-test-{lg}.zip")).namelist()
+                with zipfile.ZipFile(os.path.join(d, f"lecture-summary-toolkit-v0.0.0-test-{lg}.zip")) as z: names = z.namelist()   # 及时关闭,否则 Windows 删不掉临时目录
                 root = "lecture-summary-toolkit/"
                 self.assertNotIn(root + other_readme, names); self.assertFalse(any(n.endswith(other_prompt) for n in names))
                 self.assertFalse(any(n.startswith(root + "tests/") or n.startswith(root + ".github/") or n.endswith("release-notes.md") for n in names))
                 self.assertFalse(any(n.startswith(root + "docs/" + ("en" if lg == "zh" else "zh") + "/") for n in names))
                 dirs = [n for n in names if n.endswith("/")]
                 self.assertTrue(all(any(m != n and m.startswith(n) for m in names) for n in dirs), "包里不应有空目录")
-                z = zipfile.ZipFile(os.path.join(d, f"lecture-summary-toolkit-v0.0.0-test-{lg}.zip"))
-                self.assertEqual(json.loads(z.read(root + "course.json"))["output_lang"], lg)              # 预设总结语言
-                readme = z.read(root + ("README.zh.md" if lg == "zh" else "README.md")).decode()
+                with zipfile.ZipFile(os.path.join(d, f"lecture-summary-toolkit-v0.0.0-test-{lg}.zip")) as z:
+                    self.assertEqual(json.loads(z.read(root + "course.json"))["output_lang"], lg)              # 预设总结语言
+                    readme = z.read(root + ("README.zh.md" if lg == "zh" else "README.md")).decode()
+                    cmd = z.read(root + "lsk.cmd"); self.assertEqual(cmd.count(b"\r\n"), cmd.count(b"\n"))  # Windows 批处理必须全是 CRLF
                 self.assertNotIn("](README.md)" if lg == "zh" else "](README.zh.md)", readme)            # 不留指向被拿掉文件的链接
-                web = zipfile.ZipFile(os.path.join(d, f"lecture-summary-web-prompts-v0.0.0-test-{lg}.zip")).namelist()
+                with zipfile.ZipFile(os.path.join(d, f"lecture-summary-web-prompts-v0.0.0-test-{lg}.zip")) as z: web = z.namelist()
                 self.assertEqual(sorted(os.path.basename(n) for n in web), sorted([f"web-prompt.{lg}.md", "VERSION", "使用说明.txt" if lg == "zh" else "README.txt"]))
 
 class ReviewPack(unittest.TestCase):
