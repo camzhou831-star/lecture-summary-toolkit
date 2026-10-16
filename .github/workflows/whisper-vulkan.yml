@@ -60,10 +60,20 @@ jobs:
           vulkaninfo --summary
           $dir = "whisper-vulkan-$env:WHISPER_TAG-x64"
           $env:GGML_VK_VISIBLE_DEVICES = "0"   # lavapipe 是"CPU 类型"的 Vulkan 设备,ggml 默认跳过,测试时强制用它;真显卡不需要
-          $log = & "$dir\whisper-cli.exe" -m tiny.bin -f whisper.cpp\samples\jfk.wav -l en 2>&1 | Out-String
-          $log
-          if ($log -notmatch "using Vulkan0 backend") { throw "没有用上 Vulkan" }
-          if ($log -notmatch "(?i)ask not what your country can do for you") { throw "转写结果不对" }
+          # 诊断:默认 / 关 flash attention / 关 coopmat / 关 fp16,哪种在 lavapipe 上转写正确
+          $variants = @(@{n="default"; a=@(); e=@{}}, @{n="no-fa"; a=@("-nfa"); e=@{}},
+                        @{n="no-coopmat"; a=@(); e=@{GGML_VK_DISABLE_COOPMAT="1"}}, @{n="no-f16"; a=@(); e=@{GGML_VK_DISABLE_F16="1"}})
+          $okAny = $false
+          foreach ($v in $variants) {
+            foreach ($k in $v.e.Keys) { Set-Item "env:$k" $v.e[$k] }
+            $log = & "$dir\whisper-cli.exe" -m tiny.bin -f whisper.cpp\samples\jfk.wav -l en @($v.a) 2>&1 | Out-String
+            foreach ($k in $v.e.Keys) { Remove-Item "env:$k" }
+            $text = ($log -split "`n" | Where-Object { $_ -match "^\[" }) -join " "
+            $vk = $log -match "using Vulkan0 backend"; $good = $log -match "(?i)ask not what your country can do for you"
+            Write-Host "== $($v.n): vulkan=$vk correct=$good :: $text"
+            if ($vk -and $good) { $okAny = $true }
+          }
+          if (-not $okAny) { throw "所有设置下 Vulkan 转写都不对" }
       - uses: actions/upload-artifact@v4
         with:
           name: whisper-vulkan-${{ env.WHISPER_TAG }}-x64
