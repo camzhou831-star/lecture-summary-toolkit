@@ -35,6 +35,7 @@
    - 在线链接(YouTube/B站等):先检查 `yt-dlp`(未装则 `brew install yt-dlp`),`yt-dlp -f "ba" -x --audio-format m4a -o "<COURSE_ROOT>/课程视频/%(title)s.%(ext)s" <URL>` 只下音频;先试 `--write-auto-subs --skip-download` 拿现成字幕。
 
 2. **预处理**:统一用总入口 `lsk`(第一次先跑 `bash "$TOOLKIT/lsk" doctor` 看环境,缺什么按它给的命令装,装之前先征得用户同意)。
+   - **Windows**:只支持字幕模式。下面所有 `bash "$TOOLKIT/lsk" …` 换成 `"$TOOLKIT\lsk.cmd" …`(或 `python "$TOOLKIT\工具\lsk.py" …`),参数相同;视频模式会直接提示不支持,请用户改用字幕文件。
    - **字幕模式**(推荐给新手;只有 `.srt` / `.vtt` 字幕,不需要 ffmpeg、whisper):
      ```bash
      bash "$TOOLKIT/lsk" run "<字幕文件>" [--unit DEMO1001 --date 2026-08-26] [--slides <本讲课件.pdf>] [--lang zh|en]
