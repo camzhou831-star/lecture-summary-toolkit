@@ -17,6 +17,7 @@ def main():
     video = next((name + ext for ext in (".mp4", ".mkv", ".m4a", ".mp3") if os.path.exists(os.path.join(ROOT, "课程视频", name + ext))), None)
     if not video: sys.exit(f"跳过: 课程视频/ 下找不到 {name} 的视频文件")
     rel = os.path.relpath(os.path.realpath(os.path.join(ROOT, "课程视频", video)), os.path.dirname(os.path.realpath(a.summary)))   # realpath 消除 /tmp→/private/tmp 之类别名
+    rel = rel.replace(os.sep, "/")   # Windows 上 relpath 用反斜杠,Markdown / Obsidian 链接认不了
     lines = open(a.summary, encoding="utf-8").read().split("\n")
     out, n, in_section = [], 0, False
     for l in lines:
@@ -33,4 +34,5 @@ def main():
         open(a.summary, "w", encoding="utf-8").write("\n".join(out)); print(f"{a.summary}: 已加 {n} 个链接")
 
 if __name__ == "__main__":
+    for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
     main()

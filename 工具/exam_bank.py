@@ -98,7 +98,7 @@ def linked(it, s, out_dir):
     text = strip_ts_link(it["text"])
     if not it["timestamps"]: return text
     sec = it["timestamps"][0]
-    rel = os.path.relpath(os.path.realpath(os.path.join(ROOT, "课程视频", s["video"])), os.path.realpath(out_dir))
+    rel = os.path.relpath(os.path.realpath(os.path.join(ROOT, "课程视频", s["video"])), os.path.realpath(out_dir)).replace(os.sep, "/")   # Windows 反斜杠 → 链接用正斜杠
     lk = f"[{fmt_ts(sec)}](<{rel}#t={sec}>)"
     m = re.search(r"\[(\d{1,3}):(\d{2})\]", text)
     if m and int(m[1]) * 60 + int(m[2]) == sec: return text[:m.start()] + lk + text[m.end():]
@@ -142,7 +142,7 @@ def render(unit, summaries, out_dir, src_dir, lang="zh"):
     wk = lambda s: f"W{s['week']}" if s["week"] is not None else "W?"
     tag = lambda s: f"**{wk(s)} {(s['date'] or '')[5:]}**"
     L = ["# " + t["title"].format(unit=unit), "",
-         t["gen"].format(src=os.path.relpath(src_dir, ROOT), n=len(summaries), today=today),
+         t["gen"].format(src=os.path.relpath(src_dir, ROOT).replace(os.sep, "/"), n=len(summaries), today=today),
          t["cover"] + t["sep"].join(f"{wk(s)}({s['date']})" for s in summaries), ""]
     flagged = [(s, it) for s in summaries for k in ("signal", "notice", "exam") for it in s["items"][k] if it["flag"]]
     L += [t["flag"].format(n=len(flagged)), ""]
@@ -219,4 +219,5 @@ def write_bank(a, src, lang, summaries):
 
 
 if __name__ == "__main__":
+    for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
     main()
