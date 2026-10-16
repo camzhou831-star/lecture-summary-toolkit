@@ -2,7 +2,8 @@
 """lsk — 课程总结工具的总入口(给智能体和新手用;一次调用做完一个阶段,不用记各个脚本)
 用法:
   lsk doctor [--video] [--lang zh|en]          检查环境:字幕模式要什么、视频模式还缺什么,缺的给出安装命令
-  lsk setup                                    视频模式准备:下载 whisper 模型与 VAD 模型;Windows 上还会下载 whisper.cpp(官方预编译版)
+  lsk setup [--cpu]                            视频模式准备:下载 whisper 模型与 VAD 模型;Windows 上还会下载 whisper.cpp(官方预编译版;
+                                               有 NVIDIA 显卡时下 CUDA 版,--cpu 强制 CPU 版)
   lsk install [--skills-only]                  Windows 一键安装(install.cmd 调它):winget 装 ffmpeg / tesseract、pip 装 pillow / pypdf、
                                                lsk setup,再把技能链接到 Claude Code 与 Codex 的技能目录;macOS / Linux 转去跑 install.sh
   lsk run <字幕.srt|.vtt|视频> [--unit DEMO1001 --date 2026-08-26] [--slides <课件.pdf|目录>] [--lang en] [--force]
@@ -29,13 +30,15 @@ MSG = {
            "slides_none": "读课件 PDF 需要 pdftotext(poppler)或 Python 包 pypdf,二选一;没有的话只用字幕也能总结。",
            "clients": "检测到的 AI 客户端:{c}", "no_client": "没检测到命令行版 AI 客户端(Codex / Claude Code / Gemini CLI);用桌面版也可以,打开本文件夹即可。",
            "py_old": "Python 版本太旧({v}),需要 3.9 以上", "how": "安装命令", "model_auto": "第一次处理视频时自动下载(约 1.6 GB)",
-           "setup": "装好上面缺的程序后,运行 lsk setup 下载模型{w}"},
+           "setup": "装好上面缺的程序后,运行 lsk setup 下载模型{w}",
+           "gpu_hint": "检测到 NVIDIA 显卡 {g},但装的是 CPU 版 whisper.cpp;运行 lsk setup 换成 GPU 版(约 675 MB,转写快很多)"},
     "en": {"ok": "ready", "missing": "missing", "optional": "optional", "sub_ready": "Subtitle mode: ready (only needs Python).",
            "vid_ready": "Video mode: ready.", "vid_missing": "Video mode (experimental): {n} item(s) missing. Not needed if you only have subtitles.",
            "slides_none": "Reading slide PDFs needs pdftotext (poppler) or the Python package pypdf; without them, subtitles alone still work.",
            "clients": "AI clients found: {c}", "no_client": "No command-line AI client found (Codex / Claude Code / Gemini CLI); a desktop app also works: open this folder in it.",
            "py_old": "Python is too old ({v}); 3.9 or newer is required", "how": "install with", "model_auto": "downloaded automatically on the first video run (about 1.6 GB)",
-           "setup": "After installing the missing programs above, run lsk setup to download the models{w}"},
+           "setup": "After installing the missing programs above, run lsk setup to download the models{w}",
+           "gpu_hint": "NVIDIA GPU {g} found, but the CPU build of whisper.cpp is installed; run lsk setup to get the GPU build (about 675 MB, much faster)"},
 }
 
 def lang_default():
@@ -54,6 +57,11 @@ def has_module(m):
     try: __import__(m); return True
     except ImportError: return False
 
+def win_build():
+    """Windows:whisper-cli 是哪个包,显示在 doctor 里"""
+    kind = deps.whisper_win_kind(deps.find("whisper-cli")) if WINDOWS else None
+    return {"cuda": " (CUDA GPU)", "cpu": " (CPU)"}.get(kind, "")
+
 def doctor(a):
     t = MSG[a.lang or lang_default()]
     print(f"== lsk doctor  (COURSE_ROOT = {ROOT})")
@@ -66,7 +74,7 @@ def doctor(a):
     clients = [c for c in ("codex", "claude", "gemini") if have(c)]
     model = os.path.join(MODEL_DIR, "ggml-" + os.environ.get("WHISPER_MODEL", "large-v3-turbo") + ".bin")
     video = [("ffmpeg", have("ffmpeg") and have("ffprobe"), deps.how("ffmpeg")),
-             ("whisper-cli", have("whisper-cli"), deps.how("whisper-cli")),
+             ("whisper-cli" + win_build(), have("whisper-cli"), deps.how("whisper-cli")),
              ("tesseract", have("tesseract"), deps.how("tesseract")),
              ("Pillow", has_module("PIL"), deps.how("pillow")),
              (f"whisper model {os.path.basename(model)}", os.path.isfile(model), None)]
@@ -79,6 +87,8 @@ def doctor(a):
     missing = [n for n, g, _ in video[:4] if not g]   # 模型首次运行会自动下载,不算缺
     print("== " + (t["vid_ready"] if not missing else t["vid_missing"].format(n=len(missing))))
     if missing or not os.path.isfile(model): print("   " + t["setup"].format(w=" (+ whisper.cpp)" if WINDOWS else ""))
+    if WINDOWS and deps.whisper_win_kind(deps.find("whisper-cli")) == "cpu" and (gpu := deps.nvidia_gpu()):
+        print("   " + t["gpu_hint"].format(g=gpu))
     if not ok: return 1
     return 2 if (a.video and missing) else 0
 
@@ -190,10 +200,13 @@ def run(a):
 
 # ---------- setup ----------
 def setup(a):
-    """视频模式的一次性准备:Windows 上下载 whisper.cpp;所有系统下载 whisper 模型(默认约 1.6 GB)与 VAD 模型。完成后再跑一遍 doctor --video"""
-    if not have("whisper-cli"):
-        if WINDOWS: deps.install_whisper_windows()
-        else: print(f"== 先安装 whisper.cpp / install whisper.cpp first: {deps.how('whisper-cli')}")
+    """视频模式的一次性准备:Windows 上下载 whisper.cpp(有 NVIDIA 显卡下 CUDA 版,--cpu 强制 CPU 版);所有系统下载 whisper 模型(默认约 1.6 GB)与 VAD 模型。完成后再跑一遍 doctor --video"""
+    if WINDOWS:                                        # 有 NVIDIA 显卡就装 CUDA 版(转写快一个数量级),否则 CPU 版
+        gpu = None if a.cpu else deps.nvidia_gpu()
+        print(f"== NVIDIA 显卡 / GPU: {gpu} → whisper.cpp CUDA" if gpu else "== 用 CPU 转写 / CPU build" + ("" if a.cpu else "(没检测到 NVIDIA 显卡 / no NVIDIA GPU found)"))
+        deps.install_whisper_windows("cuda" if gpu else "cpu")
+    elif not have("whisper-cli"):
+        print(f"== 先安装 whisper.cpp / install whisper.cpp first: {deps.how('whisper-cli')}")
     name = os.environ.get("WHISPER_MODEL", "large-v3-turbo")
     print(f"== 模型 / model: ggml-{name}.bin → {MODEL_DIR}")
     deps.ensure_model(name); deps.ensure_vad()
@@ -257,10 +270,10 @@ def main():
     ap = argparse.ArgumentParser(prog="lsk", description=__doc__.split("\n")[0])
     sp = ap.add_subparsers(dest="cmd", required=True)
     d = sp.add_parser("doctor"); d.add_argument("--video", action="store_true"); d.add_argument("--lang", choices=H.LANGS)
-    u = sp.add_parser("setup"); u.add_argument("--lang", choices=H.LANGS)
+    u = sp.add_parser("setup"); u.add_argument("--lang", choices=H.LANGS); u.add_argument("--cpu", action="store_true", help="Windows: 不下 CUDA 版")
     r = sp.add_parser("run"); r.add_argument("input"); r.add_argument("--unit"); r.add_argument("--date"); r.add_argument("--slides")
     r.add_argument("--lang", choices=H.LANGS, help="总结语言 / summary language"); r.add_argument("--lang-code", default="en", help="视频模式转写语言码 en/zh/auto"); r.add_argument("--force", action="store_true")
-    i = sp.add_parser("install"); i.add_argument("--skills-only", action="store_true"); i.add_argument("--lang", choices=H.LANGS)
+    i = sp.add_parser("install"); i.add_argument("--skills-only", action="store_true"); i.add_argument("--lang", choices=H.LANGS); i.add_argument("--cpu", action="store_true")
     f = sp.add_parser("finish"); f.add_argument("summary")
     v = sp.add_parser("review"); v.add_argument("summary")
     a = ap.parse_args()

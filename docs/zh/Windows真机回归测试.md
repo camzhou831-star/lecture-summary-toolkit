@@ -37,10 +37,10 @@
 | V1 | `lsk.cmd doctor --video` | 列出 ffmpeg、whisper-cli、tesseract、Pillow、whisper 模型,缺的每项后面有安装命令(winget / pip / `lsk setup`) |
 | V2 | 按提示装:`winget install Gyan.FFmpeg`、`winget install UB-Mannheim.TesseractOCR`、`py -m pip install pillow pypdf` | 都装成功;记下哪一步要管理员权限、有没有弹窗 |
 | V3 | **不关当前窗口**,再跑 `lsk.cmd doctor --video` | ffmpeg 和 tesseract 变成 ✅(刚装完 PATH 还没刷新,工具应该自己找得到) |
-| V4 | `lsk.cmd setup` | 下载 whisper.cpp(约 8 MB)和模型(约 1.6 GB),有进度百分比;完成后 doctor 全部 ✅ |
+| V4 | `lsk.cmd setup` | 有 NVIDIA 显卡:先打印显卡型号,下载 CUDA 版 whisper.cpp(约 675 MB);没有:CPU 版(约 8 MB)。再下模型(约 1.6 GB),有进度百分比;完成后 doctor 全部 ✅,whisper-cli 一行标 (CUDA GPU) 或 (CPU) |
 | V5 | 把示例视频复制到 `课程视频\`,`lsk.cmd run "DEMO1001 - 01 Jan 26-s1-demo.mp4"` | 依次出现 [1/5]…[5/5],最后 `全部完成`;`画面\DEMO1001 - 01 Jan 26-s1-demo\` 里有几张 `t000xxs.jpg` |
 | V6 | 记事本打开 `课程视频\DEMO1001 - 01 Jan 26-s1-demo.grounded.md` | 有英文转写(含 "prime path"),有 `📄 t=… p2/6 …` 这样的幻灯片行 |
-| V7 | 真实录播:放进 `课程视频\`,`lsk.cmd run "<文件名>.mp4"` | 能跑完;记下总用时、CPU 型号、内存;电脑会不会卡到没法用 |
+| V7 | 真实录播:放进 `课程视频\`,`lsk.cmd run "<文件名>.mp4"` | 能跑完;记下总用时、显卡型号、CPU 型号、内存;转写那行显示 `GPU: 开` 后有没有出现"改用 CPU(--no-gpu)重试"(出现说明 GPU 版没跑起来,把它上面的报错原文发我);任务管理器里"GPU"的 CUDA 占用有没有上去 |
 | V8 | 如果你的用户名或文件夹路径里有中文:在那个路径下再跑一次 V5 | 照样跑完(whisper.cpp 读中文路径是已知风险点) |
 | V9 | 在资源管理器里**双击** `install.cmd`(V2–V4 的一键版;已经装好的项会跳过) | 窗口跑完停住等你按键,不会一闪而过;最后列出 `...\.claude\skills\video-summary -> ...` 三行 |
 | V10 | 关掉所有窗口,在**别的文件夹**(比如桌面)打开 Claude Code 或 Codex,说"总结 <示例视频完整路径>" | AI 认出技能并找到工具文件夹(技能是目录联接 junction,AI 需要顺着它找到 `lsk.cmd`) |

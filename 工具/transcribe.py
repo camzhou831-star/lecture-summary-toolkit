@@ -5,7 +5,7 @@
 环境变量: WHISPER_MODEL(默认 large-v3-turbo) WHISPER_MODEL_DIR  NO_VAD=1 关闭静音检测  GLOSSARY=<文件> 指定术语表  NO_GPU=1 强制 CPU
           OUT_BASE=<不带扩展名的输出路径> 让 srt/txt 用别的名字(双路录像时从另一路取声音,但产物仍归主文件名)
           WHISPER_THREADS 线程数(默认 min(8, CPU 核数))
-失败回退: GPU 崩溃(如 Metal 在 agent 沙箱内)→ 自动用 --no-gpu 重试 → 再失败用基础参数重试
+失败回退: GPU 崩溃(如 Metal 在 agent 沙箱内、Windows CUDA 版遇到驱动太旧或不支持的显卡)→ 自动用 --no-gpu 重试 → 再失败用基础参数重试
 Windows: whisper.cpp 按系统代码页读文件名,所以音频和输出都放在临时目录,模型路径换成 8.3 短路径
 """
 import os, re, shutil, subprocess, sys, tempfile
@@ -65,7 +65,7 @@ def main():
         gpu = ["--no-gpu"] if no_gpu else []
         rc = run_whisper(*gpu, *vad_args, *prompt_args, "--suppress-nst")
         if rc != 0 and not gpu:
-            log(f"== whisper-cli 失败(退出码 {rc}),改用 CPU(--no-gpu)重试...")   # 沙箱里 Metal 会段错误;慢 3-5 倍,但能跑
+            log(f"== whisper-cli 失败(退出码 {rc}),改用 CPU(--no-gpu)重试...")   # 沙箱里 Metal 会段错误、CUDA 驱动或显卡不支持;慢很多,但能跑
             rc = run_whisper("--no-gpu", *vad_args, *prompt_args, "--suppress-nst")
         if rc != 0:
             log(f"== whisper-cli 仍失败(退出码 {rc}),改用不带 VAD/术语表的基础参数最后重试一次...")

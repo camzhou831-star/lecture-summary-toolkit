@@ -5,17 +5,38 @@
 - ensure_model(name) / ensure_vad():下载 whisper 模型与 Silero VAD 模型(先写 .tmp,完成后再改名)
 - short_path(p):Windows 上把含中文的路径换成 8.3 短路径,whisper.cpp 按系统代码页读文件名,中文路径会打不开
 """
-import hashlib, os, shutil, sys, tempfile, urllib.request, zipfile
+import hashlib, os, shutil, subprocess, sys, tempfile, urllib.request, zipfile
 WINDOWS = sys.platform == "win32"
 DATA = os.environ.get("LSK_DATA_DIR") or os.path.join(os.path.expanduser("~"), ".local", "share", "lecture-summary-toolkit")
 MODEL_DIR = os.environ.get("WHISPER_MODEL_DIR") or os.path.join(os.path.expanduser("~"), ".local", "share", "whisper-models")
 MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin"
 VAD_NAME = "ggml-silero-v5.1.2.bin"
 VAD_URL = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/" + VAD_NAME
-# Windows 版 whisper.cpp:官方 release b5130(= v1.9.4,2026-09-11)的 CPU 预编译包;换版本时同时改 URL 和哈希
-WHISPER_WIN = {"tag": "b5130", "url": "https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-bin-x64.zip",
-               "sha256": "f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c"}
-WHISPER_WIN_DIR = os.path.join(DATA, "whisper.cpp-" + WHISPER_WIN["tag"])
+# Windows 版 whisper.cpp:官方 release b5130(= v1.9.4,2026-09-11)的预编译包;换版本时同时改 URL 和哈希
+#   cpu :纯 CPU(约 8 MB)
+#   cuda:NVIDIA 显卡用(约 675 MB,自带 cuBLAS / cudart / nvrtc 运行库,只需要显卡驱动);检测到 NVIDIA 显卡时 lsk setup 自动选它
+WHISPER_TAG = "b5130"
+WHISPER_REL = f"https://github.com/ggml-org/whisper.cpp/releases/download/{WHISPER_TAG}/"
+WHISPER_WIN = {"cpu": {"url": WHISPER_REL + "whisper-bin-x64.zip", "size": "8 MB",
+                       "sha256": "f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c"},
+               "cuda": {"url": WHISPER_REL + "whisper-cublas-12.4.0-bin-x64.zip", "size": "675 MB",
+                        "sha256": "af520ddd034d985b55dfeea3e465ed93653ba2aee1a55e865033edc548c272a7"}}
+def whisper_win_dir(kind): return os.path.join(DATA, f"whisper.cpp-{WHISPER_TAG}" + ("" if kind == "cpu" else "-" + kind))
+
+def nvidia_gpu():
+    """Windows:有 NVIDIA 显卡和驱动时返回显卡名(nvidia-smi 随驱动安装),否则 None"""
+    smi = shutil.which("nvidia-smi") or os.path.expandvars(r"%SystemRoot%\System32\nvidia-smi.exe")
+    if not os.path.isfile(smi): return None
+    try: r = subprocess.run([smi, "--query-gpu=name", "--format=csv,noheader"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError): return None
+    name = r.stdout.strip().splitlines()[0].strip() if r.returncode == 0 and r.stdout.strip() else None
+    return name
+
+def whisper_win_kind(path):
+    """whisper-cli.exe 属于哪个包(cpu / cuda);不是我们装的返回 None"""
+    for kind in WHISPER_WIN:
+        if path and os.path.normcase(os.path.dirname(path)) == os.path.normcase(whisper_win_dir(kind)): return kind
+    return None
 
 def _win_dirs(cmd):
     """Windows 上 PATH 之外常见的安装位置"""
@@ -24,7 +45,7 @@ def _win_dirs(cmd):
     return {"ffmpeg": [links, e(r"%ProgramData%\chocolatey\bin")],
             "ffprobe": [links, e(r"%ProgramData%\chocolatey\bin")],
             "tesseract": [e(r"%ProgramFiles%\Tesseract-OCR"), e(r"%LOCALAPPDATA%\Programs\Tesseract-OCR"), e(r"%ProgramFiles(x86)%\Tesseract-OCR")],
-            "whisper-cli": [WHISPER_WIN_DIR],
+            "whisper-cli": [whisper_win_dir("cuda"), whisper_win_dir("cpu")],   # 装了 GPU 版就优先用
             "pdftotext": [links], "yt-dlp": [links]}.get(cmd, [])
 
 def find(cmd):
@@ -82,13 +103,14 @@ def ensure_vad():
         download(VAD_URL, path)
     return path
 
-def install_whisper_windows():
-    """下载并解压 Windows 版 whisper.cpp;已装好直接返回 whisper-cli.exe 路径"""
-    cli = os.path.join(WHISPER_WIN_DIR, "whisper-cli.exe")
+def install_whisper_windows(kind="cpu"):
+    """下载并解压 Windows 版 whisper.cpp(kind: cpu / cuda);已装好直接返回 whisper-cli.exe 路径"""
+    pkg, dest = WHISPER_WIN[kind], whisper_win_dir(kind)
+    cli = os.path.join(dest, "whisper-cli.exe")
     if os.path.isfile(cli): return cli
     with tempfile.TemporaryDirectory() as d:
-        z = download(WHISPER_WIN["url"], os.path.join(d, "whisper.zip"), WHISPER_WIN["sha256"], f"whisper.cpp {WHISPER_WIN['tag']}(约 8 MB)")
-        tmpdir = WHISPER_WIN_DIR + ".tmp"
+        z = download(pkg["url"], os.path.join(d, "whisper.zip"), pkg["sha256"], f"whisper.cpp {WHISPER_TAG} {kind}(约 {pkg['size']})")
+        tmpdir = dest + ".tmp"
         shutil.rmtree(tmpdir, ignore_errors=True); os.makedirs(tmpdir)
         with zipfile.ZipFile(z) as zf:
             for m in zf.infolist():                        # 包里文件都在 Release/ 下,平铺解压
@@ -96,8 +118,8 @@ def install_whisper_windows():
                 if not n or m.is_dir(): continue
                 with zf.open(m) as src, open(os.path.join(tmpdir, n), "wb") as dst: shutil.copyfileobj(src, dst)
         if not os.path.isfile(os.path.join(tmpdir, "whisper-cli.exe")): sys.exit("错误: 下载的 whisper.cpp 包里没有 whisper-cli.exe")
-        shutil.rmtree(WHISPER_WIN_DIR, ignore_errors=True); os.replace(tmpdir, WHISPER_WIN_DIR)
-    print(f"== whisper.cpp 已装到 {WHISPER_WIN_DIR}", file=sys.stderr)
+        shutil.rmtree(dest, ignore_errors=True); os.replace(tmpdir, dest)
+    print(f"== whisper.cpp ({kind}) 已装到 {dest}", file=sys.stderr)
     return cli
 
 def short_path(p):

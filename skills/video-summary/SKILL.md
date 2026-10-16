@@ -34,7 +34,7 @@ description: 自动总结长视频内容。输入本地视频/音频文件路径
    - 在线链接(YouTube/B站等):先检查 `yt-dlp`(未装则 macOS `brew install yt-dlp`,Windows `winget install -e --id yt-dlp.yt-dlp`,装完新开终端或用 `%LOCALAPPDATA%\Microsoft\WinGet\Links\yt-dlp.exe`),`yt-dlp -f "ba" -x --audio-format m4a -o "<COURSE_ROOT>/课程视频/%(title)s.%(ext)s" <URL>` 只下音频;先试 `--write-auto-subs --skip-download` 拿现成字幕。
 
 2. **预处理**:统一用总入口 `lsk`(第一次先跑 `bash "$TOOLKIT/lsk" doctor` 看环境,缺什么按它给的命令装,装之前先征得用户同意)。
-   - **Windows**:下面所有 `bash "$TOOLKIT/lsk" …` 换成 `"$TOOLKIT\lsk.cmd" …`(或 `python "$TOOLKIT\工具\lsk.py" …`),参数相同。视频模式在 Windows 上走 `工具/prepare.py`(Python 版,产物与 prepare.sh 相同):先按 `lsk doctor --video` 的提示用 winget 装 ffmpeg 和 tesseract,再跑 `lsk setup` 下载 whisper.cpp 与模型(或让用户双击 `install.cmd` 一次做完,并把技能装进 Claude Code / Codex);Windows 只用 CPU 转写,比 Mac 慢得多,提前告诉用户。
+   - **Windows**:下面所有 `bash "$TOOLKIT/lsk" …` 换成 `"$TOOLKIT\lsk.cmd" …`(或 `python "$TOOLKIT\工具\lsk.py" …`),参数相同。视频模式在 Windows 上走 `工具/prepare.py`(Python 版,产物与 prepare.sh 相同):先按 `lsk doctor --video` 的提示用 winget 装 ffmpeg 和 tesseract,再跑 `lsk setup` 下载 whisper.cpp 与模型(或让用户双击 `install.cmd` 一次做完,并把技能装进 Claude Code / Codex);有 NVIDIA 显卡时 `lsk setup` 自动装 CUDA 版(约 675 MB),速度和 Mac 相近;没有 NVIDIA 显卡只能用 CPU,2 小时录播可能要几十分钟到一小时以上,提前告诉用户。`lsk doctor --video` 的 whisper-cli 一行会标出 (CUDA GPU) 或 (CPU)。
    - **字幕模式**(推荐给新手;只有 `.srt` / `.vtt` 字幕,不需要 ffmpeg、whisper):
      ```bash
      bash "$TOOLKIT/lsk" run "<字幕文件>" [--unit DEMO1001 --date 2026-08-26] [--slides <本讲课件.pdf>] [--lang zh|en]

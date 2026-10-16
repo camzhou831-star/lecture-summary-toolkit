@@ -250,6 +250,11 @@ class Lsk(unittest.TestCase):
 
 class VideoPipeline(unittest.TestCase):
     """视频模式的纯 Python 部分(不需要 ffmpeg / whisper;真流水线见 tests/run_pipeline_demo.py)"""
+    def test_whisper_win_kind(self):                                                             # doctor 靠它标 (CUDA GPU) / (CPU)
+        deps = load("deps")
+        for kind in ("cpu", "cuda"): self.assertEqual(deps.whisper_win_kind(os.path.join(deps.whisper_win_dir(kind), "whisper-cli.exe")), kind)
+        self.assertIsNone(deps.whisper_win_kind(os.path.join(os.sep, "usr", "bin", "whisper-cli"))); self.assertIsNone(deps.whisper_win_kind(None))
+        self.assertNotEqual(deps.whisper_win_dir("cpu"), deps.whisper_win_dir("cuda"))
     def test_frame_filter_modes(self):
         m = load("extract_frames")
         self.assertIn("fps=1/12,mpdecimate", m.video_filter("12s")[1]); self.assertIn("gt(scene,0.20)", m.video_filter("0.20")[1])
