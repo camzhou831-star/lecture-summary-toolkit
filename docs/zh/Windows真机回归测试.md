@@ -21,7 +21,7 @@
 
 | # | 操作 | 应该看到 |
 |---|---|---|
-| 1 | `lsk.cmd doctor` | 一行 `✅ python 3.x`;`字幕模式:可以用`;最后一行说视频模式 Windows 暂不支持。中文和 ✅ 不是乱码、没有报错 |
+| 1 | `lsk.cmd doctor` | 一行 `✅ python 3.x`;`字幕模式:可以用(只需要 Python)`;最后是视频模式那行:依赖没装时是 `视频模式(实验性):还缺 N 项…`,装齐后是 `视频模式:可以用`(视频模式第二部分再测)。中文和 ✅ 不是乱码、没有报错 |
 | 2 | 没装 Python 的电脑(如果有):`lsk.cmd doctor` | 提示怎么装 Python,而不是一堆看不懂的报错 |
 | 3 | `lsk.cmd run <合成字幕.srt>` | 报错说看不出单元和日期,要求加 `--unit` 和 `--date`(提示里的 DEMO1001 只是例子) |
 | 4 | `lsk.cmd run <合成字幕.srt> --unit DEMO1001 --date 2026-01-01 --lang zh` | `== 完成`;`课程视频\` 里多出 `.srt`、`.compact.txt`、`.bundle.json`、`.grounded.md` 四个文件;最后打印总结该存的路径 |
@@ -35,7 +35,7 @@
 | # | 操作 | 应该看到 |
 |---|---|---|
 | V1 | `lsk.cmd doctor --video` | 列出 ffmpeg、whisper-cli、tesseract、Pillow、whisper 模型,缺的每项后面有安装命令(winget / pip / `lsk setup`) |
-| V2 | 按提示装:`winget install Gyan.FFmpeg`、`winget install UB-Mannheim.TesseractOCR`、`py -m pip install pillow pypdf` | 都装成功;记下哪一步要管理员权限、有没有弹窗 |
+| V2 | 按提示装:`winget install Gyan.FFmpeg`、`winget install UB-Mannheim.TesseractOCR`、`py -m pip install pillow pypdf` | 都装成功;记下哪一步要管理员权限、有没有弹窗。winget 报网络错误(如 `0x80072efd`,常见于代理失效或地区限制)时,Tesseract 改从 https://github.com/UB-Mannheim/tesseract/releases 下载安装包、装到默认位置,并在报告里写明是手动装的 |
 | V3 | **不关当前窗口**,再跑 `lsk.cmd doctor --video` | ffmpeg 和 tesseract 变成 ✅(刚装完 PATH 还没刷新,工具应该自己找得到) |
 | V4 | `lsk.cmd setup` | 从安装包解压 GPU 版 whisper.cpp(Vulkan),再下 CPU 兜底版(约 8 MB)和模型(约 1.6 GB,有进度百分比);最后做 GPU 自检(用示例视频前 45 秒):逐行打印 `✅/❌ gpu…: <显卡名> <转写开头>`,结尾 `✅ GPU 转写: <你的显卡名>(设置: gpu…)`。**把自检这几行原样发我**(哪一档通过对我们很有用);如果结尾是"没能用上显卡",再附上显卡型号和驱动版本 |
 | V5 | 把示例视频复制到 `课程视频\`,`lsk.cmd run "DEMO1001 - 01 Jan 26-s1-demo.mp4"` | 依次出现 [1/5]…[5/5],最后 `全部完成`;`画面\DEMO1001 - 01 Jan 26-s1-demo\` 里有几张 `t000xxs.jpg` |

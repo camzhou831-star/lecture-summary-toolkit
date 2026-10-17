@@ -147,10 +147,12 @@ def exe(cmd):
     """给 subprocess 用:找得到就用完整路径,找不到原样返回命令名(让调用方按原来的方式报错)"""
     return find(cmd) or cmd
 
+# winget 连不上(代理 / 地区限制,如 0x80072efd)时的手动安装包;装到默认位置 find() 就找得到
+TESSERACT_WIN_URL = "https://github.com/UB-Mannheim/tesseract/releases"
 # 缺了怎么装:(macOS, Windows, Linux)
 INSTALL = {"ffmpeg": ("brew install ffmpeg", "winget install Gyan.FFmpeg", "sudo apt-get install ffmpeg"),
            "whisper-cli": ("brew install whisper-cpp", "lsk setup", "build from https://github.com/ggml-org/whisper.cpp and put whisper-cli on PATH"),
-           "tesseract": ("brew install tesseract", "winget install UB-Mannheim.TesseractOCR", "sudo apt-get install tesseract-ocr"),
+           "tesseract": ("brew install tesseract", "winget install UB-Mannheim.TesseractOCR  (winget 失败就下载安装包 / if winget fails: " + TESSERACT_WIN_URL + ")", "sudo apt-get install tesseract-ocr"),
            "poppler": ("brew install poppler", "py -m pip install pypdf", "sudo apt-get install poppler-utils"),
            "pillow": ("pip3 install pillow", "py -m pip install pillow", "pip3 install pillow")}
 def how(pkg):

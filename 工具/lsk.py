@@ -257,6 +257,8 @@ def install(a):
             if have(cmd): print(f"   {cmd} 已安装 / installed"); continue
             if not winget: print(f"   ❌ 没有 winget,请手动安装 {cmd} / no winget, install {cmd} manually: https://learn.microsoft.com/windows/package-manager/winget/"); continue
             subprocess.call([winget, "install", "-e", "--id", pkg, "--accept-package-agreements", "--accept-source-agreements"])
+            if cmd == "tesseract" and not have(cmd):
+                print(f"   ❌ winget 没装上 tesseract,请下载安装包(装到默认位置即可) / winget failed, download the installer: {deps.TESSERACT_WIN_URL}")
         mods = [p for m, p in (("PIL", "pillow"), ("pypdf", "pypdf")) if not has_module(m)]
         if mods:
             subprocess.call([sys.executable, "-m", "pip", "install", "--user", *mods])
