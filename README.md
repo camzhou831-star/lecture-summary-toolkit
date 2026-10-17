@@ -11,16 +11,16 @@ Go to the [Releases page](../../releases) and pick **one**:
 | You have… | Download | Install anything? |
 |---|---|---|
 | Subtitles (`.srt` / `.vtt`) and a **web AI** (ChatGPT, Claude, Gemini, Grok in the browser) | `lecture-summary-web-prompts-…-en.zip` | No |
-| Subtitles, and an **AI app that can work with files on your Mac** (Codex, Claude Code / Claude desktop, Gemini CLI) | `lecture-summary-toolkit-…-en.zip` | Usually no: it needs Python 3, and the first time macOS may offer to install "Command Line Tools" (click Install) |
-| Only the **video recording** (no subtitles) | `lecture-summary-toolkit-…-en.zip` | Yes: video mode, see below (experimental) |
+| Subtitles, and an **AI app that can work with files on your computer** (Codex, Claude Code / Claude desktop, Gemini CLI) | Mac: `lecture-summary-toolkit-…-en.zip`<br>Windows: `lecture-summary-toolkit-…-en-windows.zip` | Usually no: it needs Python 3. The first time, macOS may offer to install "Command Line Tools" (click Install); on Windows without Python, `lsk.cmd doctor` tells you how to install it |
+| Only the **video recording** (no subtitles) | Mac: `lecture-summary-toolkit-…-en.zip`<br>Windows: `lecture-summary-toolkit-…-en-windows.zip` | Yes: video mode, see below (experimental) |
 
 The `-en` packages contain English instructions and write **English summaries** by default. (The `-zh` packages are the Chinese versions.) Ignore "Source code (zip / tar.gz)" at the bottom of the Releases page; that is for developers.
 
-**Unzip by double-clicking the file in Finder.** (The command-line `unzip` on macOS garbles the Chinese folder names inside.)
+**On a Mac, unzip by double-clicking the file in Finder** (the command-line `unzip` on macOS garbles the Chinese folder names inside). **On Windows, right-click the zip in File Explorer → "Extract All".**
 
 ## What you need first
 
-- A Mac (macOS). Linux may work; Windows is not supported yet.
+- A Mac, or a Windows 10 / 11 PC. Linux may work.
 - The lecture's **subtitles** (`.srt` or `.vtt`): many LMS lecture players offer a captions download; check yours. Optional: the slide PDF for that lecture.
 - One of the AI apps above, signed in with your own account. The summary uses your own subscription; nothing is sent to us.
 
@@ -34,7 +34,7 @@ The `-en` packages contain English instructions and write **English summaries** 
 
 If the file name doesn't show the unit and date, the AI will ask you (e.g. "DEMO1001, 26 August"). Add "the slides are ~/Downloads/lect06a.pdf" if you have them. When it is done it lists any exam information it found and asks you to confirm the source.
 
-The first time, you can also ask: "Run `bash lsk doctor` and tell me what's missing."
+The first time, you can also ask: "Run `bash lsk doctor` (on Windows: `lsk.cmd doctor`) and tell me what's missing."
 
 ## Where things end up
 
@@ -55,11 +55,13 @@ Summaries are plain Markdown. They work best in [Obsidian](https://obsidian.md) 
 | Install | none for subtitles | none |
 | Automatic checks (timestamps, structure, card count) | yes | no, spot-check yourself |
 | Links back to the recording, cross-week exam bank | yes | no |
-| Works with | AI apps that can run commands on your Mac | any web AI |
+| Works with | AI apps that can run commands on your computer (Mac / Windows) | any web AI |
 
 ## Video mode (experimental)
 
 If you only have the recording, the toolkit can transcribe it on your Mac with whisper.cpp and read the slides from the video. This needs Homebrew, ffmpeg, whisper-cpp and tesseract, plus a 1.6 GB model downloaded on first use. Ask your AI app to run `bash lsk doctor --video` and help you install what is missing, or run `bash install.sh` yourself.
+
+On Windows, transcription runs on your graphics card (Vulkan: NVIDIA, AMD and Intel GPUs all work). Double-click `install.cmd` in File Explorer to set everything up: it installs ffmpeg, tesseract, Pillow and pypdf, downloads whisper.cpp and the model, and tests your GPU on the demo video, falling back to the much slower CPU build if the GPU can't be used. Afterwards you can run `lsk.cmd doctor --video` to check. If winget fails to install tesseract, doctor shows where to download the installer.
 
 ## Privacy and academic integrity — please read
 
@@ -72,7 +74,7 @@ If you only have the recording, the toolkit can transcribe it on your Mac with w
 
 ## Limits
 
-- Tested on macOS only. Video mode is experimental.
+- Most testing has been on macOS. On Windows 10 / 11, subtitle mode and video mode run the demo end to end in CI and on one real PC (NVIDIA GPU); real full-length recordings and the various AI apps on Windows are still being tested. Video mode is experimental.
 - The AI can still make mistakes, especially with exam information and technical details. Every summary lists exam information with its source so you can check it against the slides or unit outline.
 
 ## For developers
