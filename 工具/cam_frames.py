@@ -25,12 +25,16 @@ def paper_th(g):
         if cum >= 0.95 * n: return max(110, min(200, int(v * 0.85)))
     return 200
 
+def pixels(im):
+    """逐像素值;Pillow 12.1+ 用 get_flattened_data(getdata 将在 Pillow 14 删除),旧版回退 getdata"""
+    return (im.get_flattened_data if hasattr(im, "get_flattened_data") else im.getdata)()
+
 def paper_bbox(g, th=None, frac=0.25):
     """白纸区域:亮像素(>th)在某列/某行占比超过 frac 的范围。找不到(整帧没有大片白)返回 None。th 为 None 时按帧亮度自适应。"""
     if th is None: th = paper_th(g)
     bright = g.point(lambda v: 255 if v > th else 0)
     W, H = g.size
-    cols = bright.resize((W, 1), Image.BOX).getdata(); rows = bright.resize((1, H), Image.BOX).getdata()
+    cols = pixels(bright.resize((W, 1), Image.BOX)); rows = pixels(bright.resize((1, H), Image.BOX))
     xs = [x for x, v in enumerate(cols) if v > 255 * frac]; ys = [y for y, v in enumerate(rows) if v > 255 * frac]
     return (min(xs), min(ys), max(xs) + 1, max(ys) + 1) if xs and ys else None
 

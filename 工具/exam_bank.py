@@ -3,10 +3,10 @@
 汇总成一份 总结/<单元>/考点库.md(+ 考点库.json 结构化数据),Quiz/期中前直接从这里出模拟题,不用再逐份翻总结。
 用法: exam_bank.py <单元代码|总结子目录名|某份总结.md> [--out <文件>] [--no-json] [--quiet]
       例: exam_bank.py 1002         → 汇总 <COURSE_ROOT>/总结/1002/*.md,写 总结/1002/考点库.md
-          exam_bank.py 总结/1003/DEMO1003\ -\ 17\ Aug\ 20-s1-full.md   → 汇总该总结所在目录
+          exam_bank.py "总结/1003/DEMO1003 - 17 Aug 20-s1-full.md"   → 汇总该总结所在目录
 规则:
   - 只读文件名能被 course_meta 解析(或标题里有 第N周/WN + 日期)的总结;考点库.md 自身与其它笔记跳过
-  - 每条目记录:周次、日期、原文、时间戳(第一个可回跳录播)、课件页码、是否 🎯 老师明说
+  - 每条目记录:周次、日期、原文、时间戳(第一个可回跳录播;课程视频/ 下没有同名视频时只留纯时间文字)、课件页码、是否 🎯 老师明说
   - 复习卡汇总时把 `::` 改成 ` → `、`==x==` 改成 **x**,避免 Spaced Repetition 插件把考点库当第二份卡组重复排期
   - 整份文件每次重新生成,不要手改;改了某周总结后重跑即可
   - 中英分开:中文总结 <名>.md → 考点库.md;英文总结 <名>.en.md → Exam-Bank.en.md(界面文字也是英文),两种语言不混汇
@@ -57,7 +57,7 @@ def parse_summary(path, cfg=None):
     tm = re.search(r"[)）]\s*[—–-]+\s*(.+)$", title)
     topic = tm[1].strip() if tm else title
     unit = (meta or {}).get("unit") or (re.match(r"([A-Z]{4}\d{4})", name) or [None, None])[1]
-    video = next((name + e for e in VIDEO_EXTS if os.path.exists(os.path.join(ROOT, "课程视频", name + e))), name + ".mp4")
+    video = next((name + e for e in VIDEO_EXTS if os.path.exists(os.path.join(ROOT, "课程视频", name + e))), None)   # 找不到视频就不生成回跳链接(与 add_links 一致)
     items = {"notice": [], "signal": [], "exam": [], "card": []}
     kind = None; cur = None; in_code = False
     for ln, l in enumerate(lines[1:], 2):
@@ -96,7 +96,7 @@ def strip_ts_link(text):
 def linked(it, s, out_dir):
     """条目文本 + 第一个时间点的回跳链接:原文里已有 [MM:SS] 就把它变成链接,否则加在最前面"""
     text = strip_ts_link(it["text"])
-    if not it["timestamps"]: return text
+    if not it["timestamps"] or not s["video"]: return text   # 没有视频:保留原文里的纯时间文字
     sec = it["timestamps"][0]
     rel = os.path.relpath(os.path.realpath(os.path.join(ROOT, "课程视频", s["video"])), os.path.realpath(out_dir)).replace(os.sep, "/")   # Windows 反斜杠 → 链接用正斜杠
     lk = f"[{fmt_ts(sec)}](<{rel}#t={sec}>)"

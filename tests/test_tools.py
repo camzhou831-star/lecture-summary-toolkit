@@ -3,7 +3,7 @@
 覆盖:course_meta 文件名与周次、compact 幻觉过滤与时间标签及新旧实现 golden、check_summary 三类错误与复习卡数量、review_pack 审核包、add_links 幂等与路径别名、
      build_bundle 空档检测(含 VAD 填充段)与 --duration/--video、原子写入、ocr_frames 规则 A(现场写代码帧不被合并)、dedup_frames 严格去重、ocr_frames 页码模式、match_slides 词匹配、exam_bank 跨周考点库、cam_frames 手写帧挑选与 check_summary 的 cam/ 路径、
      双端一致性(AGENTS.md 由 SKILL 生成、CLAUDE.md 导入目标存在、技能 frontmatter)。"""
-import contextlib, io, json, os, re, shutil, subprocess, sys, tempfile, unittest, importlib.util
+import argparse, contextlib, io, json, os, re, shutil, subprocess, sys, tempfile, unittest, importlib.util
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.join(ROOT, "工具")
 sys.path.insert(0, TOOLS)
@@ -223,11 +223,32 @@ class Lsk(unittest.TestCase):
             r = run([*self.LSK, "finish", summ], env=env)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertTrue(os.path.isfile(os.path.join(d, "root", "总结", "DEMO1001", "Exam-Bank.en.md")))
+    VTT = "WEBVTT\n\n00:01.000 --> 00:04.000\nHello class\n"
+    def test_txt_transcript_and_same_name_subtitles(self):                                       # .txt 文字稿:没视频给出路;有视频存成 .lms.txt;视频旁的同名字幕复制进 课程视频/
+        with tempfile.TemporaryDirectory() as d:
+            dl = os.path.join(d, "dl"); os.makedirs(dl); txt = os.path.join(dl, "DEMO1001 - 26 Aug 20-s1-full.txt")
+            open(txt, "w").write("plain transcript without timestamps")
+            r = run([*self.LSK, "run", txt], env={"COURSE_ROOT": os.path.join(d, "root")})
+            self.assertEqual(r.returncode, 1); self.assertIn("lsk run <文字稿.txt> --video", r.stderr); self.assertIn(".srt / .vtt", r.stderr)
+            m = load("lsk"); m.ROOT = os.path.join(d, "root"); m.DOWNLOADS = os.path.join(d, "no-downloads")
+            video = os.path.join(dl, "DEMO1001 - 26 Aug 20-s1-full.mp4"); open(video, "wb").write(b"x")
+            a = argparse.Namespace(video=None)
+            with contextlib.redirect_stdout(io.StringIO()): self.assertEqual(m.text_transcript(txt, a), video)
+            vd = os.path.join(d, "root", "课程视频")
+            self.assertEqual(os.listdir(vd), ["DEMO1001 - 26 Aug 20-s1-full.lms.txt"])                 # 不是 <名>.txt(会被 whisper 输出覆盖)
+            open(os.path.join(dl, "DEMO1001 - 26 Aug 20-s1-full.vtt"), "w").write(self.VTT)
+            with contextlib.redirect_stdout(io.StringIO()) as out: m.bring_subtitles(video)
+            self.assertIn("跳过 whisper", out.getvalue())
+            self.assertTrue(open(os.path.join(vd, "DEMO1001 - 26 Aug 20-s1-full.srt")).read().startswith("1\n00:00:01,000 --> "))
+            open(os.path.join(dl, "DEMO1001 - 26 Aug 20-s1-full.vtt"), "w").write(self.VTT.replace("Hello", "Changed"))
+            with contextlib.redirect_stdout(io.StringIO()) as out: m.bring_subtitles(video)             # 课程视频/ 已有字幕:不覆盖
+            self.assertEqual(out.getvalue(), ""); self.assertIn("Hello", open(os.path.join(vd, "DEMO1001 - 26 Aug 20-s1-full.srt")).read())
     def test_doctor_exit_codes(self):
         with tempfile.TemporaryDirectory() as d:
             env = {"PATH": "/usr/bin:/bin", "WHISPER_MODEL_DIR": d, "LANG": "en_AU.UTF-8"}
             r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor"], env=env)
             self.assertEqual(r.returncode, 0, r.stdout); self.assertIn("Subtitle mode: ready", r.stdout)
+            self.assertIn(sys.executable, r.stdout)                                               # doctor 显示正在用的 Python 路径
             if WINDOWS:                                                                           # Windows:缺的东西给 winget / lsk setup
                 r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor", "--video"], env=dict(env, LSK_DATA_DIR=d))
                 self.assertIn("lsk setup", r.stdout)
@@ -298,6 +319,8 @@ class VideoPipeline(unittest.TestCase):
         self.assertEqual(m.how("whisper-cli") == "lsk setup", WINDOWS)
         self.assertEqual(m.short_path("/ascii/path"), "/ascii/path")
         self.assertIsNone(m.find("definitely-not-a-real-command-xyz"))
+        for pkg in ("pillow",) + (("poppler",) if WINDOWS else ()):                                # pip 包的安装命令指向当前解释器,不是 pip3 / py
+            self.assertIn(os.path.basename(sys.executable), m.how(pkg)); self.assertIn("-m pip install", m.how(pkg))
 
 class Release(unittest.TestCase):
     def test_language_packages(self):
@@ -429,6 +452,14 @@ class Frames(unittest.TestCase):
             slide("t00024s.jpg", "Slide two about prime paths and a lot more text here")
             r = run([sys.executable, os.path.join(TOOLS, "dedup_frames.py"), d]); self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(sorted(f for f in os.listdir(d) if f.endswith(".jpg")), ["t00012s.jpg", "t00024s.jpg"])
+    def test_pixels_no_pillow_deprecation(self):                                                # getdata 在 Pillow 14 删除:新版走 get_flattened_data,旧版回退,都不出 DeprecationWarning
+        import warnings
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as d, warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            p = os.path.join(d, "t.png"); im = Image.new("L", (64, 48), 0); im.paste(230, (8, 6, 56, 42)); im.save(p)
+            self.assertIsInstance(load("dedup_frames").dhash(p), int)
+            self.assertEqual(load("cam_frames").paper_bbox(Image.open(p).convert("L"), th=128), (8, 6, 56, 42))
     def test_page_patterns(self):
         m = load("ocr_frames")
         self.assertEqual(m.find_page("Browse Text Selection 12 of 20 Zoom"), (12, 20))
@@ -565,6 +596,13 @@ x
         # 重跑幂等(考点库.md 自身不会被当成总结读进去)
         r2 = run([sys.executable, os.path.join(TOOLS, "exam_bank.py"), "1002", "--quiet"], env={"COURSE_ROOT": self.tmp})
         self.assertEqual(r2.returncode, 0); self.assertIn("1 份总结", open(os.path.join(self.tmp, "总结", "1002", "考点库.md"), encoding="utf-8").read())
+    def test_no_video_no_links(self):                                                            # 课程视频/ 下没有同名视频:只留纯时间文字,不生成指向不存在 .mp4 的链接
+        os.remove(os.path.join(self.tmp, "课程视频", "DEMO1001 - 26 Aug 20-s1-full.mp4"))
+        r = run([sys.executable, os.path.join(TOOLS, "exam_bank.py"), "1002"], env={"COURSE_ROOT": self.tmp})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.assertNotIn("Warning", r.stderr)
+        out = open(os.path.join(self.tmp, "总结", "1002", "考点库.md"), encoding="utf-8").read()
+        self.assertNotIn(".mp4", out); self.assertNotIn("#t=", out); self.assertIn("36:00", out)
+        self.assertIsNone(json.load(open(os.path.join(self.tmp, "总结", "1002", "考点库.json"), encoding="utf-8"))["summaries"][0]["video"])
     EN_SUMMARY = """# DEMO1001 Week 6 (2026-08-26) — Logic Testing
 
 ## ⚠️ Course Notices (07:08–07:35)

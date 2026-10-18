@@ -5,7 +5,7 @@
 - ensure_model(name) / ensure_vad():下载 whisper 模型与 Silero VAD 模型(先写 .tmp,完成后再改名)
 - short_path(p):Windows 上把含中文的路径换成 8.3 短路径,whisper.cpp 按系统代码页读文件名,中文路径会打不开
 """
-import hashlib, json, os, re, shutil, subprocess, sys, tempfile, urllib.request, zipfile
+import hashlib, json, os, re, shlex, shutil, subprocess, sys, sysconfig, tempfile, urllib.request, zipfile
 WINDOWS = sys.platform == "win32"
 DATA = os.environ.get("LSK_DATA_DIR") or os.path.join(os.path.expanduser("~"), ".local", "share", "lecture-summary-toolkit")
 MODEL_DIR = os.environ.get("WHISPER_MODEL_DIR") or os.path.join(os.path.expanduser("~"), ".local", "share", "whisper-models")
@@ -153,10 +153,25 @@ TESSERACT_WIN_URL = "https://github.com/UB-Mannheim/tesseract/releases"
 INSTALL = {"ffmpeg": ("brew install ffmpeg", "winget install Gyan.FFmpeg", "sudo apt-get install ffmpeg"),
            "whisper-cli": ("brew install whisper-cpp", "lsk setup", "build from https://github.com/ggml-org/whisper.cpp and put whisper-cli on PATH"),
            "tesseract": ("brew install tesseract", "winget install UB-Mannheim.TesseractOCR  (winget 失败就下载安装包 / if winget fails: " + TESSERACT_WIN_URL + ")", "sudo apt-get install tesseract-ocr"),
-           "poppler": ("brew install poppler", "py -m pip install pypdf", "sudo apt-get install poppler-utils"),
-           "pillow": ("pip3 install pillow", "py -m pip install pillow", "pip3 install pillow")}
+           "poppler": ("brew install poppler", None, "sudo apt-get install poppler-utils"),   # Windows 没有 poppler,装 pypdf
+           "pillow": (None, None, None)}
+
+def py_cmd():
+    """当前解释器的完整路径(路径带空格时加引号),给用户复制运行"""
+    exe = sys.executable
+    if " " not in exe: return exe
+    return f'"{exe}"' if WINDOWS else shlex.quote(exe)
+
+def pip_how(*pkgs):
+    """pip 安装命令:用正在运行 lsk 的这个 Python(pip3 / py 不一定是同一个);虚拟环境里直接装;
+    Homebrew 等"外部管理"的 Python 不让直接 pip 装,装进用户目录要加 --break-system-packages(不动系统包)"""
+    if sys.prefix != sys.base_prefix: return f"{py_cmd()} -m pip install {' '.join(pkgs)}"   # 虚拟环境:直接装进去,不能用 --user
+    managed = os.path.exists(os.path.join(sysconfig.get_path("stdlib"), "EXTERNALLY-MANAGED"))
+    return f"{py_cmd()} -m pip install --user {' '.join(pkgs)}" + (" --break-system-packages" if managed else "")
+
 def how(pkg):
     mac, win, linux = INSTALL[pkg]
+    if pkg == "pillow" or (pkg == "poppler" and WINDOWS): return pip_how("pillow" if pkg == "pillow" else "pypdf")
     if WINDOWS: return win
     return mac if sys.platform == "darwin" or shutil.which("brew") else linux
 

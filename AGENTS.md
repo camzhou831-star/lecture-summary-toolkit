@@ -32,9 +32,13 @@
 
 1. **确定输入**
    - 本地文件:用户给文件名或路径即可,`prepare.sh` 会在 `课程视频/`、`~/Downloads/` 里找,并把视频移入 `课程视频/`。
+   - **按用户手上的文件选模式**(`lsk run` 都接得住,不用自己编排):
+     - `.srt` / `.vtt` 字幕 → 字幕模式。
+     - 视频 → 视频模式;视频旁边(或 `~/Downloads/`)有**同名**非空 `.srt` / `.vtt` 时,`lsk run <视频>` 先把它复制成 `课程视频/<名>.srt`,跳过 whisper 转写。字幕和视频名字不同时,先问用户再把字幕改成和视频同名。
+     - LMS 导出的 `.txt` 文字稿(没有时间戳,不能改扩展名当 srt)→ `lsk run <文字稿.txt>`:有同名视频(或 `--video <视频>`)就把文字稿存成 `课程视频/<名>.lms.txt` 再走视频模式;**时间戳只能来自讲义稿**,`.lms.txt` 只用来核对术语、人名和原话(两者冲突时以录音转写为准,拿不准的标出来)。没有视频时它退出码 1 并列出办法:告诉用户去 LMS 下载字幕或视频;用户坚持只用文字稿时,说明没有时间线、回跳和时间戳检查,再按用户意思处理。
    - 在线链接(YouTube/B站等):先检查 `yt-dlp`(未装则 macOS `brew install yt-dlp`,Windows `winget install -e --id yt-dlp.yt-dlp`,装完新开终端或用 `%LOCALAPPDATA%\Microsoft\WinGet\Links\yt-dlp.exe`),`yt-dlp -f "ba" -x --audio-format m4a -o "<COURSE_ROOT>/课程视频/%(title)s.%(ext)s" <URL>` 只下音频;先试 `--write-auto-subs --skip-download` 拿现成字幕。
 
-2. **预处理**:统一用总入口 `lsk`(第一次先跑 `bash "$TOOLKIT/lsk" doctor` 看环境,缺什么按它给的命令装,装之前先征得用户同意)。
+2. **预处理**:统一用总入口 `lsk`(第一次先跑 `bash "$TOOLKIT/lsk" doctor` 看环境,缺什么按它给的命令装,装之前先征得用户同意)。doctor 第一行是它用的 Python(版本 + 路径),Python 包的安装命令都指向这个解释器,照抄即可;不要换别的 Python 跑 `lsk.py`,否则 doctor 检查的和实际运行的不是同一个环境。
    - **Windows**:下面所有 `bash "$TOOLKIT/lsk" …` 换成 `"$TOOLKIT\lsk.cmd" …`(或 `python "$TOOLKIT\工具\lsk.py" …`),参数相同。视频模式在 Windows 上走 `工具/prepare.py`(Python 版,产物与 prepare.sh 相同):先按 `lsk doctor --video` 的提示用 winget 装 ffmpeg 和 tesseract,再跑 `lsk setup` 下载 whisper.cpp 与模型(或让用户双击 `install.cmd` 一次做完,并把技能装进 Claude Code / Codex);Windows 版安装包自带 GPU 版 whisper.cpp(Vulkan,NVIDIA / AMD / Intel 显卡通用),`lsk setup` 装好后用示例视频做 GPU 自检(逐个试 Vulkan 设置,记下第一个转写正确的),报告"✅ GPU 转写: <显卡名>";如果报告没能用上显卡(驱动太旧、没有可用显卡),转写会退回 CPU,2 小时录播可能要一小时左右,提前告诉用户并建议更新显卡驱动。`lsk doctor --video` 的 whisper-cli 一行标出 (Vulkan GPU) / (CUDA GPU) / (CPU)。
    - **字幕模式**(推荐给新手;只有 `.srt` / `.vtt` 字幕,不需要 ffmpeg、whisper):
      ```bash

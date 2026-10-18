@@ -9,7 +9,7 @@ from PIL import Image
 
 def dhash(path, size=16):
     img = Image.open(path).convert("L").resize((size + 1, size), Image.LANCZOS)
-    px = list(img.getdata())
+    px = list((img.get_flattened_data if hasattr(img, "get_flattened_data") else img.getdata)())   # getdata 将在 Pillow 14 删除
     bits = 0
     for r in range(size):
         for c in range(size):

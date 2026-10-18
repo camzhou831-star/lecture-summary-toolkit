@@ -36,6 +36,29 @@ If the file name doesn't show the unit and date, the AI will ask you (e.g. "DEMO
 
 The first time, you can also ask: "Run `bash lsk doctor` (on Windows: `lsk.cmd doctor`) and tell me what's missing."
 
+## Which files do you have?
+
+| You have | What to do | What you get |
+|---|---|---|
+| Subtitles `.srt` / `.vtt` | Give the AI the subtitle path (subtitle mode; no ffmpeg / whisper needed) | Full summary: timeline, jump-back links (needs the video, see below), automatic checks |
+| A recording `.mp4` etc. | Give the AI the video path (video mode; install the dependencies first) | The same, plus slide screenshots and slide text |
+| Subtitles + video | Give both files **the same name** (only the extension differs), put them in the same folder, and give the AI the video path | Uses your subtitles and **skips transcription** (much faster); frames and slides are still read |
+| A plain `.txt` transcript from the LMS (no timestamps) + video | Same name, same folder, give the AI the transcript path; if the names differ, say "the video is …" | Timestamps come from transcribing the video; the transcript is kept as `课程视频/<lecture>.lms.txt` for checking terms and wording |
+| Only a `.txt` transcript | The toolkit can't process it (no times means no timeline and no checks). Check whether the LMS offers subtitles or the video | If not, ask the AI for a plain summary of the text, without a timeline |
+
+- If you give only a file name, the toolkit looks in `课程视频/` and `~/Downloads/`. Videos are **moved** into `课程视频/`; same-name subtitles are **copied** there and the original stays put.
+- Two recordings of one lecture (`<lecture>.mp4` and `<lecture>-2.mp4`): keep both, give only the first.
+- Without a matching video, summaries keep plain times and no broken jump-back links are created.
+
+## Running commands yourself
+
+Usually the AI runs them for you. To run one yourself, first go into the toolkit folder, or you'll get `No such file or directory`:
+
+- **Mac**: open Terminal, type `cd` followed by a space, **drag** the unzipped `lecture-summary-toolkit` folder from Finder into the window, press Return, then run `bash lsk doctor`. Or use the full path, e.g. `bash ~/Desktop/lecture-summary-toolkit/lsk doctor` (`~` already means `/Users/<your name>`; don't write `~/Users/...`).
+- **Windows**: open the `lecture-summary-toolkit` folder in File Explorer, type `cmd` in the address bar, press Enter, then run `lsk.cmd doctor`.
+
+The first line of `lsk doctor` shows which Python it uses (version and path). If a Python package (Pillow, pypdf) is missing, copy the install command it prints so the package goes into that same Python, not another `pip3`.
+
 ## Where things end up
 
 The folder names inside are in Chinese for now:

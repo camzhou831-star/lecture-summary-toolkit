@@ -6,8 +6,9 @@
                                                默认 Vulkan GPU 版(安装包自带,NVIDIA / AMD / Intel 通用)+ CPU 兜底;--cuda NVIDIA 官方版,--cpu 只用 CPU
   lsk install [--skills-only]                  Windows 一键安装(install.cmd 调它):winget 装 ffmpeg / tesseract、pip 装 pillow / pypdf、
                                                lsk setup,再把技能链接到 Claude Code 与 Codex 的技能目录;macOS / Linux 转去跑 install.sh
-  lsk run <字幕.srt|.vtt|视频> [--unit DEMO1001 --date 2026-08-26] [--slides <课件.pdf|目录>] [--lang en] [--force]
+  lsk run <字幕.srt|.vtt|文字稿.txt|视频> [--unit DEMO1001 --date 2026-08-26] [--slides <课件.pdf|目录>] [--lang en] [--force] [--video <视频>]
                                                字幕模式:放好字幕 → compact → 讲义稿(+ 课件逐页文字);视频模式调用 prepare.sh(Windows 上是 prepare.py;实验性)
+                                               视频旁边有同名 .srt/.vtt 时先复制进 课程视频/,跳过转写;.txt 文字稿没有时间戳,要配同名视频(或 --video)
   lsk finish <总结.md>                          写完总结后:加回跳链接 → 检查 → 重生成考点库
   lsk review <总结.md>                          准备审核包(见 skills/video-summary/review.md)
 目录:COURSE_ROOT 环境变量,默认是本工具目录;字幕、讲义稿在 课程视频/,总结在 总结/<单元>/
@@ -21,7 +22,8 @@ VIDEO_EXTS = (".mp4", ".mkv", ".mov", ".webm", ".m4a", ".mp3", ".wav")
 MODEL_DIR = deps.MODEL_DIR
 WINDOWS = sys.platform == "win32"
 # 子进程统一用 UTF-8(Windows 默认 GBK / cp1252),输出按 UTF-8 解码
-def child_env(): return dict(os.environ, COURSE_ROOT=ROOT, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+# LSK_PYTHON:prepare.sh 里的 Python 步骤也用这个解释器,和 doctor 检查的是同一个(不然 PATH 上的 python3 可能缺 Pillow)
+def child_env(): return dict(os.environ, COURSE_ROOT=ROOT, PYTHONUTF8="1", PYTHONIOENCODING="utf-8", LSK_PYTHON=sys.executable)
 UTF8 = {"encoding": "utf-8", "errors": "replace"}
 
 MSG = {
@@ -30,6 +32,7 @@ MSG = {
            "slides_none": "读课件 PDF 需要 pdftotext(poppler)或 Python 包 pypdf,二选一;没有的话只用字幕也能总结。",
            "clients": "检测到的 AI 客户端:{c}", "no_client": "没检测到命令行版 AI 客户端(Codex / Claude Code / Gemini CLI);用桌面版也可以,打开本文件夹即可。",
            "py_old": "Python 版本太旧({v}),需要 3.9 以上", "how": "安装命令", "model_auto": "第一次处理视频时自动下载(约 1.6 GB)",
+           "py_note": "下面的 Python 包(Pillow / pypdf)检查的是这个 Python;装包请照抄下面给的命令,别用别的 pip3",
            "setup": "装好上面缺的程序后,运行 lsk setup 下载模型{w}",
            "gpu_hint": "检测到显卡 {g},但装的是 CPU 版 whisper.cpp;运行 lsk setup 换成 GPU 版(转写快很多)"},
     "en": {"ok": "ready", "missing": "missing", "optional": "optional", "sub_ready": "Subtitle mode: ready (only needs Python).",
@@ -37,6 +40,7 @@ MSG = {
            "slides_none": "Reading slide PDFs needs pdftotext (poppler) or the Python package pypdf; without them, subtitles alone still work.",
            "clients": "AI clients found: {c}", "no_client": "No command-line AI client found (Codex / Claude Code / Gemini CLI); a desktop app also works: open this folder in it.",
            "py_old": "Python is too old ({v}); 3.9 or newer is required", "how": "install with", "model_auto": "downloaded automatically on the first video run (about 1.6 GB)",
+           "py_note": "Python packages below (Pillow / pypdf) are checked for this Python; install them with the exact command shown, not another pip3",
            "setup": "After installing the missing programs above, run lsk setup to download the models{w}",
            "gpu_hint": "GPU {g} found, but the CPU build of whisper.cpp is installed; run lsk setup to get the GPU build (much faster)"},
 }
@@ -67,9 +71,10 @@ def doctor(a):
     print(f"== lsk doctor  (COURSE_ROOT = {ROOT})")
     ok = sys.version_info >= (3, 9)
     py_fix = "  " + t["py_old"].format(v=sys.version.split()[0]) + (f"  {t['how']}: winget install Python.Python.3.12  |  https://www.python.org/downloads/" if WINDOWS else "")
-    print(f"  {'✅' if ok else '❌'} python {sys.version.split()[0]}" + ("" if ok else py_fix))
+    print(f"  {'✅' if ok else '❌'} python {sys.version.split()[0]}  ({sys.executable})" + ("" if ok else py_fix))
     slides = have("pdftotext") or has_module("pypdf")
-    pdf_fix = deps.how("poppler") if WINDOWS else f"{deps.how('poppler')}  |  pip3 install pypdf"
+    if not (slides and has_module("PIL")): print("     " + t["py_note"])   # 缺 Python 包时才提示,装包命令都指向上面这个解释器
+    pdf_fix = deps.how("poppler") if WINDOWS else f"{deps.how('poppler')}  |  {deps.pip_how('pypdf')}"
     print(f"  {'✅' if slides else '➖'} pdftotext / pypdf ({t['optional']})" + ("" if slides else f"  {t['how']}: {pdf_fix}"))
     clients = [c for c in ("codex", "claude", "gemini") if have(c)]
     model = os.path.join(MODEL_DIR, "ggml-" + os.environ.get("WHISPER_MODEL", "large-v3-turbo") + ".bin")
@@ -153,20 +158,70 @@ def find_slides(arg):
         sys.exit(f"错误 / Error: 找不到课件 {arg}")
     return []   # 没给就不读;课件文件夹里通常是整学期的课件,自动全读会塞满上下文
 
+DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")
+
+def find_input(arg):
+    """文件路径;只给文件名时依次在 课程视频/、~/Downloads/ 找(和 prepare.sh 一样)"""
+    for c in (arg, os.path.join(ROOT, "课程视频", arg), os.path.join(DOWNLOADS, arg)):
+        if os.path.isfile(c): return c
+    sys.exit(f"错误 / Error: 找不到文件 {arg}(查过当前目录、课程视频/、~/Downloads/)\n"
+             f"        file not found: {arg} (looked in the current folder, 课程视频/ and ~/Downloads/)")
+
+def same_name(path, exts):
+    """和 path 同名(去掉扩展名)的文件:先找同一文件夹,再找 课程视频/ 与 ~/Downloads/"""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    for d in dict.fromkeys((os.path.dirname(os.path.abspath(path)), os.path.join(ROOT, "课程视频"), DOWNLOADS)):
+        for e in exts:
+            c = os.path.join(d, stem + e)
+            if os.path.isfile(c) and os.path.getsize(c) > 0: return c
+    return None
+
+def bring_subtitles(video):
+    """视频旁边(或 Downloads 里)有同名字幕、课程视频/ 里还没有时,复制成 课程视频/<名>.srt,视频模式就跳过 whisper 转写(原文件不动)"""
+    stem = os.path.splitext(os.path.basename(video))[0]
+    dest = os.path.join(ROOT, "课程视频", stem + ".srt")
+    if os.environ.get("FORCE") == "1" or (os.path.isfile(dest) and os.path.getsize(dest) > 0): return
+    sub = same_name(video, (".srt", ".vtt"))
+    if not sub or os.path.realpath(sub) == os.path.realpath(dest): return
+    text = open(sub, encoding="utf-8", errors="ignore").read().lstrip("\ufeff")
+    if sub.lower().endswith(".vtt") or text.startswith("WEBVTT"): text = vtt_to_srt(text)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest, "w", encoding="utf-8") as f: f.write(text)
+    print(f"== 找到同名字幕 {sub},复制到 课程视频/,跳过 whisper 转写 / found subtitles with the same name; copied, transcription will be skipped")
+
+def text_transcript(src, a):
+    """LMS 导出的 .txt 文字稿(没有时间戳):有同名视频就存成 课程视频/<名>.lms.txt 再走视频模式(时间戳来自视频转写);
+    没有视频就说明能怎么办。不能存成 <名>.txt:视频模式会用 whisper 的输出覆盖它"""
+    video = a.video or same_name(src, VIDEO_EXTS)
+    if a.video and not os.path.isfile(a.video): sys.exit(f"错误 / Error: 找不到视频 {a.video}")
+    if not video:
+        sys.exit("错误 / Error: .txt 文字稿没有时间戳,不能单独处理(时间线、回跳链接、时间戳检查都要时间)。可以:\n"
+                 "  1. 从 LMS 下载这节课的字幕(.srt / .vtt),运行 lsk run <字幕>(最快,不用装 ffmpeg / whisper)\n"
+                 "  2. 下载这节课的视频,和文字稿放同一文件夹、用同样的文件名,再运行 lsk run <文字稿.txt>;或 lsk run <文字稿.txt> --video <视频>\n"
+                 "  3. 只有文字稿:直接交给 AI 当普通文本总结,但没有时间线和回跳,本工具也检查不了时间戳\n"
+                 "  A .txt transcript has no timestamps. Download the subtitles (.srt/.vtt) or the video from the LMS,\n"
+                 "  or run lsk run <transcript.txt> --video <video>. Text alone gives a summary without a timeline.")
+    stem = os.path.splitext(os.path.basename(video))[0]
+    dest = os.path.join(ROOT, "课程视频", stem + ".lms.txt")
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    if os.path.realpath(src) != os.path.realpath(dest): shutil.copyfile(src, dest)
+    print(f"== 文字稿没有时间戳,改用视频 {video} 转写拿时间 / the .txt has no timestamps; using the video for timing")
+    print(f"   文字稿另存 / transcript saved to: {os.path.relpath(dest, ROOT)}(写总结时用来核对术语和原话 / use it to check wording)")
+    return video
+
 def run(a):
-    src = a.input
-    if not os.path.isfile(src):
-        alt = os.path.join(ROOT, "课程视频", src)
-        if os.path.isfile(alt): src = alt
-        else: sys.exit(f"错误 / Error: 找不到文件 {a.input}")
+    src = find_input(a.input)
     ext = os.path.splitext(src)[1].lower()
+    if ext == ".txt": src = text_transcript(src, a); ext = os.path.splitext(src)[1].lower()
     if ext in VIDEO_EXTS:
+        bring_subtitles(src)
         if WINDOWS:   # Windows 用 Python 版;macOS / Linux 仍用原来的 bash 版
-            print("== 视频模式(实验性)/ video mode (experimental) → prepare.py")
+            print("== 视频模式(实验性)/ video mode (experimental) → prepare.py", flush=True)
             return subprocess.call([sys.executable, os.path.join(TOOLS, "prepare.py"), src, a.lang_code], env=child_env())
-        print("== 视频模式(实验性)/ video mode (experimental) → prepare.sh")
+        print("== 视频模式(实验性)/ video mode (experimental) → prepare.sh", flush=True)
         return subprocess.call(["bash", os.path.join(TOOLS, "prepare.sh"), src, a.lang_code], env=child_env())
-    if ext not in (".srt", ".vtt"): sys.exit(f"错误 / Error: 只支持 .srt / .vtt 字幕或视频文件,收到 {ext}")
+    if ext not in (".srt", ".vtt"): sys.exit(f"错误 / Error: 只支持 .srt / .vtt 字幕、.txt 文字稿(要有同名视频)或视频文件,收到 {ext}\n"
+                                             f"        supported: .srt / .vtt subtitles, .txt transcript (with a same-name video), or a video file; got {ext}")
     name = lecture_name(src, a.unit, a.date)
     vdir = os.path.join(ROOT, "课程视频"); os.makedirs(vdir, exist_ok=True)
     srt = os.path.join(vdir, name + ".srt")
@@ -294,7 +349,7 @@ def main():
     d = sp.add_parser("doctor"); d.add_argument("--video", action="store_true"); d.add_argument("--lang", choices=H.LANGS)
     u = sp.add_parser("setup"); u.add_argument("--lang", choices=H.LANGS); u.add_argument("--cpu", action="store_true", help="Windows: 只用 CPU 版"); u.add_argument("--cuda", action="store_true", help="Windows: NVIDIA 官方 CUDA 版(约 675 MB)")
     r = sp.add_parser("run"); r.add_argument("input"); r.add_argument("--unit"); r.add_argument("--date"); r.add_argument("--slides")
-    r.add_argument("--lang", choices=H.LANGS, help="总结语言 / summary language"); r.add_argument("--lang-code", default="en", help="视频模式转写语言码 en/zh/auto"); r.add_argument("--force", action="store_true")
+    r.add_argument("--lang", choices=H.LANGS, help="总结语言 / summary language"); r.add_argument("--lang-code", default="en", help="视频模式转写语言码 en/zh/auto"); r.add_argument("--force", action="store_true"); r.add_argument("--video", help=".txt 文字稿对应的视频(文件名不同时用)/ video for a .txt transcript")
     i = sp.add_parser("install"); i.add_argument("--skills-only", action="store_true"); i.add_argument("--lang", choices=H.LANGS); i.add_argument("--cpu", action="store_true"); i.add_argument("--cuda", action="store_true")
     f = sp.add_parser("finish"); f.add_argument("summary")
     v = sp.add_parser("review"); v.add_argument("summary")
