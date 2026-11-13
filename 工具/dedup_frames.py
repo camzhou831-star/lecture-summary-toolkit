@@ -9,7 +9,7 @@ from PIL import Image
 
 def dhash(path, size=16):
     img = Image.open(path).convert("L").resize((size + 1, size), Image.LANCZOS)
-    px = list(img.getdata())
+    px = list((img.get_flattened_data if hasattr(img, "get_flattened_data") else img.getdata)())   # getdata 将在 Pillow 14 删除
     bits = 0
     for r in range(size):
         for c in range(size):
@@ -47,4 +47,5 @@ def main():
     if removed and len(removed) <= 30: print("   删除:", " ".join(removed))
 
 if __name__ == "__main__":
+    for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
     main()

@@ -2,18 +2,19 @@
 # 一键安装(macOS):依赖 + 模型 + 把技能装到 Claude Code 与 Codex CLI
 set -euo pipefail
 root="$(cd "$(dirname "$0")" && pwd)"
-echo "== 1/3 依赖(ffmpeg whisper-cpp tesseract)"
+echo "== 1/3 依赖(ffmpeg whisper-cpp tesseract poppler)"
 if command -v brew >/dev/null; then
-  for pkg in ffmpeg whisper-cpp tesseract; do
+  for pkg in ffmpeg whisper-cpp tesseract poppler; do
     if brew list --formula "$pkg" >/dev/null 2>&1; then echo "   $pkg 已安装"; else brew install "$pkg"; fi
   done
 elif command -v apt-get >/dev/null; then
-  echo "   Linux:apt 安装 ffmpeg 与 tesseract;whisper-cpp 需自行编译(https://github.com/ggml-org/whisper.cpp)并把 whisper-cli 放进 PATH"
-  sudo apt-get install -y ffmpeg tesseract-ocr
+  echo "   Linux:apt 安装 ffmpeg、tesseract 与 poppler;whisper-cpp 需自行编译(https://github.com/ggml-org/whisper.cpp)并把 whisper-cli 放进 PATH"
+  sudo apt-get install -y ffmpeg tesseract-ocr poppler-utils
 else
   echo "需要 Homebrew(macOS)或 apt(Linux);Windows 请用 WSL" >&2; exit 1
 fi
-python3 -c "import PIL" 2>/dev/null || pip3 install --user pillow
+# Pillow 装给 lsk 实际用的 python3(pip3 不一定是同一个);Homebrew 的 Python 拒绝直接 pip 装时,装进用户目录
+python3 -c "import PIL" 2>/dev/null || python3 -m pip install --user pillow || python3 -m pip install --user --break-system-packages pillow
 echo "== 2/3 模型(whisper large-v3-turbo ≈1.6GB + Silero VAD ≈1MB,首次转写时也会自动下载)"
 mkdir -p "$HOME/.local/share/whisper-models"
 [ -f "$HOME/.local/share/whisper-models/ggml-large-v3-turbo.bin" ] && echo "   whisper 模型已存在" || echo "   首次运行 transcribe.sh 时自动下载"

@@ -58,4 +58,5 @@ def main():
     print(f"== 完成: {n} 行 -> {dst}", file=sys.stderr)
 
 if __name__ == "__main__":
+    for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
     main()

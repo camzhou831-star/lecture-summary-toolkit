@@ -3,7 +3,7 @@
 # 用法: prepare.sh <视频文件名或路径> [语言码,默认 en] 
 #   文件名不带路径时依次在 课程视频/ 和 ~/Downloads/ 找;在 Downloads 找到会先移入 课程视频/
 #   工作目录 = COURSE_ROOT,未设置时为本脚本所在 工具/ 的上级目录
-#   环境变量: FORCE=1 忽略已有产物全部重做;FRAME_MODE=12s 抓帧模式(默认 12s);NO_VAD=1 / GLOSSARY=<文件> 透传给 transcribe.sh
+#   环境变量: LSK_PYTHON=<解释器> 用哪个 Python(lsk run 会传自己的,doctor 检查的就是它;默认 python3);FORCE=1 忽略已有产物全部重做;FRAME_MODE=12s 抓帧模式(默认 12s);NO_VAD=1 / GLOSSARY=<文件> 透传给 transcribe.sh
 #   双路录像(UWA LMS 常见:<名>.mp4 是讲台电脑屏幕,<名>-2.mp4 是实物投影仪/摄像头):自动识别同目录的 <名>-2.<ext>(或 CAM=<路径> 指定);
 #     声音取两路里更响的那一路(有的课屏幕那路是静音的),产物仍归主文件名;实物投影那路用 cam_frames.py 挑手写页进 画面/<名>/cam/
 #   跳过规则: 只有"转写"和"抓帧"两步在已有产物时跳过;compact、OCR(增量)、课件匹配、bundle 每次都重跑(都只要几秒)
@@ -16,6 +16,7 @@ ROOT="${COURSE_ROOT:-$(dirname "$TOOLS")}"   # 默认为 工具/ 的上级目录
 arg="${1:?用法: prepare.sh <视频文件名或路径> [语言码]}"
 lang="${2:-en}"
 mode="${FRAME_MODE:-12s}"
+PY="${LSK_PYTHON:-python3}"
 
 mkdir -p "$ROOT/课程视频"
 if [ -f "$arg" ]; then video="$arg"
@@ -62,7 +63,7 @@ mean_db() {
 audio_src="$video"
 if [ -n "$cam" ]; then
   d1="$(mean_db "$video")"; d2="$(mean_db "$cam")"
-  if python3 -c "import sys; sys.exit(0 if float('$d2') > float('$d1') + 6 else 1)"; then audio_src="$cam"; fi
+  if "$PY" -c "import sys; sys.exit(0 if float('$d2') > float('$d1') + 6 else 1)"; then audio_src="$cam"; fi
   echo "== 声音: 屏幕路 ${d1} dB,实物投影路 ${d2} dB(20%/50%/80% 处各 4 分钟的中位数)→ 用 $(basename "$audio_src") 转写"
 fi
 pids=()
@@ -75,7 +76,7 @@ if [ "$is_video" = 1 ]; then
   else echo "== [2/5] 抓帧: 画面/$name 已有帧,跳过(FORCE=1 可重做)"; fi
   if [ -n "$cam" ]; then
     if [ "${FORCE:-0}" = 1 ] || [ ! -s "$frames/cam/cam.json" ]; then
-      echo "== [2b] 实物投影手写帧 (后台)"; python3 "$TOOLS/cam_frames.py" "$cam" "$frames/cam" > "$base.cam.log" 2>&1 & pids+=($!)
+      echo "== [2b] 实物投影手写帧 (后台)"; "$PY" "$TOOLS/cam_frames.py" "$cam" "$frames/cam" > "$base.cam.log" 2>&1 & pids+=($!)
     else echo "== [2b] 手写帧: 画面/$name/cam 已有,跳过(FORCE=1 可重做)"; fi
   fi
 fi
@@ -86,31 +87,31 @@ tail -n 2 "$base.transcribe.log" 2>/dev/null | sed 's/^/   /' || true
 tail -n 1 "$base.frames.log" 2>/dev/null | sed 's/^/   /' || true
 tail -n 1 "$base.cam.log" 2>/dev/null | sed 's/^/   /' || true
 
-echo "== [3/5] compact"; python3 "$TOOLS/compact.py" "$base.srt"
+echo "== [3/5] compact"; "$PY" "$TOOLS/compact.py" "$base.srt"
 if [ "$is_video" = 1 ] && [ -d "$frames" ]; then
   echo "== [4/5] 帧去重 + OCR"
-  if [ "$fresh_frames" = 1 ]; then python3 "$TOOLS/dedup_frames.py" "$frames"; else echo "   去重: 本次未重新抓帧,跳过(去重不幂等,重跑会删掉已引用的帧)"; fi
-  if [ "${FORCE:-0}" = 1 ]; then python3 "$TOOLS/ocr_frames.py" "$frames" --force; else python3 "$TOOLS/ocr_frames.py" "$frames"; fi
+  if [ "$fresh_frames" = 1 ]; then "$PY" "$TOOLS/dedup_frames.py" "$frames"; else echo "   去重: 本次未重新抓帧,跳过(去重不幂等,重跑会删掉已引用的帧)"; fi
+  if [ "${FORCE:-0}" = 1 ]; then "$PY" "$TOOLS/ocr_frames.py" "$frames" --force; else "$PY" "$TOOLS/ocr_frames.py" "$frames"; fi
 fi
 # 课件 PDF 匹配(可选):course.json 里该单元配了 slides_dir 且目录里有 PDF 时,用课件文字给帧定页码
-meta="$(COURSE_ROOT="$ROOT" python3 "$TOOLS/course_meta.py" "$video" --json 2>/dev/null || true)"
-slides_dir="$(printf '%s' "$meta" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("slides_dir") or "")' 2>/dev/null || true)"
+meta="$(COURSE_ROOT="$ROOT" "$PY" "$TOOLS/course_meta.py" "$video" --json 2>/dev/null || true)"
+slides_dir="$(printf '%s' "$meta" | "$PY" -c 'import sys,json; d=json.load(sys.stdin); print(d.get("slides_dir") or "")' 2>/dev/null || true)"
 if [ "$is_video" = 1 ] && [ -n "$slides_dir" ]; then
   if ! command -v pdftotext >/dev/null; then
-    echo "   ⚠️ course.json 配了课件目录 $slides_dir,但没装 poppler(brew install poppler),跳过课件匹配" >&2; python3 "$TOOLS/match_slides.py" "$frames" --clear >/dev/null
+    echo "   ⚠️ course.json 配了课件目录 $slides_dir,但没装 poppler(brew install poppler),跳过课件匹配" >&2; "$PY" "$TOOLS/match_slides.py" "$frames" --clear >/dev/null
   elif ! ls "$ROOT/$slides_dir"/*.pdf >/dev/null 2>&1; then
-    echo "   ⚠️ course.json 配了课件目录 $slides_dir,但里面没有 PDF,跳过课件匹配" >&2; python3 "$TOOLS/match_slides.py" "$frames" --clear >/dev/null
+    echo "   ⚠️ course.json 配了课件目录 $slides_dir,但里面没有 PDF,跳过课件匹配" >&2; "$PY" "$TOOLS/match_slides.py" "$frames" --clear >/dev/null
   else
-    echo "== [4b] 课件 PDF 匹配 ($slides_dir)"; python3 "$TOOLS/match_slides.py" "$frames" "$ROOT/$slides_dir" || echo "   ⚠️ 课件匹配失败,继续用工具栏页码" >&2
+    echo "== [4b] 课件 PDF 匹配 ($slides_dir)"; "$PY" "$TOOLS/match_slides.py" "$frames" "$ROOT/$slides_dir" || echo "   ⚠️ 课件匹配失败,继续用工具栏页码" >&2
   fi
 elif [ "$is_video" = 1 ] && [ -f "$frames/ocr.json" ]; then
-  python3 "$TOOLS/match_slides.py" "$frames" --clear >/dev/null 2>&1 || true    # 没配课件:清掉以前的匹配结果,避免陈旧引用
+  "$PY" "$TOOLS/match_slides.py" "$frames" --clear >/dev/null 2>&1 || true    # 没配课件:清掉以前的匹配结果,避免陈旧引用
 fi
-echo "== [5/5] bundle + 讲义稿"; python3 "$TOOLS/build_bundle.py" "$video"
+echo "== [5/5] bundle + 讲义稿"; "$PY" "$TOOLS/build_bundle.py" "$video"
 rm -f "$base.transcribe.log" "$base.frames.log" "$base.cam.log"
 notes="总结/<单元代码>/$name.md"
 if [ -n "$meta" ]; then
-  echo "== 课程信息: $(COURSE_ROOT="$ROOT" python3 "$TOOLS/course_meta.py" "$video" 2>/dev/null | head -1)"
-  notes="$(printf '%s' "$meta" | python3 -c 'import sys,json; m=json.load(sys.stdin); print(m["notes_path_en"] if m.get("output_lang")=="en" else m["notes_path"])')"
+  echo "== 课程信息: $(COURSE_ROOT="$ROOT" "$PY" "$TOOLS/course_meta.py" "$video" 2>/dev/null | head -1)"
+  notes="$(printf '%s' "$meta" | "$PY" -c 'import sys,json; m=json.load(sys.stdin); print(m["notes_path_en"] if m.get("output_lang")=="en" else m["notes_path"])')"
 fi
 echo "== 全部完成,用时 $(( $(date +%s) - t0 )) 秒。下一步:读 $base.grounded.md 写总结,总结存 $notes(英文总结用 .en.md 结尾,语言优先级见 policy.md),写完跑 工具/add_links.py 与 工具/check_summary.py"

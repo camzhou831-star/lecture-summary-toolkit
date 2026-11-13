@@ -8,9 +8,11 @@
       OCR 读到的工具栏页码原样保存在 e["toolbar"]={"page","pages"}(只在第一次匹配时写入,重复匹配不会被 PDF 页码污染);
       匹配结果写 e["match"] 并覆盖 e["page"]/e["pages"]/e["deck"];--clear 从 e["toolbar"] 恢复。
       没有文字层的 PDF(扫描/图片版)会被识别并提示。课件按完整路径区分,不同目录同名 PDF 不会混。
-依赖: poppler 的 pdftotext(brew install poppler)
+依赖: poppler 的 pdftotext(brew install poppler);没有时用 Python 包 pypdf(Windows 上 py -m pip install pypdf)
 """
 import argparse, json, os, re, subprocess, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import deps
 STOP = set("""the and for that this with are was were from into your you our can will not but have has had they them their which what when where how why
 also than then there here these those such very just more most some any each other one two three four five six
 been being does did done until now all its it's only over after before about between under through during while both same should would could may might must
@@ -20,7 +22,11 @@ def words(t):
     return set(w for w in re.findall(r"[a-z][a-z0-9'+-]{2,}", t.lower())) - STOP
 
 def pdf_pages(path):
-    r = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True)
+    if not deps.find("pdftotext"):
+        try: import pypdf
+        except ImportError: sys.exit(f"错误: 读课件需要 pdftotext 或 pypdf;安装: {deps.how('poppler')}")
+        return [words(p.extract_text() or "") for p in pypdf.PdfReader(path).pages]
+    r = subprocess.run([deps.exe("pdftotext"), "-layout", "-enc", "UTF-8", path, "-"], capture_output=True)
     if r.returncode != 0: sys.exit(f"错误: pdftotext 失败: {path}: {r.stderr.decode('utf-8','replace')[-200:]}")
     pages = r.stdout.decode("utf-8", "replace").split("\f")
     if pages and not pages[-1].strip(): pages = pages[:-1]
@@ -94,4 +100,5 @@ def main():
     print(f"== 课件匹配: {matched}/{len(entries)} 帧定到页码({len(decks)} 套课件),{conflicts} 帧与工具栏页码不一致(以 PDF 为准)" + (" (dry-run)" if a.dry_run else ""))
 
 if __name__ == "__main__":
+    for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
     main()

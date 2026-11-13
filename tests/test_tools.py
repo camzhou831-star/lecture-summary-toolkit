@@ -3,10 +3,16 @@
 覆盖:course_meta 文件名与周次、compact 幻觉过滤与时间标签及新旧实现 golden、check_summary 三类错误与复习卡数量、review_pack 审核包、add_links 幂等与路径别名、
      build_bundle 空档检测(含 VAD 填充段)与 --duration/--video、原子写入、ocr_frames 规则 A(现场写代码帧不被合并)、dedup_frames 严格去重、ocr_frames 页码模式、match_slides 词匹配、exam_bank 跨周考点库、cam_frames 手写帧挑选与 check_summary 的 cam/ 路径、
      双端一致性(AGENTS.md 由 SKILL 生成、CLAUDE.md 导入目标存在、技能 frontmatter)。"""
-import json, os, re, shutil, subprocess, sys, tempfile, unittest, importlib.util
+import argparse, contextlib, io, json, os, re, shutil, subprocess, sys, tempfile, unittest, importlib.util
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.join(ROOT, "工具")
 sys.path.insert(0, TOOLS)
+WINDOWS = sys.platform == "win32"
+NEEDS_SH = unittest.skipIf(WINDOWS, "要用 sh/bash 脚本(视频模式与安装脚本),Windows 不支持")
+_open = open
+def open(f, mode="r", *a, **k):   # 测试里读写文本一律 UTF-8(Windows 默认编码不是 UTF-8)
+    if "b" not in mode: k.setdefault("encoding", "utf-8")
+    return _open(f, mode, *a, **k)
 
 def load(name):
     spec = importlib.util.spec_from_file_location(name, os.path.join(TOOLS, name + ".py"))
@@ -14,7 +20,7 @@ def load(name):
 
 def run(cmd, env=None, cwd=None):
     e = dict(os.environ); e.update(env or {})
-    return subprocess.run(cmd, capture_output=True, text=True, env=e, cwd=cwd)
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=e, cwd=cwd)
 
 class CourseMeta(unittest.TestCase):
     def setUp(self):
@@ -83,18 +89,18 @@ class CheckSummary(unittest.TestCase):
     def test_detects_three_problem_classes(self):
         with tempfile.TemporaryDirectory() as d:
             p = self._write(d, "# DEMO1001 第一周(2026-08-26)— x\n## 一句话概括\n## 核心要点\n见 t99999s.jpg\n## 章节时间线\n- [200:00] bad\n- [12:99] bad2\n## 复习卡\n")
-            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+            r = run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
             self.assertEqual(r.returncode, 1)
             for needle in ["超出视频时长", "秒数不合法", "引用的截图不存在", "缺少小节 ## 金句"]: self.assertIn(needle, r.stdout)
     def test_date_mismatch(self):
         with tempfile.TemporaryDirectory() as d:
             p = self._write(d, "# DEMO1001 第一周(2026-08-19)— x\n## 一句话概括\n## 核心要点\n## 章节时间线\n- [01:00] ok\n## 金句 / 考点信号\n## 复习卡\n")
-            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+            r = run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
             self.assertIn("与文件名日期", r.stdout)
     def test_passes(self):
         with tempfile.TemporaryDirectory() as d:
             p = self._write(d, "# DEMO1001 第一周(2026-08-26)— x\n## ⚠️ 课程通知\n无\n## 一句话概括\n## 核心要点\n## 章节时间线\n- [01:00] ok\n## 金句 / 考点信号\n## 复习卡\n" + self.CARDS(8))
-            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+            r = run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
             self.assertEqual(r.returncode, 0, r.stdout)
     @staticmethod
     def CARDS(n):   # 问答卡与填空卡各一半,中间夹一行说明文字(不算卡)
@@ -105,13 +111,13 @@ class CheckSummary(unittest.TestCase):
             with tempfile.TemporaryDirectory() as d:
                 p = self._write(d, head + self.CARDS(n) + "## 附注\n- 不算::不算\n")
                 if long: open(os.path.join(d, "课程视频", "DEMO1001 - 26 Aug 20-s1-full.srt"), "w").write("1\n00:00:05,000 --> 01:00:00,000\nhello\n")
-                r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+                r = run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
                 self.assertEqual(r.returncode == 0, ok, (n, r.stdout))
                 if not ok: self.assertIn(f"复习卡 {n} 张", r.stdout)
     def test_placeholder_times(self):
         with tempfile.TemporaryDirectory() as d:
             p = self._write(d, "# DEMO1001 第一周(2026-08-26)— x\n## ⚠️ 课程通知\n- [19:51–20:xx] 通知\n## 一句话概括\n## 核心要点\n1. 讲指针(39:xx–40:XX)\n## 章节时间线\n- [01:00] ok\n## 金句 / 考点信号\n## 复习卡\n" + self.CARDS(8))
-            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+            r = run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
             self.assertEqual(r.returncode, 1); self.assertEqual(r.stdout.count("时间占位"), 3, r.stdout)
 
 class Bilingual(unittest.TestCase):
@@ -139,29 +145,29 @@ class Bilingual(unittest.TestCase):
         cards = CheckSummary.CARDS(8)
         with tempfile.TemporaryDirectory() as d:
             p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN + cards)
-            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+            r = run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
             self.assertEqual(r.returncode, 0, r.stdout)                                    # 找到同一视频的 srt,英文标题齐全
         with tempfile.TemporaryDirectory() as d:                                            # 中文内容却叫 .en.md
             zh = "# DEMO1001 第一周(2026-08-26)— x\n## ⚠️ 课程通知\n无\n## 一句话概括\n## 核心要点\n## 章节时间线\n- [01:00] ok\n## 金句 / 考点信号\n## 复习卡\n" + cards
             p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", zh)
-            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+            r = run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
             self.assertEqual(r.returncode, 1); self.assertIn("小节标题大多是中文", r.stdout); self.assertIn("缺少小节 ## Key Points", r.stdout)
         with tempfile.TemporaryDirectory() as d:                                            # 英文卡片数同样检查
             p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN + CheckSummary.CARDS(16))
-            self.assertIn("复习卡 16 张", run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d}).stdout)
+            self.assertIn("复习卡 16 张", run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d}).stdout)
     def test_english_language_hints(self):
         bad = self.EN.replace("## Key Points\n", "## Key Points\n1. We delve into modelling the network; it is a crucial step. 讲师未展开.\n2. Later we discuss modeling choices `课程视频/x.srt`.\n"
                               "3. The lecturer said \"this is crucial\" and the colour map stays.\n")
         with tempfile.TemporaryDirectory() as d:
             p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", bad + self.EN_CARDS)
-            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
+            r = run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d})
             self.assertEqual(r.returncode, 0, r.stdout)                                   # 只提示,不判失败
             self.assertIn("正文里有中文(可能漏翻),行 6\n", r.stdout)                        # 行内代码里的中文路径不算
             self.assertIn("modelling/modeling", r.stdout); self.assertNotIn("colour/color", r.stdout)
             self.assertIn("AI 套话", r.stdout); self.assertIn("delve, crucial", r.stdout)
         with tempfile.TemporaryDirectory() as d:                                            # 干净的英文总结和中文总结都不出提示
             p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN + self.EN_CARDS)
-            self.assertNotIn("⚠️", run(["python3", os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d}).stdout)
+            self.assertNotIn("⚠️", run([sys.executable, os.path.join(TOOLS, "check_summary.py"), p], env={"COURSE_ROOT": d}).stdout)
         lint = load("check_summary").english_lint
         self.assertEqual(lint(["The lecturer said \"we delve into it\".", "```", "colour = color", "```"]), [])   # 引语、代码块不查
     def test_policy_has_global_english_standard(self):
@@ -173,7 +179,7 @@ class Bilingual(unittest.TestCase):
     def test_add_links_english(self):
         with tempfile.TemporaryDirectory() as d:
             p = self._course(d, "DEMO1001 - 26 Aug 20-s1-full.en.md", self.EN)
-            r = run(["python3", os.path.join(TOOLS, "add_links.py"), p], env={"COURSE_ROOT": d}); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            r = run([sys.executable, os.path.join(TOOLS, "add_links.py"), p], env={"COURSE_ROOT": d}); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("[01:00](<../../课程视频/DEMO1001 - 26 Aug 20-s1-full.mp4#t=60>)", open(p, encoding="utf-8").read())
     def test_course_meta_paths_and_lang(self):
         m = load("course_meta")
@@ -188,7 +194,7 @@ class Bilingual(unittest.TestCase):
             for h in hs.values(): self.assertIn(f"`{h}`", policy, h)                       # 脚本认的标题必须和 policy 里写的一字不差
 
 class Lsk(unittest.TestCase):
-    LSK = os.path.join(ROOT, "lsk")
+    LSK = ["cmd", "/c", os.path.join(ROOT, "lsk.cmd")] if WINDOWS else ["bash", os.path.join(ROOT, "lsk")]   # 顺带测两个启动脚本
     SRT = "1\n00:00:05,000 --> 00:00:09,000\nWelcome to week six.\n\n2\n00:01:10,000 --> 00:01:15,000\nThe test will be short answer.\n"
     def test_vtt_to_srt(self):
         m = load("lsk")
@@ -198,34 +204,123 @@ class Lsk(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             src = os.path.join(d, "captions.srt"); open(src, "w").write(self.SRT)
             env = {"COURSE_ROOT": os.path.join(d, "root")}
-            r = run(["bash", self.LSK, "run", src], env=env)
+            r = run([*self.LSK, "run", src], env=env)
             self.assertNotEqual(r.returncode, 0); self.assertIn("--unit DEMO1001 --date", r.stdout + r.stderr)   # 文件名看不出单元日期
-            r = run(["bash", self.LSK, "run", src, "--unit", "DEMO1001", "--date", "2026-08-26", "--lang", "en"], env=env)
+            r = run([*self.LSK, "run", src, "--unit", "DEMO1001", "--date", "2026-08-26", "--lang", "en"], env=env)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             vd = os.path.join(d, "root", "课程视频")
             self.assertEqual(sorted(os.listdir(vd)), sorted(f"DEMO1001 2026-08-26.{e}" for e in ("srt", "compact.txt", "bundle.json", "grounded.md")))
             self.assertIn("The test will be short answer.", open(os.path.join(vd, "DEMO1001 2026-08-26.grounded.md"), encoding="utf-8").read())
             self.assertIn(os.path.join("总结", "DEMO1001", "DEMO1001 2026-08-26.en.md"), r.stdout)
             open(src, "w").write(self.SRT.replace("short", "long"))                                      # 同名不同内容:不覆盖
-            r = run(["bash", self.LSK, "run", src, "--unit", "DEMO1001", "--date", "2026-08-26"], env=env)
+            r = run([*self.LSK, "run", src, "--unit", "DEMO1001", "--date", "2026-08-26"], env=env)
             self.assertNotEqual(r.returncode, 0); self.assertIn("--force", r.stdout + r.stderr)
             os.makedirs(os.path.join(d, "root", "总结", "DEMO1001"))
             summ = os.path.join(d, "root", "总结", "DEMO1001", "DEMO1001 2026-08-26.en.md")
             body = ("# DEMO1001 Week 6 (2026-08-26) — x\n## ⚠️ Course Notices\nNone\n## One-Sentence Summary\n## Key Points\n## Timeline\n- **[01:10] Test** — y\n"
                     "## Quotes / Exam Signals\n- 🎯 [01:10] \"The test will be short answer.\"\n## Review Cards\n" + CheckSummary.CARDS(8))
             open(summ, "w", encoding="utf-8").write(body)
-            r = run(["bash", self.LSK, "finish", summ], env=env)
+            r = run([*self.LSK, "finish", summ], env=env)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertTrue(os.path.isfile(os.path.join(d, "root", "总结", "DEMO1001", "Exam-Bank.en.md")))
+    VTT = "WEBVTT\n\n00:01.000 --> 00:04.000\nHello class\n"
+    def test_txt_transcript_and_same_name_subtitles(self):                                       # .txt 文字稿:没视频给出路;有视频存成 .lms.txt;视频旁的同名字幕复制进 课程视频/
+        with tempfile.TemporaryDirectory() as d:
+            dl = os.path.join(d, "dl"); os.makedirs(dl); txt = os.path.join(dl, "DEMO1001 - 26 Aug 20-s1-full.txt")
+            open(txt, "w").write("plain transcript without timestamps")
+            r = run([*self.LSK, "run", txt], env={"COURSE_ROOT": os.path.join(d, "root")})
+            self.assertEqual(r.returncode, 1); self.assertIn("lsk run <文字稿.txt> --video", r.stderr); self.assertIn(".srt / .vtt", r.stderr)
+            m = load("lsk"); m.ROOT = os.path.join(d, "root"); m.DOWNLOADS = os.path.join(d, "no-downloads")
+            video = os.path.join(dl, "DEMO1001 - 26 Aug 20-s1-full.mp4"); open(video, "wb").write(b"x")
+            a = argparse.Namespace(video=None)
+            with contextlib.redirect_stdout(io.StringIO()): self.assertEqual(m.text_transcript(txt, a), video)
+            vd = os.path.join(d, "root", "课程视频")
+            self.assertEqual(os.listdir(vd), ["DEMO1001 - 26 Aug 20-s1-full.lms.txt"])                 # 不是 <名>.txt(会被 whisper 输出覆盖)
+            open(os.path.join(dl, "DEMO1001 - 26 Aug 20-s1-full.vtt"), "w").write(self.VTT)
+            with contextlib.redirect_stdout(io.StringIO()) as out: m.bring_subtitles(video)
+            self.assertIn("跳过 whisper", out.getvalue())
+            self.assertTrue(open(os.path.join(vd, "DEMO1001 - 26 Aug 20-s1-full.srt")).read().startswith("1\n00:00:01,000 --> "))
+            open(os.path.join(dl, "DEMO1001 - 26 Aug 20-s1-full.vtt"), "w").write(self.VTT.replace("Hello", "Changed"))
+            with contextlib.redirect_stdout(io.StringIO()) as out: m.bring_subtitles(video)             # 课程视频/ 已有字幕:不覆盖
+            self.assertEqual(out.getvalue(), ""); self.assertIn("Hello", open(os.path.join(vd, "DEMO1001 - 26 Aug 20-s1-full.srt")).read())
     def test_doctor_exit_codes(self):
         with tempfile.TemporaryDirectory() as d:
             env = {"PATH": "/usr/bin:/bin", "WHISPER_MODEL_DIR": d, "LANG": "en_AU.UTF-8"}
             r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor"], env=env)
             self.assertEqual(r.returncode, 0, r.stdout); self.assertIn("Subtitle mode: ready", r.stdout)
-            if not shutil.which("whisper-cli", path="/usr/bin:/bin"):
+            self.assertIn(sys.executable, r.stdout)                                               # doctor 显示正在用的 Python 路径
+            if WINDOWS:                                                                           # Windows:缺的东西给 winget / lsk setup
+                r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor", "--video"], env=dict(env, LSK_DATA_DIR=d))
+                self.assertIn("lsk setup", r.stdout)
+            elif not shutil.which("whisper-cli", path="/usr/bin:/bin"):
                 r = run([sys.executable, os.path.join(TOOLS, "lsk.py"), "doctor", "--video"], env=env)
                 self.assertEqual(r.returncode, 2)
                 self.assertIn("brew install whisper-cpp" if sys.platform == "darwin" else "github.com/ggml-org/whisper.cpp", r.stdout)
+
+    def test_link_skill(self):                                                                    # install.cmd / lsk install 的技能链接(Windows 是 junction)
+        m = load("lsk")
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "toolkit", "video-summary"); os.makedirs(src); open(os.path.join(src, "SKILL.md"), "w").write("x")
+            parent = os.path.join(d, "home", ".claude", "skills")
+            for _ in range(2):                                                                    # 第二次:已是链接,替换
+                with contextlib.redirect_stdout(io.StringIO()): self.assertTrue(m.link_skill(src, parent))
+                self.assertEqual(os.path.realpath(os.path.join(parent, "video-summary")), os.path.realpath(src))
+            self.assertTrue(os.path.isfile(src + os.sep + "SKILL.md"))                           # 删链接不动目标
+            other = os.path.join(d, "home", ".codex", "skills", "video-summary"); os.makedirs(other)   # 真目录:跳过
+            with contextlib.redirect_stdout(io.StringIO()): self.assertFalse(m.link_skill(src, os.path.dirname(other)))
+
+class VideoPipeline(unittest.TestCase):
+    """视频模式的纯 Python 部分(不需要 ffmpeg / whisper;真流水线见 tests/run_pipeline_demo.py)"""
+    def test_lead_prompt(self):                                                                   # 没有带标点的提示语时补一句,防止整篇无标点
+        m = load("transcribe")
+        self.assertTrue(m.lead_prompt("", "en").startswith("Welcome back, everyone."))
+        self.assertTrue(m.lead_prompt("prime path, test path, DEMO1001", "en").endswith("prime path, test path, DEMO1001"))
+        self.assertIn("简体中文", m.lead_prompt("", "zh")); self.assertEqual(m.lead_prompt("", "auto"), "")
+        g = "Welcome to DEMO9999. Key terms: C, gcc."; self.assertEqual(m.lead_prompt(g, "en"), g)   # 已有标点:不动
+        sh = open(os.path.join(TOOLS, "transcribe.sh"), encoding="utf-8").read()                    # 两份实现用同一句
+        for lead in m.LEAD.values(): self.assertIn(lead, sh)
+    def test_gpu_self_test_rules(self):                                                          # lsk setup 的 GPU 自检:判定与设置
+        deps = load("deps")
+        ref = "Welcome to this short demo lecture. Everything you hear and see here was generated for testing"
+        self.assertTrue(deps.check_text("Welcome to this short demo lecture. Everything you hear and see here was generated for testing.", ref))
+        self.assertFalse(deps.check_text("The American", ref))                                       # lavapipe 默认设置的乱码
+        self.assertFalse(deps.check_text(ref.lower().replace(".", ""), ref))                           # 词都对但整篇无标点
+        self.assertEqual(deps.mode_args({}), (None, [], {}))
+        self.assertEqual(deps.mode_args({"mode": "gpu-no-coopmat-no-fa"}), (None, ["-nfa"], {"GGML_VK_DISABLE_COOPMAT": "1"}))
+        cli, args, env = deps.mode_args({"mode": "cpu"})
+        self.assertEqual((os.path.dirname(cli), args), (deps.whisper_win_dir("cpu"), ["--no-gpu"]))
+        self.assertTrue(os.path.isfile(deps.DEMO + ".srt") and os.path.isfile(deps.DEMO + ".mp4"))   # 自检用的示例视频在包里
+    def test_whisper_win_kind(self):                                                             # doctor 靠它标 (CUDA GPU) / (CPU)
+        deps = load("deps")
+        for kind in ("cpu", "cuda"): self.assertEqual(deps.whisper_win_kind(os.path.join(deps.whisper_win_dir(kind), "whisper-cli.exe")), kind)
+        self.assertIsNone(deps.whisper_win_kind(os.path.join(os.sep, "usr", "bin", "whisper-cli"))); self.assertIsNone(deps.whisper_win_kind(None))
+        self.assertNotEqual(deps.whisper_win_dir("cpu"), deps.whisper_win_dir("cuda"))
+    def test_frame_filter_modes(self):
+        m = load("extract_frames")
+        self.assertIn("fps=1/12,mpdecimate", m.video_filter("12s")[1]); self.assertIn("gt(scene,0.20)", m.video_filter("0.20")[1])
+        self.assertEqual(m.video_filter("abc"), (None, None))
+        self.assertNotIn(":\\", m.video_filter("12s")[1]); self.assertIn("file=times.txt", m.video_filter("12s")[1])   # 滤镜里只用相对文件名
+    def test_rename_frames_same_second(self):
+        m = load("extract_frames")
+        with tempfile.TemporaryDirectory() as d:
+            tmp, out = os.path.join(d, "tmp"), os.path.join(d, "out"); os.makedirs(tmp); os.makedirs(out)
+            for i in (1, 2, 3): open(os.path.join(tmp, "raw_%05d.jpg" % i), "w").close()
+            m.rename_frames("frame:0 pts:0 pts_time:0\nkeep=1\nframe:1 pts:1 pts_time:12.6\nframe:2 pts:2 pts_time:12.9\n", tmp, out)
+            self.assertEqual(sorted(os.listdir(out)), ["t00000s.jpg", "t00012s-2.jpg", "t00012s.jpg"])
+    def test_glossary_lookup(self):
+        m = load("transcribe")
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "glossary")); g = os.path.join(d, "glossary", "DEMO1001.txt"); open(g, "w").write("mutation\ntesting\n")
+            self.assertEqual(m.glossary_for(os.path.join(d, "DEMO1001 - 26 Aug 20-s1-full"), d), g)
+            self.assertIsNone(m.glossary_for("lecture.mp4", d))
+    def test_deps_install_hints(self):
+        m = load("deps")
+        self.assertIn("winget" if WINDOWS else ("brew" if sys.platform == "darwin" else "apt"), m.how("ffmpeg"))
+        self.assertEqual(m.how("whisper-cli") == "lsk setup", WINDOWS)
+        self.assertEqual(m.short_path("/ascii/path"), "/ascii/path")
+        self.assertIsNone(m.find("definitely-not-a-real-command-xyz"))
+        for pkg in ("pillow",) + (("poppler",) if WINDOWS else ()):                                # pip 包的安装命令指向当前解释器,不是 pip3 / py
+            self.assertIn(os.path.basename(sys.executable), m.how(pkg)); self.assertIn("-m pip install", m.how(pkg))
 
 class Release(unittest.TestCase):
     def test_language_packages(self):
@@ -236,18 +331,19 @@ class Release(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertEqual(sorted(os.listdir(d)), sorted(f"lecture-summary-{k}-v0.0.0-test-{lg}.zip" for k in ("toolkit", "web-prompts") for lg in ("zh", "en")))
             for lg, other_readme, other_prompt in (("zh", "README.md", "web-prompt.en.md"), ("en", "README.zh.md", "web-prompt.zh.md")):
-                names = zipfile.ZipFile(os.path.join(d, f"lecture-summary-toolkit-v0.0.0-test-{lg}.zip")).namelist()
+                with zipfile.ZipFile(os.path.join(d, f"lecture-summary-toolkit-v0.0.0-test-{lg}.zip")) as z: names = z.namelist()   # 及时关闭,否则 Windows 删不掉临时目录
                 root = "lecture-summary-toolkit/"
                 self.assertNotIn(root + other_readme, names); self.assertFalse(any(n.endswith(other_prompt) for n in names))
                 self.assertFalse(any(n.startswith(root + "tests/") or n.startswith(root + ".github/") or n.endswith("release-notes.md") for n in names))
                 self.assertFalse(any(n.startswith(root + "docs/" + ("en" if lg == "zh" else "zh") + "/") for n in names))
                 dirs = [n for n in names if n.endswith("/")]
                 self.assertTrue(all(any(m != n and m.startswith(n) for m in names) for n in dirs), "包里不应有空目录")
-                z = zipfile.ZipFile(os.path.join(d, f"lecture-summary-toolkit-v0.0.0-test-{lg}.zip"))
-                self.assertEqual(json.loads(z.read(root + "course.json"))["output_lang"], lg)              # 预设总结语言
-                readme = z.read(root + ("README.zh.md" if lg == "zh" else "README.md")).decode()
+                with zipfile.ZipFile(os.path.join(d, f"lecture-summary-toolkit-v0.0.0-test-{lg}.zip")) as z:
+                    self.assertEqual(json.loads(z.read(root + "course.json"))["output_lang"], lg)              # 预设总结语言
+                    readme = z.read(root + ("README.zh.md" if lg == "zh" else "README.md")).decode()
+                    for f in ("lsk.cmd", "install.cmd"): cmd = z.read(root + f); self.assertEqual(cmd.count(b"\r\n"), cmd.count(b"\n"), f)  # Windows 批处理必须全是 CRLF
                 self.assertNotIn("](README.md)" if lg == "zh" else "](README.zh.md)", readme)            # 不留指向被拿掉文件的链接
-                web = zipfile.ZipFile(os.path.join(d, f"lecture-summary-web-prompts-v0.0.0-test-{lg}.zip")).namelist()
+                with zipfile.ZipFile(os.path.join(d, f"lecture-summary-web-prompts-v0.0.0-test-{lg}.zip")) as z: web = z.namelist()
                 self.assertEqual(sorted(os.path.basename(n) for n in web), sorted([f"web-prompt.{lg}.md", "VERSION", "使用说明.txt" if lg == "zh" else "README.txt"]))
 
 class ReviewPack(unittest.TestCase):
@@ -264,7 +360,7 @@ class ReviewPack(unittest.TestCase):
             r = run([sys.executable, os.path.join(TOOLS, "review_pack.py"), summ, "--out", out], env={"COURSE_ROOT": d})
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(sorted(os.listdir(out)), ["grounded.md", "policy.md", "review.md", "summary.md", "transcript.srt", "画面"])
-            got = sorted(os.path.relpath(os.path.join(r_, f), os.path.join(out, "画面")) for r_, _, fs in os.walk(os.path.join(out, "画面")) for f in fs)
+            got = sorted(os.path.relpath(os.path.join(r_, f), os.path.join(out, "画面")).replace(os.sep, "/") for r_, _, fs in os.walk(os.path.join(out, "画面")) for f in fs)
             self.assertEqual(got, ["cam/t00020s.jpg", "t00010s.jpg", "t00030s.jpg"])   # 引用的 + ⚠️ 的;未标记的 t00040s 不带
             self.assertIn("找不到 1 张截图", r.stdout)                              # t00099s 不存在
             self.assertIn("--sandbox read-only", r.stdout)
@@ -281,7 +377,7 @@ class AddLinks(unittest.TestCase):
             open(os.path.join(d, "课程视频", "DEMO1001 - x.mp4"), "w").close()
             p = os.path.join(d, "总结", "X", "DEMO1001 - x.md")
             open(p, "w").write("## 核心要点\n- [03:00] not here\n## 章节时间线\n- [01:00] a\n  - [02:00] nested\n")
-            for _ in range(2): run(["python3", os.path.join(TOOLS, "add_links.py"), p], env={"COURSE_ROOT": d})
+            for _ in range(2): run([sys.executable, os.path.join(TOOLS, "add_links.py"), p], env={"COURSE_ROOT": d})
             s = open(p).read()
             self.assertEqual(s.count("#t="), 1); self.assertIn("(<../../课程视频/DEMO1001 - x.mp4#t=60>)", s)
 
@@ -289,7 +385,7 @@ class BuildBundle(unittest.TestCase):
     def _bundle(self, srt_text):
         d = tempfile.mkdtemp(); os.makedirs(os.path.join(d, "课程视频"))
         srt = os.path.join(d, "课程视频", "X - clip.srt"); open(srt, "w").write(srt_text)
-        r = run(["python3", os.path.join(TOOLS, "build_bundle.py"), srt, "--frames-dir", os.path.join(d, "none")], env={"COURSE_ROOT": d})
+        r = run([sys.executable, os.path.join(TOOLS, "build_bundle.py"), srt, "--frames-dir", os.path.join(d, "none")], env={"COURSE_ROOT": d})
         self.assertEqual(r.returncode, 0, r.stderr)
         return open(os.path.join(d, "课程视频", "X - clip.grounded.md")).read(), json.load(open(os.path.join(d, "课程视频", "X - clip.bundle.json")))
     def test_gap_and_vad_padding(self):
@@ -303,7 +399,7 @@ class BuildBundle(unittest.TestCase):
         g, b = self._bundle("1\n00:05:00,000 --> 00:05:05,000\nlate\n\n2\n00:00:00,000 --> 00:00:05,000\nearly\n")
         self.assertEqual(b["segments"][0]["text"], "early")
         d = tempfile.mkdtemp(); srt = os.path.join(d, "bad.srt"); open(srt, "w").write("no times\n")
-        self.assertNotEqual(run(["python3", os.path.join(TOOLS, "build_bundle.py"), srt]).returncode, 0)
+        self.assertNotEqual(run([sys.executable, os.path.join(TOOLS, "build_bundle.py"), srt]).returncode, 0)
 
     SRT = "1\n00:00:00,000 --> 00:00:05,000\nhello\n\n2\n00:01:00,000 --> 00:01:10,000\nlast line\n"
     def _course(self):
@@ -322,6 +418,7 @@ class BuildBundle(unittest.TestCase):
     def test_duration_flag_wins(self):
         d, srt = self._course()
         self.assertEqual(self._run(d, srt, "--duration", "999")["duration"], 999)
+    @NEEDS_SH
     def test_video_flag_uses_ffprobe_on_that_file(self):
         d, srt = self._course(); v = os.path.join(d, "elsewhere.mp4"); open(v, "w").close()
         self.assertAlmostEqual(self._run(d, srt, "--video", v, path=self._fake_ffprobe(123.5))["duration"], 123.5)
@@ -353,8 +450,16 @@ class Frames(unittest.TestCase):
                 im = Image.new("RGB", (640, 360), "white"); ImageDraw.Draw(im).text((40, 40), text, fill="black"); im.save(os.path.join(d, name))
             slide("t00000s.jpg", "Slide one about loops"); slide("t00012s.jpg", "Slide one about loops")
             slide("t00024s.jpg", "Slide two about prime paths and a lot more text here")
-            r = run(["python3", os.path.join(TOOLS, "dedup_frames.py"), d]); self.assertEqual(r.returncode, 0, r.stderr)
+            r = run([sys.executable, os.path.join(TOOLS, "dedup_frames.py"), d]); self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(sorted(f for f in os.listdir(d) if f.endswith(".jpg")), ["t00012s.jpg", "t00024s.jpg"])
+    def test_pixels_no_pillow_deprecation(self):                                                # getdata 在 Pillow 14 删除:新版走 get_flattened_data,旧版回退,都不出 DeprecationWarning
+        import warnings
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as d, warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            p = os.path.join(d, "t.png"); im = Image.new("L", (64, 48), 0); im.paste(230, (8, 6, 56, 42)); im.save(p)
+            self.assertIsInstance(load("dedup_frames").dhash(p), int)
+            self.assertEqual(load("cam_frames").paper_bbox(Image.open(p).convert("L"), th=128), (8, 6, 56, 42))
     def test_page_patterns(self):
         m = load("ocr_frames")
         self.assertEqual(m.find_page("Browse Text Selection 12 of 20 Zoom"), (12, 20))
@@ -392,10 +497,10 @@ class Frames(unittest.TestCase):
                    {"file": "t00020s.jpg", "t": 20, "page": None, "pages": None, "chars": 10, "text": "terminal"}]
             json.dump(ocr, open(os.path.join(d, "ocr.json"), "w"))
             ms = os.path.join(TOOLS, "match_slides.py")
-            for _ in range(2): self.assertEqual(run(["python3", ms, d, os.path.join(d, "deck.pdf")]).returncode, 0)
+            for _ in range(2): self.assertEqual(run([sys.executable, ms, d, os.path.join(d, "deck.pdf")]).returncode, 0)
             e = json.load(open(os.path.join(d, "ocr.json")))[0]
             self.assertEqual((e["page"], e["pages"], e["deck"]), (1, 2, "deck")); self.assertEqual(e["toolbar"], {"page": 7, "pages": 9})   # 工具栏值不被 PDF 页码污染
-            run(["python3", ms, d, "--clear"]); e = json.load(open(os.path.join(d, "ocr.json")))[0]
+            run([sys.executable, ms, d, "--clear"]); e = json.load(open(os.path.join(d, "ocr.json")))[0]
             self.assertEqual((e["page"], e["pages"]), (7, 9)); self.assertNotIn("deck", e)
 
 class OcrMergeRuleA(unittest.TestCase):
@@ -480,7 +585,7 @@ x
         self.assertEqual(len(it["card"]), 2)   # 没有 :: 或 == 的行不算卡
         self.assertIsNone(self.m.parse_summary(os.path.join(self.tmp, "总结", "1002", "其它笔记.md"), {}))
     def test_cli_writes_md_and_json(self):
-        r = run(["python3", os.path.join(TOOLS, "exam_bank.py"), "1002"], env={"COURSE_ROOT": self.tmp})
+        r = run([sys.executable, os.path.join(TOOLS, "exam_bank.py"), "1002"], env={"COURSE_ROOT": self.tmp})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.assertIn("🎯 2 条", r.stdout)
         out = open(os.path.join(self.tmp, "总结", "1002", "考点库.md"), encoding="utf-8").read()
         self.assertIn("## 🎯 老师明说会考 / 不考 / 怎么考(2 条)", out)
@@ -489,8 +594,15 @@ x
         j = json.load(open(os.path.join(self.tmp, "总结", "1002", "考点库.json"), encoding="utf-8"))
         self.assertEqual(j["unit"], "DEMO1001"); self.assertEqual(j["summaries"][0]["week"], 6)
         # 重跑幂等(考点库.md 自身不会被当成总结读进去)
-        r2 = run(["python3", os.path.join(TOOLS, "exam_bank.py"), "1002", "--quiet"], env={"COURSE_ROOT": self.tmp})
+        r2 = run([sys.executable, os.path.join(TOOLS, "exam_bank.py"), "1002", "--quiet"], env={"COURSE_ROOT": self.tmp})
         self.assertEqual(r2.returncode, 0); self.assertIn("1 份总结", open(os.path.join(self.tmp, "总结", "1002", "考点库.md"), encoding="utf-8").read())
+    def test_no_video_no_links(self):                                                            # 课程视频/ 下没有同名视频:只留纯时间文字,不生成指向不存在 .mp4 的链接
+        os.remove(os.path.join(self.tmp, "课程视频", "DEMO1001 - 26 Aug 20-s1-full.mp4"))
+        r = run([sys.executable, os.path.join(TOOLS, "exam_bank.py"), "1002"], env={"COURSE_ROOT": self.tmp})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.assertNotIn("Warning", r.stderr)
+        out = open(os.path.join(self.tmp, "总结", "1002", "考点库.md"), encoding="utf-8").read()
+        self.assertNotIn(".mp4", out); self.assertNotIn("#t=", out); self.assertIn("36:00", out)
+        self.assertIsNone(json.load(open(os.path.join(self.tmp, "总结", "1002", "考点库.json"), encoding="utf-8"))["summaries"][0]["video"])
     EN_SUMMARY = """# DEMO1001 Week 6 (2026-08-26) — Logic Testing
 
 ## ⚠️ Course Notices (07:08–07:35)
@@ -521,7 +633,7 @@ x
     def test_bilingual_dir_writes_two_banks(self):
         d = os.path.join(self.tmp, "总结", "1002")
         open(os.path.join(d, "DEMO1001 - 26 Aug 20-s1-full.en.md"), "w", encoding="utf-8").write(self.EN_SUMMARY)
-        r = run(["python3", os.path.join(TOOLS, "exam_bank.py"), "1002"], env={"COURSE_ROOT": self.tmp})
+        r = run([sys.executable, os.path.join(TOOLS, "exam_bank.py"), "1002"], env={"COURSE_ROOT": self.tmp})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         zh = open(os.path.join(d, "考点库.md"), encoding="utf-8").read(); en = open(os.path.join(d, "Exam-Bank.en.md"), encoding="utf-8").read()
         self.assertIn("1 份总结", zh); self.assertNotIn("SQA plan", zh)                       # 英文条目不混进中文考点库
@@ -530,12 +642,12 @@ x
         self.assertIn("[36:00](<../../课程视频/DEMO1001 - 26 Aug 20-s1-full.mp4#t=2160>)", en)   # 英文总结链接到同一个视频
         self.assertIn("What does RACC mean? → flipping", en); self.assertNotIn("复习卡", en); self.assertNotIn("老师", en)
         self.assertEqual(json.load(open(os.path.join(d, "Exam-Bank.en.json"), encoding="utf-8"))["summaries"][0]["week"], 6)
-        r = run(["python3", os.path.join(TOOLS, "exam_bank.py"), "1002", "--quiet"], env={"COURSE_ROOT": self.tmp})   # 重跑不把两份考点库当总结
+        r = run([sys.executable, os.path.join(TOOLS, "exam_bank.py"), "1002", "--quiet"], env={"COURSE_ROOT": self.tmp})   # 重跑不把两份考点库当总结
         self.assertIn("from 1 summaries", open(os.path.join(d, "Exam-Bank.en.md"), encoding="utf-8").read())
-        r = run(["python3", os.path.join(TOOLS, "exam_bank.py"), "1002", "--out", os.path.join(self.tmp, "x.md")], env={"COURSE_ROOT": self.tmp})
+        r = run([sys.executable, os.path.join(TOOLS, "exam_bank.py"), "1002", "--out", os.path.join(self.tmp, "x.md")], env={"COURSE_ROOT": self.tmp})
         self.assertNotEqual(r.returncode, 0); self.assertIn("--out 只能指定一份", r.stdout + r.stderr)
     def test_missing_dir(self):
-        self.assertNotEqual(run(["python3", os.path.join(TOOLS, "exam_bank.py"), "9999"], env={"COURSE_ROOT": self.tmp}).returncode, 0)
+        self.assertNotEqual(run([sys.executable, os.path.join(TOOLS, "exam_bank.py"), "9999"], env={"COURSE_ROOT": self.tmp}).returncode, 0)
 
 class CamFrames(unittest.TestCase):
     """cam_frames.select 是纯函数:用合成的 (t, ink, occl, dark) 序列验证换页检测、进度帧、黑屏过滤"""
@@ -570,7 +682,7 @@ class CamFrames(unittest.TestCase):
             open(os.path.join(d, "课程视频", "V.srt"), "w").write("1\n00:00:01,000 --> 00:03:00,000\nhello\n")
             md = os.path.join(d, "V.md")
             open(md, "w", encoding="utf-8").write("# V 第1周(2026-07-20)— x\n\n## ⚠️ 课程通知\n无\n## 一句话概括\nx\n## 核心要点\n1. 见 cam/t00120s.jpg 与 cam/t00999s.jpg(02:00)\n## 章节时间线\n- **[02:00] a** — b\n## 金句 / 考点信号\n- x\n## 复习卡\n- q::a\n")
-            r = run(["python3", os.path.join(TOOLS, "check_summary.py"), md, "--srt", os.path.join(d, "课程视频", "V.srt"), "--frames-dir", os.path.join(d, "画面", "V")], env={"COURSE_ROOT": d})
+            r = run([sys.executable, os.path.join(TOOLS, "check_summary.py"), md, "--srt", os.path.join(d, "课程视频", "V.srt"), "--frames-dir", os.path.join(d, "画面", "V")], env={"COURSE_ROOT": d})
             self.assertIn("cam/t00999s.jpg", r.stdout); self.assertNotIn("cam/t00120s.jpg", r.stdout)
 
 class DualAgent(unittest.TestCase):
@@ -599,6 +711,7 @@ class DualAgent(unittest.TestCase):
         for lang in ("zh", "en"):
             p = open(os.path.join(ROOT, "prompts", f"web-prompt.{lang}.md"), encoding="utf-8").read()
             self.assertIn("## 4. 考试信息", p); self.assertIn("## Key Points" if lang == "en" else "## 核心要点", p)
+    @NEEDS_SH
     def test_install_links_three_dirs(self):
         # 用隔离的 HOME 真跑 install.sh 的第 3 步(前两步靠 PATH 里的假 brew 跳过)
         with tempfile.TemporaryDirectory() as home:
@@ -612,8 +725,8 @@ class DualAgent(unittest.TestCase):
     def test_scripts_syntax(self):
         for f in os.listdir(TOOLS):
             p = os.path.join(TOOLS, f)
-            if f.endswith(".sh"): self.assertEqual(run(["bash", "-n", p]).returncode, 0, f)
-            if f.endswith(".py"): self.assertEqual(run(["python3", "-m", "py_compile", p]).returncode, 0, f)
+            if f.endswith(".sh") and not WINDOWS: self.assertEqual(run(["bash", "-n", p]).returncode, 0, f)
+            if f.endswith(".py"): self.assertEqual(run([sys.executable, "-m", "py_compile", p]).returncode, 0, f)
 
 if __name__ == "__main__":
     unittest.main()

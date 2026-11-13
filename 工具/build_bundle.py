@@ -6,6 +6,8 @@
   --duration / --video: 视频不和 srt 放在一起时(网页工作台)用来确定时长;都不给时在 srt 同目录找同名视频,再不行用最后一段转写的结束时间
 """
 import argparse, json, os, re, subprocess, sys, datetime
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import deps
 ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # 默认为 工具/ 的上级目录
 TIME_RE = re.compile(r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)")
 
@@ -53,14 +55,14 @@ def main():
     for v in cands:
         if duration is not None: break
         if v and os.path.exists(v):
-            try: r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", v], capture_output=True, text=True)
+            try: r = subprocess.run([deps.exe("ffprobe"), "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", v], capture_output=True, text=True)
             except FileNotFoundError: break          # 没装 ffprobe(如 Windows 字幕模式):退回用转写结束时间
             try: duration = float(r.stdout.strip()); break
             except ValueError: pass
     if duration is None: duration = max(s["end"] for s in segs)
-    rel_frames = os.path.relpath(frames_dir, ROOT)
+    rel_frames = os.path.relpath(frames_dir, ROOT).replace(os.sep, "/")   # 写进 json / 讲义稿的路径统一用正斜杠(Windows 也一样)
     bundle = {"video": name, "duration": duration, "generated": datetime.date.today().isoformat(),
-              "srt": os.path.relpath(srt, ROOT), "frames_dir": rel_frames,
+              "srt": os.path.relpath(srt, ROOT).replace(os.sep, "/"), "frames_dir": rel_frames,
               "segments": segs,
               "cam_frames": [{"file": "cam/" + c["file"], "t": c["t"], "kind": c["kind"]} for c in cam],
               "frames": [{"file": f["file"], "t": f["t"], "page": f.get("page"), "pages": f.get("pages"), "deck": f.get("deck"), "also_at": f.get("also_at", []), "chars": f.get("chars", 0), "text": f.get("text", "")} for f in frames]}
@@ -126,4 +128,5 @@ def main():
     print(f"   {base}.bundle.json\n   {base}.grounded.md")
 
 if __name__ == "__main__":
+    for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
     main()

@@ -16,6 +16,17 @@ jobs:
         run: bash 工具/sync_agents.sh && git diff --exit-code AGENTS.md CLAUDE.md GEMINI.md prompts/
       - name: 仓库里不能混入课程内容(媒体/转写/OCR/课件/总结只允许 examples/ 下的合成示例)
         run: bash tests/check_no_course_content.sh
+  windows:
+    # Windows 只支持字幕模式:跑单元测试(含 lsk.cmd 字幕模式 run → finish 端到端);要 bash 的测试自动跳过。
+    # 故意不设 PYTHONUTF8,用 Windows 默认编码跑,才能暴露漏写 encoding 的地方
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: python -m pip install pillow pypdf
+      - name: 单元测试(Windows)
+        run: python -W ignore::ResourceWarning -m unittest discover -s tests -v
   pipeline-demo:
     runs-on: macos-latest
     timeout-minutes: 25
@@ -31,4 +42,82 @@ jobs:
           path: ~/.local/share/whisper-models
           key: whisper-tiny-en-v1
       - name: 合成示例完整流水线(tiny.en 模型;整体 12 分钟超时,超时后打印转写日志)
-        run: WHISPER_MODEL=tiny.en NO_GPU=1 perl -e 'alarm 720; exec @ARGV' bash tests/run_pipeline_demo.sh
+        run: WHISPER_MODEL=tiny.en NO_GPU=1 perl -e 'alarm 720; exec @ARGV' python3 tests/run_pipeline_demo.py
+  pipeline-demo-windows:
+    # Windows 视频模式:用户的装法(lsk setup 下载官方 whisper.cpp + 模型),ffmpeg / tesseract 用 choco 装;
+    # 不装 poppler,课件匹配走 pypdf;tesseract 不在 PATH 上,测 deps.find 去默认安装位置找
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: python -m pip install pillow pypdf
+      - name: ffmpeg 与 tesseract
+        run: choco install ffmpeg tesseract -y --no-progress
+      - name: 缓存 whisper tiny.en 模型
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/whisper-models
+          key: whisper-tiny-en-win-v1
+      - name: install.cmd(依赖已由 choco 装好;下载 whisper.cpp 与模型,建技能 junction)
+        env: { WHISPER_MODEL: tiny.en }
+        shell: cmd
+        run: install.cmd --lang zh && dir "%USERPROFILE%\.claude\skills\video-summary\SKILL.md"
+      - name: 合成示例完整流水线(视频模式)
+        env: { WHISPER_MODEL: tiny.en }
+        run: python tests/run_pipeline_demo.py
+  pipeline-demo-windows-gpu:
+    # Windows GPU 路径:安装包 vendor/ 里的 Vulkan 版 whisper.cpp(私有 Release whisper-vulkan-b5130 固定存档)
+    # CI 没有显卡,用 Mesa lavapipe(软件 Vulkan,慢);它在默认设置下会出乱码,正好检验 lsk setup 的 GPU 自检能自动换设置
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env: { WHISPER_MODEL: tiny.en, GGML_VK_VISIBLE_DEVICES: "0", MESA_VERSION: 26.2.4 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: python -m pip install pillow pypdf
+      - name: ffmpeg 与 tesseract
+        run: choco install ffmpeg tesseract -y --no-progress
+      - name: vendor/ 放入 Vulkan 版 whisper.cpp
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: gh release download whisper-vulkan-b5130 -p whisper-vulkan-b5130-x64.zip -D vendor
+      - name: 软件 Vulkan 驱动(Mesa lavapipe,登记到注册表)
+        shell: pwsh
+        run: |
+          curl.exe -sSL -o mesa.7z "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z"
+          7z x mesa.7z -o"$env:RUNNER_TEMP\mesa" | Out-Null
+          $icd = (Get-ChildItem "$env:RUNNER_TEMP\mesa\x64" -Filter "lvp_icd.x86_64.json").FullName
+          New-Item -Path "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers" -Force | Out-Null
+          New-ItemProperty -Path "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers" -Name $icd -Value 0 -PropertyType DWord -Force | Out-Null
+      - name: 缓存 whisper tiny.en 模型
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/whisper-models
+          key: whisper-tiny-en-win-v1
+      - name: install.cmd(装 Vulkan 版 + GPU 自检)
+        shell: pwsh
+        run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          $o = cmd /c "install.cmd --lang en" 2>&1 | Out-String
+          $o
+          if ($o -notmatch "GPU transcription: llvmpipe") { throw "GPU 自检没有选出可用的 Vulkan 设置" }
+          Get-Content "$HOME\.local\share\lecture-summary-toolkit\whisper-settings.json"
+      - name: 合成示例完整流水线(视频模式,Vulkan)
+        shell: pwsh
+        run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          $o = python tests/run_pipeline_demo.py 2>&1 | Out-String
+          $o
+          if ($LASTEXITCODE -ne 0) { throw "示例流水线失败" }
+      - name: 单独转写一次,确认走 GPU 且没有退回 CPU
+        shell: pwsh
+        run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          Copy-Item "examples\demo\课程视频\DEMO1001 - 01 Jan 26-s1-demo.mp4" "$env:RUNNER_TEMP\gpu-check.mp4"
+          $o = python 工具/transcribe.py "$env:RUNNER_TEMP\gpu-check.mp4" en 2>&1 | Out-String
+          $o
+          if ($LASTEXITCODE -ne 0) { throw "转写失败" }
+          if ($o -notmatch "GPU: 开, 设置: gpu") { throw "转写没有按自检结果走 GPU" }
+          if ($o -match "--no-gpu|CPU 版") { throw "转写退回了 CPU" }

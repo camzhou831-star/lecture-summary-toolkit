@@ -2,8 +2,13 @@
 """lsk — 课程总结工具的总入口(给智能体和新手用;一次调用做完一个阶段,不用记各个脚本)
 用法:
   lsk doctor [--video] [--lang zh|en]          检查环境:字幕模式要什么、视频模式还缺什么,缺的给出安装命令
-  lsk run <字幕.srt|.vtt|视频> [--unit DEMO1001 --date 2026-08-26] [--slides <课件.pdf|目录>] [--lang en] [--force]
-                                               字幕模式:放好字幕 → compact → 讲义稿(+ 课件逐页文字);视频模式调用 prepare.sh(实验性)
+  lsk setup [--cpu|--cuda]                     视频模式准备:下载 whisper 模型与 VAD 模型,试跑一次看用没用上 GPU;Windows 上还会装 whisper.cpp:
+                                               默认 Vulkan GPU 版(安装包自带,NVIDIA / AMD / Intel 通用)+ CPU 兜底;--cuda NVIDIA 官方版,--cpu 只用 CPU
+  lsk install [--skills-only]                  Windows 一键安装(install.cmd 调它):winget 装 ffmpeg / tesseract、pip 装 pillow / pypdf、
+                                               lsk setup,再把技能链接到 Claude Code 与 Codex 的技能目录;macOS / Linux 转去跑 install.sh
+  lsk run <字幕.srt|.vtt|文字稿.txt|视频> [--unit DEMO1001 --date 2026-08-26] [--slides <课件.pdf|目录>] [--lang en] [--force] [--video <视频>]
+                                               字幕模式:放好字幕 → compact → 讲义稿(+ 课件逐页文字);视频模式调用 prepare.sh(Windows 上是 prepare.py;实验性)
+                                               视频旁边有同名 .srt/.vtt 时先复制进 课程视频/,跳过转写;.txt 文字稿没有时间戳,要配同名视频(或 --video)
   lsk finish <总结.md>                          写完总结后:加回跳链接 → 检查 → 重生成考点库
   lsk review <总结.md>                          准备审核包(见 skills/video-summary/review.md)
 目录:COURSE_ROOT 环境变量,默认是本工具目录;字幕、讲义稿在 课程视频/,总结在 总结/<单元>/
@@ -11,22 +16,33 @@
 import argparse, datetime, os, re, shutil, subprocess, sys
 TOOLS = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, TOOLS)
-import course_meta, headings as H
+import course_meta, deps, headings as H
 ROOT = os.environ.get("COURSE_ROOT") or os.path.dirname(TOOLS)
 VIDEO_EXTS = (".mp4", ".mkv", ".mov", ".webm", ".m4a", ".mp3", ".wav")
-MODEL_DIR = os.environ.get("WHISPER_MODEL_DIR") or os.path.expanduser("~/.local/share/whisper-models")
+MODEL_DIR = deps.MODEL_DIR
+WINDOWS = sys.platform == "win32"
+# 子进程统一用 UTF-8(Windows 默认 GBK / cp1252),输出按 UTF-8 解码
+# LSK_PYTHON:prepare.sh 里的 Python 步骤也用这个解释器,和 doctor 检查的是同一个(不然 PATH 上的 python3 可能缺 Pillow)
+def child_env(): return dict(os.environ, COURSE_ROOT=ROOT, PYTHONUTF8="1", PYTHONIOENCODING="utf-8", LSK_PYTHON=sys.executable)
+UTF8 = {"encoding": "utf-8", "errors": "replace"}
 
 MSG = {
     "zh": {"ok": "可用", "missing": "缺少", "optional": "可选", "sub_ready": "字幕模式:可以用(只需要 Python)。",
            "vid_ready": "视频模式:可以用。", "vid_missing": "视频模式(实验性):还缺 {n} 项,装好后再用;只有字幕的话不用装。",
            "slides_none": "读课件 PDF 需要 pdftotext(poppler)或 Python 包 pypdf,二选一;没有的话只用字幕也能总结。",
            "clients": "检测到的 AI 客户端:{c}", "no_client": "没检测到命令行版 AI 客户端(Codex / Claude Code / Gemini CLI);用桌面版也可以,打开本文件夹即可。",
-           "py_old": "Python 版本太旧({v}),需要 3.9 以上", "how": "安装命令", "model_auto": "第一次处理视频时自动下载(约 1.6 GB)"},
+           "py_old": "Python 版本太旧({v}),需要 3.9 以上", "how": "安装命令", "model_auto": "第一次处理视频时自动下载(约 1.6 GB)",
+           "py_note": "下面的 Python 包(Pillow / pypdf)检查的是这个 Python;装包请照抄下面给的命令,别用别的 pip3",
+           "setup": "装好上面缺的程序后,运行 lsk setup 下载模型{w}",
+           "gpu_hint": "检测到显卡 {g},但装的是 CPU 版 whisper.cpp;运行 lsk setup 换成 GPU 版(转写快很多)"},
     "en": {"ok": "ready", "missing": "missing", "optional": "optional", "sub_ready": "Subtitle mode: ready (only needs Python).",
            "vid_ready": "Video mode: ready.", "vid_missing": "Video mode (experimental): {n} item(s) missing. Not needed if you only have subtitles.",
            "slides_none": "Reading slide PDFs needs pdftotext (poppler) or the Python package pypdf; without them, subtitles alone still work.",
            "clients": "AI clients found: {c}", "no_client": "No command-line AI client found (Codex / Claude Code / Gemini CLI); a desktop app also works: open this folder in it.",
-           "py_old": "Python is too old ({v}); 3.9 or newer is required", "how": "install with", "model_auto": "downloaded automatically on the first video run (about 1.6 GB)"},
+           "py_old": "Python is too old ({v}); 3.9 or newer is required", "how": "install with", "model_auto": "downloaded automatically on the first video run (about 1.6 GB)",
+           "py_note": "Python packages below (Pillow / pypdf) are checked for this Python; install them with the exact command shown, not another pip3",
+           "setup": "After installing the missing programs above, run lsk setup to download the models{w}",
+           "gpu_hint": "GPU {g} found, but the CPU build of whisper.cpp is installed; run lsk setup to get the GPU build (much faster)"},
 }
 
 def lang_default():
@@ -34,45 +50,50 @@ def lang_default():
     try: lg = course_meta.load_config(ROOT).get("output_lang")
     except SystemExit: lg = None
     if lg in MSG: return lg
-    return "zh" if (os.environ.get("LANG", "") + os.environ.get("LC_ALL", "")).lower().startswith("zh") else "en"
+    env = (os.environ.get("LANG", "") + os.environ.get("LC_ALL", "")).lower()
+    if not env and WINDOWS:   # Windows 一般没有 LANG,看系统区域设置(如 Chinese (Simplified)_China)
+        import locale; env = (locale.getlocale()[0] or "").lower()
+    return "zh" if env.startswith(("zh", "chinese")) else "en"
 
-def have(cmd): return shutil.which(cmd) is not None
+def have(cmd): return deps.find(cmd) is not None
 
 def has_module(m):
     try: __import__(m); return True
     except ImportError: return False
 
-# 安装命令:macOS 用 Homebrew;Linux 的 apt 包名不同,whisper.cpp 没有 apt 包
-INSTALL = {"poppler": ("brew install poppler", "sudo apt-get install poppler-utils"),
-           "ffmpeg": ("brew install ffmpeg", "sudo apt-get install ffmpeg"),
-           "whisper-cpp": ("brew install whisper-cpp", "build from https://github.com/ggml-org/whisper.cpp and put whisper-cli on PATH"),
-           "tesseract": ("brew install tesseract", "sudo apt-get install tesseract-ocr")}
-def brew_or(pkg):
-    mac, linux = INSTALL[pkg]
-    return mac if sys.platform == "darwin" or have("brew") else linux
+def win_build():
+    """Windows:whisper-cli 是哪个包,显示在 doctor 里"""
+    kind = deps.whisper_win_kind(deps.find("whisper-cli")) if WINDOWS else None
+    return {"cuda": " (CUDA GPU)", "vulkan": " (Vulkan GPU)", "cpu": " (CPU)"}.get(kind, "")
 
 def doctor(a):
     t = MSG[a.lang or lang_default()]
     print(f"== lsk doctor  (COURSE_ROOT = {ROOT})")
     ok = sys.version_info >= (3, 9)
-    print(f"  {'✅' if ok else '❌'} python3 {sys.version.split()[0]}" + ("" if ok else "  " + t["py_old"].format(v=sys.version.split()[0])))
+    py_fix = "  " + t["py_old"].format(v=sys.version.split()[0]) + (f"  {t['how']}: winget install Python.Python.3.12  |  https://www.python.org/downloads/" if WINDOWS else "")
+    print(f"  {'✅' if ok else '❌'} python {sys.version.split()[0]}  ({sys.executable})" + ("" if ok else py_fix))
     slides = have("pdftotext") or has_module("pypdf")
-    print(f"  {'✅' if slides else '➖'} pdftotext / pypdf ({t['optional']})" + ("" if slides else f"  {t['how']}: {brew_or('poppler')}  |  pip3 install pypdf"))
+    if not (slides and has_module("PIL")): print("     " + t["py_note"])   # 缺 Python 包时才提示,装包命令都指向上面这个解释器
+    pdf_fix = deps.how("poppler") if WINDOWS else f"{deps.how('poppler')}  |  {deps.pip_how('pypdf')}"
+    print(f"  {'✅' if slides else '➖'} pdftotext / pypdf ({t['optional']})" + ("" if slides else f"  {t['how']}: {pdf_fix}"))
+    clients = [c for c in ("codex", "claude", "gemini") if have(c)]
     model = os.path.join(MODEL_DIR, "ggml-" + os.environ.get("WHISPER_MODEL", "large-v3-turbo") + ".bin")
-    video = [("ffmpeg", have("ffmpeg") and have("ffprobe"), brew_or("ffmpeg")),
-             ("whisper-cli", have("whisper-cli"), brew_or("whisper-cpp")),
-             ("tesseract", have("tesseract"), brew_or("tesseract")),
-             ("Pillow", has_module("PIL"), "pip3 install pillow"),
+    video = [("ffmpeg", have("ffmpeg") and have("ffprobe"), deps.how("ffmpeg")),
+             ("whisper-cli" + win_build(), have("whisper-cli"), deps.how("whisper-cli")),
+             ("tesseract", have("tesseract"), deps.how("tesseract")),
+             ("Pillow", has_module("PIL"), deps.how("pillow")),
              (f"whisper model {os.path.basename(model)}", os.path.isfile(model), None)]
     for name, good, fix in video:
         if fix is None: print(f"  {'✅' if good else '➖'} {name}" + ("" if good else "  " + t["model_auto"])); continue
         print(f"  {'✅' if good else '❌'} {name}" + ("" if good else f"  {t['how']}: {fix}"))
-    clients = [c for c in ("codex", "claude", "gemini") if have(c)]
     print("  " + (t["clients"].format(c=", ".join(clients)) if clients else t["no_client"]))
     print("== " + (t["sub_ready"] if ok else t["py_old"].format(v=sys.version.split()[0])))
     if not slides: print("   " + t["slides_none"])
     missing = [n for n, g, _ in video[:4] if not g]   # 模型首次运行会自动下载,不算缺
     print("== " + (t["vid_ready"] if not missing else t["vid_missing"].format(n=len(missing))))
+    if missing or not os.path.isfile(model): print("   " + t["setup"].format(w=" (+ whisper.cpp)" if WINDOWS else ""))
+    if WINDOWS and deps.whisper_win_kind(deps.find("whisper-cli")) == "cpu" and (gpu := deps.gpus()):
+        print("   " + t["gpu_hint"].format(g=", ".join(gpu)))
     if not ok: return 1
     return 2 if (a.video and missing) else 0
 
@@ -111,7 +132,7 @@ def lecture_name(src, unit, date):
 def slides_text(path):
     """课件 PDF → [(页码, 文字)];pdftotext 优先,其次 pypdf;都没有返回 None"""
     if have("pdftotext"):
-        r = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True, text=True)
+        r = subprocess.run(["pdftotext", "-layout", "-enc", "UTF-8", path, "-"], capture_output=True, text=True, **UTF8)
         if r.returncode == 0: return list(enumerate(r.stdout.split("\f"), 1))[:-1] or [(1, r.stdout)]
     if has_module("pypdf"):
         import pypdf
@@ -137,18 +158,70 @@ def find_slides(arg):
         sys.exit(f"错误 / Error: 找不到课件 {arg}")
     return []   # 没给就不读;课件文件夹里通常是整学期的课件,自动全读会塞满上下文
 
+DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")
+
+def find_input(arg):
+    """文件路径;只给文件名时依次在 课程视频/、~/Downloads/ 找(和 prepare.sh 一样)"""
+    for c in (arg, os.path.join(ROOT, "课程视频", arg), os.path.join(DOWNLOADS, arg)):
+        if os.path.isfile(c): return c
+    sys.exit(f"错误 / Error: 找不到文件 {arg}(查过当前目录、课程视频/、~/Downloads/)\n"
+             f"        file not found: {arg} (looked in the current folder, 课程视频/ and ~/Downloads/)")
+
+def same_name(path, exts):
+    """和 path 同名(去掉扩展名)的文件:先找同一文件夹,再找 课程视频/ 与 ~/Downloads/"""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    for d in dict.fromkeys((os.path.dirname(os.path.abspath(path)), os.path.join(ROOT, "课程视频"), DOWNLOADS)):
+        for e in exts:
+            c = os.path.join(d, stem + e)
+            if os.path.isfile(c) and os.path.getsize(c) > 0: return c
+    return None
+
+def bring_subtitles(video):
+    """视频旁边(或 Downloads 里)有同名字幕、课程视频/ 里还没有时,复制成 课程视频/<名>.srt,视频模式就跳过 whisper 转写(原文件不动)"""
+    stem = os.path.splitext(os.path.basename(video))[0]
+    dest = os.path.join(ROOT, "课程视频", stem + ".srt")
+    if os.environ.get("FORCE") == "1" or (os.path.isfile(dest) and os.path.getsize(dest) > 0): return
+    sub = same_name(video, (".srt", ".vtt"))
+    if not sub or os.path.realpath(sub) == os.path.realpath(dest): return
+    text = open(sub, encoding="utf-8", errors="ignore").read().lstrip("\ufeff")
+    if sub.lower().endswith(".vtt") or text.startswith("WEBVTT"): text = vtt_to_srt(text)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest, "w", encoding="utf-8") as f: f.write(text)
+    print(f"== 找到同名字幕 {sub},复制到 课程视频/,跳过 whisper 转写 / found subtitles with the same name; copied, transcription will be skipped")
+
+def text_transcript(src, a):
+    """LMS 导出的 .txt 文字稿(没有时间戳):有同名视频就存成 课程视频/<名>.lms.txt 再走视频模式(时间戳来自视频转写);
+    没有视频就说明能怎么办。不能存成 <名>.txt:视频模式会用 whisper 的输出覆盖它"""
+    video = a.video or same_name(src, VIDEO_EXTS)
+    if a.video and not os.path.isfile(a.video): sys.exit(f"错误 / Error: 找不到视频 {a.video}")
+    if not video:
+        sys.exit("错误 / Error: .txt 文字稿没有时间戳,不能单独处理(时间线、回跳链接、时间戳检查都要时间)。可以:\n"
+                 "  1. 从 LMS 下载这节课的字幕(.srt / .vtt),运行 lsk run <字幕>(最快,不用装 ffmpeg / whisper)\n"
+                 "  2. 下载这节课的视频,和文字稿放同一文件夹、用同样的文件名,再运行 lsk run <文字稿.txt>;或 lsk run <文字稿.txt> --video <视频>\n"
+                 "  3. 只有文字稿:直接交给 AI 当普通文本总结,但没有时间线和回跳,本工具也检查不了时间戳\n"
+                 "  A .txt transcript has no timestamps. Download the subtitles (.srt/.vtt) or the video from the LMS,\n"
+                 "  or run lsk run <transcript.txt> --video <video>. Text alone gives a summary without a timeline.")
+    stem = os.path.splitext(os.path.basename(video))[0]
+    dest = os.path.join(ROOT, "课程视频", stem + ".lms.txt")
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    if os.path.realpath(src) != os.path.realpath(dest): shutil.copyfile(src, dest)
+    print(f"== 文字稿没有时间戳,改用视频 {video} 转写拿时间 / the .txt has no timestamps; using the video for timing")
+    print(f"   文字稿另存 / transcript saved to: {os.path.relpath(dest, ROOT)}(写总结时用来核对术语和原话 / use it to check wording)")
+    return video
+
 def run(a):
-    src = a.input
-    if not os.path.isfile(src):
-        alt = os.path.join(ROOT, "课程视频", src)
-        if os.path.isfile(alt): src = alt
-        else: sys.exit(f"错误 / Error: 找不到文件 {a.input}")
+    src = find_input(a.input)
     ext = os.path.splitext(src)[1].lower()
+    if ext == ".txt": src = text_transcript(src, a); ext = os.path.splitext(src)[1].lower()
     if ext in VIDEO_EXTS:
-        print("== 视频模式(实验性)/ video mode (experimental) → prepare.sh")
-        env = dict(os.environ, COURSE_ROOT=ROOT)
-        return subprocess.call(["bash", os.path.join(TOOLS, "prepare.sh"), src, a.lang_code], env=env)
-    if ext not in (".srt", ".vtt"): sys.exit(f"错误 / Error: 只支持 .srt / .vtt 字幕或视频文件,收到 {ext}")
+        bring_subtitles(src)
+        if WINDOWS:   # Windows 用 Python 版;macOS / Linux 仍用原来的 bash 版
+            print("== 视频模式(实验性)/ video mode (experimental) → prepare.py", flush=True)
+            return subprocess.call([sys.executable, os.path.join(TOOLS, "prepare.py"), src, a.lang_code], env=child_env())
+        print("== 视频模式(实验性)/ video mode (experimental) → prepare.sh", flush=True)
+        return subprocess.call(["bash", os.path.join(TOOLS, "prepare.sh"), src, a.lang_code], env=child_env())
+    if ext not in (".srt", ".vtt"): sys.exit(f"错误 / Error: 只支持 .srt / .vtt 字幕、.txt 文字稿(要有同名视频)或视频文件,收到 {ext}\n"
+                                             f"        supported: .srt / .vtt subtitles, .txt transcript (with a same-name video), or a video file; got {ext}")
     name = lecture_name(src, a.unit, a.date)
     vdir = os.path.join(ROOT, "课程视频"); os.makedirs(vdir, exist_ok=True)
     srt = os.path.join(vdir, name + ".srt")
@@ -163,7 +236,7 @@ def run(a):
     for step, cmd in (("2/3 compact", [sys.executable, os.path.join(TOOLS, "compact.py"), srt]),
                       ("3/3 讲义稿 / transcript script", [sys.executable, os.path.join(TOOLS, "build_bundle.py"), srt, "--frames-dir", os.path.join(ROOT, "画面", name)])):
         print(f"== {step}")
-        r = subprocess.run(cmd, env=dict(os.environ, COURSE_ROOT=ROOT), capture_output=True, text=True)
+        r = subprocess.run(cmd, env=child_env(), capture_output=True, text=True, **UTF8)
         if r.returncode != 0: sys.stderr.write(r.stdout + r.stderr); sys.exit(f"错误 / Error: {step} 失败")
     meta = course_meta.parse(name, course_meta.load_config(ROOT)) or {}
     slides = None
@@ -180,11 +253,87 @@ def run(a):
     print("   写完后 / when written: lsk finish \"<总结路径 / summary path>\"")
     return 0
 
+# ---------- setup ----------
+def setup(a):
+    """视频模式的一次性准备:Windows 上装 whisper.cpp(默认 Vulkan GPU 版 + CPU 兜底);所有系统下载 whisper 模型(默认约 1.6 GB)与 VAD 模型。完成后再跑一遍 doctor --video"""
+    if WINDOWS:                                        # 默认装 Vulkan 版(任何厂商的显卡都能用);再装 CPU 版兜底(GPU 版启动不了时转写自动换它)
+        kind = "cpu" if a.cpu else "cuda" if a.cuda else "vulkan"
+        if kind == "vulkan" and not (os.path.isfile(deps.WHISPER_WIN["vulkan"]["file"]) or os.environ.get("LSK_WHISPER_VULKAN_ZIP")):
+            print("== ⚠️ 安装包里没有 GPU 版 whisper.cpp(vendor/),先装 CPU 版;请用 Windows 版安装包 / GPU build missing from vendor/, using CPU build"); kind = "cpu"
+        if kind != "cpu": deps.install_whisper_windows(kind)
+        deps.install_whisper_windows("cpu")
+    elif not have("whisper-cli"):
+        print(f"== 先安装 whisper.cpp / install whisper.cpp first: {deps.how('whisper-cli')}")
+    name = os.environ.get("WHISPER_MODEL", "large-v3-turbo")
+    print(f"== 模型 / model: ggml-{name}.bin → {MODEL_DIR}")
+    model = deps.ensure_model(name); deps.ensure_vad()
+    cli = deps.find("whisper-cli")
+    if WINDOWS and cli:                                # 用示例视频的已知旁白逐个试 GPU 设置,记下第一个转写正确的(各家显卡驱动表现不一)
+        print(f"== GPU 自检 / GPU self-test(示例视频前 {deps.CHECK_SECONDS} 秒)...")
+        st = deps.calibrate(model, log=print)
+        if st is None: print("   ⚠️ 没有示例视频或 ffmpeg,跳过自检 / self-test skipped")
+        elif st["mode"] == "cpu":
+            print("   ⚠️ 没能用上显卡,转写走 CPU(慢,2 小时录播约一小时)/ GPU not usable, transcription runs on the CPU (slow)"
+                  f"。检测到的显卡 / GPUs: {', '.join(deps.gpus()) or '无 / none'};先更新显卡驱动再重跑 lsk setup / update the GPU driver and run lsk setup again")
+        else: print(f"   ✅ GPU 转写 / GPU transcription: {st['gpu']}(设置 / mode: {st['mode']})")
+    elif cli:                                          # 试跑 1 秒静音,看实际用上的是 GPU 还是 CPU
+        print("== 试跑 whisper.cpp / test run ...")
+        ok, backend, gpu, _, tail = deps.probe_whisper(cli, model)
+        if not ok: print(f"   ⚠️ whisper.cpp 启动失败 / failed to start:\n{tail}")
+        elif backend: print(f"   ✅ GPU 转写 / GPU transcription: {gpu or backend}({backend})")
+        else: print("   ⚠️ 没用上显卡,转写走 CPU(慢)/ no usable GPU, transcription runs on the CPU (slow)")
+    a.video = True
+    return doctor(a)
+
+# ---------- install ----------
+SKILL_DIRS = [os.path.join(os.path.expanduser("~"), *d) for d in ((".claude", "skills"), (".codex", "skills"), (".agents", "skills"))]   # 与 install.sh 相同
+
+def link_skill(src, parent):
+    """在 parent 下建 video-summary → src 的目录联接(junction:不需要管理员或开发者模式);已是链接就换成新的,是真目录就跳过"""
+    dst = os.path.join(parent, "video-summary")
+    os.makedirs(parent, exist_ok=True)
+    if os.path.lexists(dst):
+        try: os.readlink(dst)                          # Python 3.8+ 在 Windows 上也能读 junction;普通目录会抛 OSError
+        except (OSError, ValueError):
+            print(f"   {dst} 已存在且不是链接,跳过(如需替换请先手动删除) / exists and is not a link, skipped"); return False
+        try: os.remove(dst)                            # 删的是链接本身,不动目标(符号链接用 remove,Windows 的 junction 要 rmdir)
+        except OSError: os.rmdir(dst)
+    if WINDOWS: ok = subprocess.run(["cmd", "/c", "mklink", "/J", dst, src], capture_output=True, **UTF8).returncode == 0
+    else: os.symlink(src, dst); ok = True
+    print(f"   {dst} -> {src}" if ok else f"   ❌ 链接失败 / link failed: {dst}")
+    return ok
+
+def install(a):
+    if not WINDOWS: return subprocess.call(["bash", os.path.join(os.path.dirname(TOOLS), "install.sh")])
+    if not a.skills_only:
+        print("== 1/3 依赖 / dependencies (ffmpeg, tesseract, pillow, pypdf)")
+        winget = shutil.which("winget")
+        for cmd, pkg in (("ffmpeg", "Gyan.FFmpeg"), ("tesseract", "UB-Mannheim.TesseractOCR")):
+            if have(cmd): print(f"   {cmd} 已安装 / installed"); continue
+            if not winget: print(f"   ❌ 没有 winget,请手动安装 {cmd} / no winget, install {cmd} manually: https://learn.microsoft.com/windows/package-manager/winget/"); continue
+            subprocess.call([winget, "install", "-e", "--id", pkg, "--accept-package-agreements", "--accept-source-agreements"])
+            if cmd == "tesseract" and not have(cmd):
+                print(f"   ❌ winget 没装上 tesseract,请下载安装包(装到默认位置即可) / winget failed, download the installer: {deps.TESSERACT_WIN_URL}")
+        mods = [p for m, p in (("PIL", "pillow"), ("pypdf", "pypdf")) if not has_module(m)]
+        if mods:
+            subprocess.call([sys.executable, "-m", "pip", "install", "--user", *mods])
+            import importlib, site                     # 刚装进用户目录的包,本进程要重新登记路径才 import 得到(后面 doctor 要查)
+            site.addsitedir(site.getusersitepackages()); importlib.invalidate_caches()
+        print("== 2/3 whisper.cpp + 模型 / models")
+        rc = setup(a)
+        if rc: print("== 上面还有 ❌ 项;winget 刚装的程序如果没找到,关掉这个窗口、新开一个再运行 install.cmd / if something is still missing, open a new window and run install.cmd again")
+    print("== 3/3 技能 / skill → Claude Code, Codex")
+    src = os.path.join(os.path.dirname(TOOLS), "skills", "video-summary")
+    ok = all([link_skill(src, d) for d in SKILL_DIRS])
+    print("== 完成。之后在 Claude Code / Codex 里说「总结 <字幕或视频文件路径>」即可;移动本文件夹后要重跑 install.cmd")
+    print("   Done. In Claude Code / Codex, say \"summarize <subtitle or video path>\"; run install.cmd again if you move this folder.")
+    return 0 if ok else 1
+
 # ---------- finish / review ----------
 def finish(a):
-    env = dict(os.environ, COURSE_ROOT=ROOT)
+    env = child_env()
     s = a.summary
-    r = subprocess.run([sys.executable, os.path.join(TOOLS, "add_links.py"), s], env=env, capture_output=True, text=True)
+    r = subprocess.run([sys.executable, os.path.join(TOOLS, "add_links.py"), s], env=env, capture_output=True, text=True, **UTF8)
     print("== 回跳链接 / links: " + (r.stdout.strip() or r.stderr.strip()))   # 没有视频时会跳过,不算失败
     rc = subprocess.call([sys.executable, os.path.join(TOOLS, "check_summary.py"), s], env=env)
     subprocess.call([sys.executable, os.path.join(TOOLS, "exam_bank.py"), s, "--quiet"], env=env)
@@ -192,18 +341,21 @@ def finish(a):
     return rc
 
 def review(a):
-    return subprocess.call([sys.executable, os.path.join(TOOLS, "review_pack.py"), a.summary], env=dict(os.environ, COURSE_ROOT=ROOT))
+    return subprocess.call([sys.executable, os.path.join(TOOLS, "review_pack.py"), a.summary], env=child_env())
 
 def main():
     ap = argparse.ArgumentParser(prog="lsk", description=__doc__.split("\n")[0])
     sp = ap.add_subparsers(dest="cmd", required=True)
     d = sp.add_parser("doctor"); d.add_argument("--video", action="store_true"); d.add_argument("--lang", choices=H.LANGS)
+    u = sp.add_parser("setup"); u.add_argument("--lang", choices=H.LANGS); u.add_argument("--cpu", action="store_true", help="Windows: 只用 CPU 版"); u.add_argument("--cuda", action="store_true", help="Windows: NVIDIA 官方 CUDA 版(约 675 MB)")
     r = sp.add_parser("run"); r.add_argument("input"); r.add_argument("--unit"); r.add_argument("--date"); r.add_argument("--slides")
-    r.add_argument("--lang", choices=H.LANGS, help="总结语言 / summary language"); r.add_argument("--lang-code", default="en", help="视频模式转写语言码 en/zh/auto"); r.add_argument("--force", action="store_true")
+    r.add_argument("--lang", choices=H.LANGS, help="总结语言 / summary language"); r.add_argument("--lang-code", default="en", help="视频模式转写语言码 en/zh/auto"); r.add_argument("--force", action="store_true"); r.add_argument("--video", help=".txt 文字稿对应的视频(文件名不同时用)/ video for a .txt transcript")
+    i = sp.add_parser("install"); i.add_argument("--skills-only", action="store_true"); i.add_argument("--lang", choices=H.LANGS); i.add_argument("--cpu", action="store_true"); i.add_argument("--cuda", action="store_true")
     f = sp.add_parser("finish"); f.add_argument("summary")
     v = sp.add_parser("review"); v.add_argument("summary")
     a = ap.parse_args()
-    sys.exit({"doctor": doctor, "run": run, "finish": finish, "review": review}[a.cmd](a))
+    sys.exit({"doctor": doctor, "setup": setup, "install": install, "run": run, "finish": finish, "review": review}[a.cmd](a))
 
 if __name__ == "__main__":
+    for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
     main()

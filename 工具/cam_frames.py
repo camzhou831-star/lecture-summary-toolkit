@@ -12,6 +12,8 @@
 一节 2 小时课通常剩 20–50 帧。
 """
 import argparse, json, os, re, shutil, subprocess, sys, tempfile
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import deps
 from PIL import Image, ImageChops, ImageFilter
 
 def paper_th(g):
@@ -23,12 +25,16 @@ def paper_th(g):
         if cum >= 0.95 * n: return max(110, min(200, int(v * 0.85)))
     return 200
 
+def pixels(im):
+    """逐像素值;Pillow 12.1+ 用 get_flattened_data(getdata 将在 Pillow 14 删除),旧版回退 getdata"""
+    return (im.get_flattened_data if hasattr(im, "get_flattened_data") else im.getdata)()
+
 def paper_bbox(g, th=None, frac=0.25):
     """白纸区域:亮像素(>th)在某列/某行占比超过 frac 的范围。找不到(整帧没有大片白)返回 None。th 为 None 时按帧亮度自适应。"""
     if th is None: th = paper_th(g)
     bright = g.point(lambda v: 255 if v > th else 0)
     W, H = g.size
-    cols = bright.resize((W, 1), Image.BOX).getdata(); rows = bright.resize((1, H), Image.BOX).getdata()
+    cols = pixels(bright.resize((W, 1), Image.BOX)); rows = pixels(bright.resize((1, H), Image.BOX))
     xs = [x for x, v in enumerate(cols) if v > 255 * frac]; ys = [y for y, v in enumerate(rows) if v > 255 * frac]
     return (min(xs), min(ys), max(xs) + 1, max(ys) + 1) if xs and ys else None
 
@@ -97,7 +103,7 @@ def main():
     tmp = tempfile.mkdtemp(prefix="cam_", dir=a.out)
     try:
         print(f"== 实物投影抓帧: {a.video}(每 {a.interval}s 采样)")
-        r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", a.video, "-vf", f"fps=1/{a.interval},scale=1280:-2",
+        r = subprocess.run([deps.exe("ffmpeg"), "-hide_banner", "-loglevel", "error", "-i", a.video, "-vf", f"fps=1/{a.interval},scale=1280:-2",
                             "-fps_mode", "vfr", "-q:v", "4", os.path.join(tmp, "raw_%05d.jpg")])
         if r.returncode != 0: sys.exit("错误: ffmpeg 抽帧失败")
         raws = sorted(f for f in os.listdir(tmp) if f.startswith("raw_"))
@@ -123,4 +129,5 @@ def main():
         shutil.rmtree(tmp, ignore_errors=True)
 
 if __name__ == "__main__":
+    for s in (sys.stdout, sys.stderr): s.reconfigure(encoding="utf-8", errors="replace")   # Windows 终端/管道默认 GBK 或 cp1252,打印中文和 ✅⚠️🎯 会报 UnicodeEncodeError
     main()
