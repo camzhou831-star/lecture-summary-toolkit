@@ -18,6 +18,30 @@ The `-en` packages contain English instructions and write **English summaries** 
 
 **On a Mac, unzip by double-clicking the file in Finder** (the command-line `unzip` on macOS garbles the Chinese folder names inside). **On Windows, right-click the zip in File Explorer → "Extract All".**
 
+## What you get
+
+A short excerpt from the summary of the two-minute synthetic demo lecture that ships with this repository (`examples/demo/`). The demo summary is written in Chinese; the `-en` packages write the same structure in English.
+
+```markdown
+# DEMO1001 Week 1 (2026-01-01) — Testing loops and prime paths
+
+## Course notices (01:30–01:46)
+1. 🎯 Next week's quiz covers this slide deck (01:35, p6).
+
+## Key points
+1. Why loops are hard to test (00:22–00:42, p2): the body can run 0 times, once, or many times ...
+3. Prime path (01:00–01:18, p4): a simple path that cannot be extended without repeating a node ...
+
+## Timeline
+- [00:22] Why loops are hard to test (p2)   ← click to jump back into the recording
+- [01:00] Prime paths (p4)
+
+## Review cards
+- Definition of a simple path?:: A path that visits no node twice.
+```
+
+Every time range, slide page number and jump-back link is checked automatically against the transcript (`lsk finish`), so a timestamp outside the recording or inside a silent stretch is reported instead of slipping through.
+
 ## What you need first
 
 - A Mac, or a Windows 10 / 11 PC. Linux may work.
