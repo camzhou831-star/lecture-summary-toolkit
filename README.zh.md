@@ -13,7 +13,13 @@
 
 ## 工作台
 
-![一份做好的总结：左边是功能区，中间是总结，右边是播放器和可点的章节](workbench/docs/screenshot.png)
+![一份做好的总结：左边是功能区，中间是总结，右边是播放器和可点的章节](workbench/docs/screenshot.zh.png)
+
+<details><summary>新建页</summary>
+
+![贴链接、选模板](workbench/docs/home.zh.png)
+
+</details>
 
 - **大多数课程链接直接贴。** 支持 YouTube、Twitch、Vimeo、TED、SoundCloud、B 站，以及 Panopto、Kaltura 这类学校录播页面。底层用的是 [yt-dlp](https://github.com/yt-dlp/yt-dlp)，支持一千多个网站。本地的视频、音频、`.srt`、`.vtt` 也可以。
 - **先找字幕，没有再转写。** 网站有字幕就直接用；没有就下载音频，用 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) 在本机转写（large-v3-turbo 模型，带静音检测）。
@@ -23,6 +29,7 @@
   - **任意 OpenAI 兼容 API**：默认 DeepSeek，按量付费
 - **写完会核对。** 每个时间戳都和文字稿对一遍；超出视频时长或落在静音段的，让 AI 改一轮。
 - **点时间戳，跳到那一秒。** YouTube、B 站在页面里直接播；Twitch、Vimeo 在原站打开到对应时间；本地文件用页面里的播放器。
+- **中英双语。** 顶栏按钮切换界面语言（第一次按浏览器语言自动选，也可以打开 `?lang=zh`）；每份总结可以单独选中文或英文。
 - **看着放松。** 三套低饱和配色可选（鼠尾草、薰衣草暮色、晨雾），浅色深色都有。复习本来就烦，界面不该再刺眼。
 
 ### 开始用（macOS；Linux 应该也行）

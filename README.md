@@ -29,7 +29,7 @@ It comes in two parts:
   - or **any OpenAI-compatible API** (DeepSeek by default) if you prefer pay-as-you-go
 - **Checked, not just generated.** Every timestamp is checked against the transcript. If something is out of range or lands in silence, the AI is asked to fix it once.
 - **Click a timestamp, jump to that second.** YouTube and Bilibili play inside the page. Twitch and Vimeo open at the right time. Local files play in the built-in player.
-- **Interface language:** the UI is Chinese for now; summaries can be written in English or Chinese (pick per task). An English UI is planned.
+- **English and Chinese.** Switch the interface with the button in the top bar (it follows your browser language the first time, or open `?lang=en`). Each summary can be written in English or Chinese.
 - **Calm by design.** Low-saturation colour themes (sage, lavender dusk, morning mist), light and dark, because revision is stressful enough.
 
 ### Quick start (macOS; Linux should work)

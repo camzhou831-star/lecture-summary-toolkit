@@ -277,3 +277,27 @@ def test_api(env):
         assert c.delete(f"/api/tasks/{tid}").json() == {"ok": True}
         assert c.get(f"/api/tasks/{tid}").status_code == 404
         assert "总结工作台" in c.get("/").text
+
+
+# ---------- 中英双语 ----------
+def test_i18n_keys_exist_in_both_languages():
+    """页面(data-i18n*)和 JS(t("..."))用到的词条,中英两套都要有;用 node 读 i18n.js 的词典,没有 node 就跳过"""
+    import json, re, shutil, subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("没有 node")
+    static = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "wb", "static")
+    i18n = os.path.join(static, "i18n.js")
+    out = subprocess.run([node, "-e", f"eval(require('fs').readFileSync({json.dumps(i18n)}, 'utf8') + ';globalThis.D=I18N'); "
+                          "console.log(JSON.stringify({zh: Object.keys(D.zh), en: Object.keys(D.en)}))"],
+                         capture_output=True, text=True, env=dict(os.environ, LANG="C"))
+    assert out.returncode == 0, out.stderr
+    d = json.loads(out.stdout)
+    assert set(d["zh"]) == set(d["en"]), set(d["zh"]) ^ set(d["en"])
+    html = open(os.path.join(static, "index.html"), encoding="utf-8").read()
+    js = open(os.path.join(static, "app.js"), encoding="utf-8").read()
+    used = set(re.findall(r'data-i18n(?:-ph|-title|-html)?="([\w]+)"', html))
+    used |= {k for k in re.findall(r'\bt\("(\w+)"', js) if not k.endswith("_")}   # "kind_" + k 这类动态拼接的前缀不算
+    used |= {"st_" + k for k in ("fetch", "prepare", "summarize", "check")} | {"kind_" + k for k in ("youtube", "bilibili", "local", "web")}
+    missing = sorted(k for k in used if k not in d["zh"])
+    assert not missing, missing

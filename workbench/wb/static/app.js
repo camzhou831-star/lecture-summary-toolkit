@@ -6,9 +6,9 @@ const ICON = {
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   dot: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
 };
-const STAGES = [["fetch", "拿文字稿"], ["prepare", "整理讲义稿"], ["summarize", "写总结"], ["check", "核对时间戳"]];
-const KIND = { youtube: "YouTube", bilibili: "B 站", local: "本地文件", web: "网页" };
-const STATUS = { queued: "排队中", running: "进行中", done: "完成", failed: "失败" };
+const STAGES = ["fetch", "prepare", "summarize", "check"];
+const kindName = (k) => t("kind_" + k);
+const statusName = (s) => t("status_" + s);
 
 let tasks = [];
 let current = null;            // 当前任务
@@ -26,13 +26,13 @@ async function api(path, opt = {}) {
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const mmss = (sec) => `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
-const dur = (s) => s == null ? "" : s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${Math.round(s % 60)} 秒`;
+const dur = (s) => s == null ? "" : s < 60 ? t("sec", { n: s }) : t("min_sec", { m: Math.floor(s / 60), s: Math.round(s % 60) });
 function ago(ts) {
   const d = (Date.now() / 1000 - ts);
-  if (d < 60) return "刚刚";
-  if (d < 3600) return `${Math.floor(d / 60)} 分钟前`;
-  if (d < 86400) return `${Math.floor(d / 3600)} 小时前`;
-  const t = new Date(ts * 1000); return `${t.getMonth() + 1}月${t.getDate()}日`;
+  if (d < 60) return t("just_now");
+  if (d < 3600) return t("min_ago", { n: Math.floor(d / 60) });
+  if (d < 86400) return t("hr_ago", { n: Math.floor(d / 3600) });
+  const x = new Date(ts * 1000); return t("date", { m: x.getMonth() + 1, mon: MONTHS[x.getMonth()], d: x.getDate() });
 }
 function toast(msg) {
   const t = $("#toast"); t.textContent = msg; t.classList.add("on");
@@ -41,23 +41,23 @@ function toast(msg) {
 
 // ---------- 模板(第一期只有课程总结可用) ----------
 const TEMPLATES = [
-  { id: "course", name: "课程总结", ready: true, icon: '<svg viewBox="0 0 24 24"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>',
-    desc: "录播课、公开课。七节固定结构 + 复习卡,时间戳自动核对。",
-    parts: ["课程通知", "一句话概括", "核心要点(带时间段)", "章节时间线(可回跳)", "金句 / 考点信号", "复习卡 8–15 张"] },
-  { id: "benchmark", name: "对标拆稿", ready: false, icon: '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
-    desc: "短视频口播逐句拆:作用分段、秒数、字数、信息点。",
-    parts: ["逐句拆稿表", "结构骨架", "可复用句式"] },
-  { id: "meeting", name: "会议纪要", ready: false, icon: '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
-    desc: "会议录音:议题、结论、待办和负责人。",
-    parts: ["议题", "结论", "待办与负责人"] },
+  { id: "course", key: "tpl_course", ready: true, icon: '<svg viewBox="0 0 24 24"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>',
+  },
+  { id: "benchmark", key: "tpl_bench", ready: false, icon: '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  },
+  { id: "meeting", key: "tpl_meet", ready: false, icon: '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
+  },
 ];
 let template = "course";
 function tplCard(t, pick) {
-  const tag = t.ready ? (pick && t.id === template ? "已选" : "可用") : "即将上线";
-  return `<button type="button" class="tpl ${pick && t.id === template ? "on" : ""}" data-tpl="${t.id}" ${t.ready ? "" : "disabled"}>
-    <span class="tpl-tag">${tag}</span><span class="tpl-ic">${t.icon}</span>
-    <span class="tpl-n">${t.name}</span><span class="tpl-d">${t.desc}</span>
-    ${pick ? "" : `<ul>${t.parts.map((p) => `<li>${p}</li>`).join("")}</ul>`}</button>`;
+  const tp = t;   // 模板对象(下面的 t() 是翻译函数)
+  return ((t) => {
+    const tag = tp.ready ? (pick && tp.id === template ? t("tag_selected") : t("tag_ready")) : t("tag_soon");
+    return `<button type="button" class="tpl ${pick && tp.id === template ? "on" : ""}" data-tpl="${tp.id}" ${tp.ready ? "" : "disabled"}>
+    <span class="tpl-tag">${tag}</span><span class="tpl-ic">${tp.icon}</span>
+    <span class="tpl-n">${t(tp.key)}</span><span class="tpl-d">${t(tp.key + "_d")}</span>
+    ${pick ? "" : `<ul>${t(tp.key + "_p").map((p) => `<li>${p}</li>`).join("")}</ul>`}</button>`;
+  })(window.t);
 }
 function drawTemplates() {
   $("#tpl-pick").innerHTML = TEMPLATES.map((t) => tplCard(t, true)).join("");
@@ -76,18 +76,18 @@ api("/api/config").then((c) => {
 const PNAME = { claude: "Claude Code", codex: "Codex", api: "API" };
 function drawModelCard(c) {
   $("#model").innerHTML = c.ready
-    ? `<span class="ok">${PNAME[c.active]}${c.active === "api" ? " · " + esc(c.model) : " · 本机账号"}${c.provider === "auto" ? "(自动)" : ""}</span>`
-    : `<span class="bad">还没有能用的 AI,见「设置」</span>`;
+    ? `<span class="ok">${PNAME[c.active]}${c.active === "api" ? " · " + esc(c.model) : t("model_local")}${c.provider === "auto" ? t("model_auto") : ""}</span>`
+    : `<span class="bad">${t("model_none")}</span>`;
 }
 
 // ---------- 路由:#/ 新建 · #/library 资料库 · #/templates 模板 · #/settings 设置 · #/t/<id> 任务 ----------
 const PAGES = ["home", "library", "templates", "settings", "detail"];
-const TITLES = { home: "新建总结", library: "资料库", templates: "模板", settings: "设置", detail: "总结" };
+const TITLES = { home: "nav_home", library: "nav_lib", templates: "nav_tpl", settings: "nav_set", detail: "title_detail" };
 let shownPage = null;
 function show(page) {
   PAGES.forEach((p) => $("#" + p).hidden = p !== page);
   document.querySelectorAll(".nav-item").forEach((a) => a.classList.toggle("on", a.dataset.page === page));
-  $("#page-title").textContent = TITLES[page];
+  $("#page-title").textContent = t(TITLES[page]);
   if (shownPage !== page) {   // 换页时:页面上浮淡入,卡片依次出现(TreeUI 的 200/300ms + easeOut)
     const el = $("#" + page);
     el.classList.remove("enter"); void el.offsetWidth; el.classList.add("enter");
@@ -125,19 +125,19 @@ drawThemeBtn();
 
 // ---------- 配色(设置页) ----------
 const PALETTES = [
-  { id: "sage", name: "鼠尾草", desc: "灰绿 + 米白,最安静", sw: "linear-gradient(135deg, #c4dfcd, #f1ead8 55%, #d6deee)", dot: "#4f7f6f" },
-  { id: "lavender", name: "薰衣草暮色", desc: "灰紫 + 浅杏,傍晚的感觉", sw: "linear-gradient(135deg, #d6cced, #f6dacd 55%, #e8d6e2)", dot: "#7a6aa8" },
-  { id: "mist", name: "晨雾", desc: "雾蓝绿,清爽", sw: "linear-gradient(135deg, #bedce8, #cee8d6 55%, #dce2f0)", dot: "#3e7c94" },
+  { id: "sage", key: "pal_sage", sw: "linear-gradient(135deg, #c4dfcd, #f1ead8 55%, #d6deee)", dot: "#4f7f6f" },
+  { id: "lavender", key: "pal_lav", sw: "linear-gradient(135deg, #d6cced, #f6dacd 55%, #e8d6e2)", dot: "#7a6aa8" },
+  { id: "mist", key: "pal_mist", sw: "linear-gradient(135deg, #bedce8, #cee8d6 55%, #dce2f0)", dot: "#3e7c94" },
 ];
 function drawPalettes() {
   const cur = document.documentElement.dataset.palette || "sage";
   $("#palettes").innerHTML = PALETTES.map((p) => `<button type="button" class="palette ${p.id === cur ? "on" : ""}" data-p="${p.id}">
     <span class="sw" style="background:${p.sw}; box-shadow: inset -14px 0 0 -8px ${p.dot}"></span>
-    <b>${p.name}</b><small>${p.desc}</small></button>`).join("");
+    <b>${t(p.key)}</b><small>${t(p.key + "_d")}</small></button>`).join("");
   document.querySelectorAll(".palette").forEach((b) => b.onclick = () => {
     document.documentElement.dataset.palette = b.dataset.p;
     try { localStorage.setItem("wb-palette", b.dataset.p); } catch (_) {}
-    drawPalettes(); toast(`已换成「${PALETTES.find((x) => x.id === b.dataset.p).name}」`);
+    drawPalettes(); toast(t("pal_changed", { n: t(PALETTES.find((x) => x.id === b.dataset.p).key) }));
   });
 }
 function route() {
@@ -157,13 +157,13 @@ $("#form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const source = $("#source").value.trim();
   if (!source) return $("#source").focus();
-  formMsg("提交中…");
+  formMsg(t("submitting"));
   try {
     const t = await api("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source, lang: $("#lang").value, out_lang: $("#out_lang").value }) });
     $("#source").value = ""; formMsg("");
     await refresh(); location.hash = `#/t/${t.id}`;
-  } catch (err) { formMsg(err.message, true); }
+  } catch (err) { formMsg(trServer(err.message), true); }
 });
 $("#source").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#form").requestSubmit(); });
 $("#file").addEventListener("change", () => { if ($("#file").files[0]) upload($("#file").files[0]); });
@@ -172,12 +172,12 @@ function formMsg(s, bad) { const m = $("#formmsg"); m.textContent = s; m.classLi
 async function upload(f) {
   const fd = new FormData();
   fd.append("file", f); fd.append("lang", $("#lang").value); fd.append("out_lang", $("#out_lang").value);
-  formMsg(`上传 ${f.name}…`);
+  formMsg(t("uploading", { n: f.name }));
   try {
     const t = await api("/api/upload", { method: "POST", body: fd });
     formMsg(""); $("#file").value = "";
     await refresh(); location.hash = `#/t/${t.id}`;
-  } catch (err) { formMsg(err.message, true); }
+  } catch (err) { formMsg(trServer(err.message), true); }
 }
 // 拖文件进新建页
 let dragDepth = 0;
@@ -202,8 +202,8 @@ function drawList() {
     <li class="task ${current && t.id === current.id ? "on" : ""}" data-id="${t.id}" title="${esc(t.title || t.vid)}">
       <span class="s-dot ${t.status}"></span>
       <span class="t-title">${esc(t.title || t.vid)}</span>
-      <span class="t-sub">${KIND[t.kind] || t.kind} · ${t.status === "done" ? ago(t.updated_at) : esc(t.status === "running" ? t.message : STATUS[t.status])}</span>
-    </li>`).join("") || `<li class="task-empty">还没有任务</li>`;
+      <span class="t-sub">${siteName(t)} · ${t.status === "done" ? ago(t.updated_at) : esc(t.status === "running" ? trServer(t.message) : statusName(t.status))}</span>
+    </li>`).join("") || `<li class="task-empty">${window.t("no_tasks")}</li>`;
   document.querySelectorAll(".task[data-id]").forEach((li) => li.onclick = () => { location.hash = `#/t/${li.dataset.id}`; });
 }
 
@@ -223,40 +223,39 @@ function drawLibrary() {
     && (!lib.status || t.status === lib.status || (lib.status === "running" && t.status === "queued")));
   $("#lib-rows").innerHTML = rows.map((t) => {
     const total = Object.values(t.timings || {}).reduce((a, b) => a + b, 0);
-    const st = t.status === "done" && !t.check_ok ? ["warn", "完成(核对有问题)"] : [t.status, STATUS[t.status]];
+    const st = t.status === "done" && !t.check_ok ? ["warn", window.t("done_warn")] : [t.status, statusName(t.status)];
     return `<tr data-id="${t.id}">
       <td class="t-cell" title="${esc(t.title || t.vid)}">${esc(t.title || t.vid)}</td>
-      <td>${KIND[t.kind] || t.kind}</td>
-      <td>${t.out_lang === "en" ? "English" : "中文"}</td>
+      <td>${siteName(t)}</td>
+      <td>${window.t(t.out_lang === "en" ? "l_en" : "l_zh")}</td>
       <td><span class="badge ${st[0]}">${st[1]}</span></td>
       <td class="num">${t.status === "done" ? dur(Math.round(total)) : "—"}</td>
       <td class="muted">${ago(t.created_at)}</td></tr>`;
-  }).join("") || `<tr><td colspan="6" class="table-empty">${tasks.length ? "没有符合条件的任务" : "还没有任务,去「新建总结」贴一个链接"}</td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="table-empty">${t(tasks.length ? "lib_none" : "lib_empty")}</td></tr>`;
   document.querySelectorAll("#lib-rows tr[data-id]").forEach((tr) => tr.onclick = () => { location.hash = `#/t/${tr.dataset.id}`; });
 }
 
 // ---------- 设置 ----------
-const PDESC = {
-  claude: "用你登录的 Claude Pro / Max 订阅。没装:npm i -g @anthropic-ai/claude-code,再运行一次 claude 登录",
-  codex: "用你登录的 ChatGPT Plus / Pro 账号。没装:npm i -g @openai/codex(或 brew install codex),再运行一次 codex 登录",
-  api: "DeepSeek 或任意 OpenAI 兼容接口,按量付费",
-};
+function providerNote(p) {   // 后端给的"不可用原因"是中文,这里按情况重写
+  if (p.ok) return "";
+  return p.id === "api" ? t("p_no_key") : t("p_not_found", { c: p.id });
+}
 function drawProviders(c) {
-  const opts = [{ id: "auto", name: "自动", ok: c.ready, note: c.ready ? `现在会用 ${PNAME[c.active]}` : "没有能用的" }, ...c.providers];
+  const opts = [{ id: "auto", ok: c.ready, note: c.ready ? t("p_auto_now", { n: PNAME[c.active] }) : t("p_auto_none") }, ...c.providers];
   $("#providers").innerHTML = opts.map((p) => `<button type="button" class="provider ${c.provider === p.id ? "on" : ""}" data-p="${p.id}">
-    <span class="radio"></span><b>${p.id === "auto" ? "自动选择" : esc(p.name)}</b>
-    <span class="badge ${p.ok ? "done" : "failed"}">${p.ok ? "可用" : "不可用"}</span>
-    <small>${p.id === "auto" ? "有 API Key 用 API;没有就用本机的 Claude Code,再没有用 Codex · " + esc(p.note) : esc(PDESC[p.id]) + (p.ok ? "" : " · " + esc(p.note))}</small></button>`).join("");
+    <span class="radio"></span><b>${t("p_" + p.id)}</b>
+    <span class="badge ${p.ok ? "done" : "failed"}">${t(p.ok ? "p_ok" : "p_no")}</span>
+    <small>${p.id === "auto" ? t("p_auto_d") + " · " + esc(p.note) : t("p_" + p.id + "_d") + (p.ok ? "" : " · " + esc(providerNote(p)))}</small></button>`).join("");
   document.querySelectorAll(".provider").forEach((b) => b.onclick = async () => {
     const nc = await api("/api/config/provider", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: b.dataset.p }) });
-    drawProviders(nc); drawModelCard(nc); toast("已保存");
+    drawProviders(nc); drawModelCard(nc); toast(t("saved"));
   });
   const sel = $("#cookies-browser");
-  sel.innerHTML = [["", "不用(默认)"], ...c.browsers.map((b) => [b, b[0].toUpperCase() + b.slice(1)])]
-    .map(([v, n]) => `<option value="${v}" ${v === c.cookies_browser ? "selected" : ""}>${v ? "借用 " + n + " 的登录状态" : n}</option>`).join("");
+  sel.innerHTML = [["", t("cookies_off")], ...c.browsers.map((b) => [b, b[0].toUpperCase() + b.slice(1)])]
+    .map(([v, n]) => `<option value="${v}" ${v === c.cookies_browser ? "selected" : ""}>${v ? t("cookies_use", { b: n }) : n}</option>`).join("");
   sel.onchange = async () => {
     await api("/api/config/cookies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ browser: sel.value }) });
-    toast(sel.value ? "已保存;第一次读取时系统可能会问你是否允许" : "已关闭");
+    toast(t(sel.value ? "cookies_saved" : "cookies_closed"));
   };
 }
 
@@ -266,11 +265,12 @@ async function drawSettings() {
   const ok = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>', no = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>';
   drawProviders(c);
   $("#cfg-path").textContent = s.config_file;
-  $("#set-tools").innerHTML = s.tools.map((t) => `<li><span class="ck ${t.path ? "ok" : "no"}">${t.path ? ok : no}</span>
-    <span>${esc(t.name)}</span><span class="sub">${esc(t.need)}${t.path ? " · " + esc(t.path) : " · 没找到"}</span></li>`).join("");
+  const NEED = { "yt-dlp": "tool_ytdlp", ffmpeg: "tool_ffmpeg", ffprobe: "tool_ffprobe", "whisper-cli": "tool_whisper" };
+  $("#set-tools").innerHTML = s.tools.map((x) => `<li><span class="ck ${x.path ? "ok" : "no"}">${x.path ? ok : no}</span>
+    <span>${esc(x.name.replace("whisper 模型", "whisper model"))}</span><span class="sub">${t(NEED[x.name] || "tool_model")}${x.path ? " · " + esc(x.path) : " · " + t("not_found")}</span></li>`).join("");
   const n = s.counts, total = Object.values(n).reduce((a, b) => a + b, 0);
-  $("#set-data").innerHTML = `<dt>任务</dt><dd>共 ${total} 个 · 完成 ${n.done || 0} · 失败 ${n.failed || 0}</dd>
-    <dt>数据目录</dt><dd><code>${esc(s.data_dir)}</code></dd><dt>说明</dt><dd class="muted">每个任务一个文件夹,里面有文字稿、讲义稿和总结 .md;不进 git。</dd>`;
+  $("#set-data").innerHTML = `<dt>${t("data_tasks")}</dt><dd>${t("data_count", { t: total, d: n.done || 0, f: n.failed || 0 })}</dd>
+    <dt>${t("data_dir")}</dt><dd><code>${esc(s.data_dir)}</code></dd><dt>${t("data_note_k")}</dt><dd class="muted">${t("data_note")}</dd>`;
 }
 
 // ---------- 详情 ----------
@@ -281,7 +281,7 @@ async function openTask(id) {
   current = t;
   if (switched) {
     rendered = {}; setTab("summary");
-    $("#player").innerHTML = `<div class="player-empty">${'<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>'}<span>点任意时间戳,在这里播放</span></div>`;
+    $("#player").innerHTML = `<div class="player-empty"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span>${window.t("player_empty")}</span></div>`;
     $("#chapters").innerHTML = "";
     $("#d-log").textContent = "";
   }
@@ -292,26 +292,27 @@ async function openTask(id) {
 
 function drawDetail(t) {
   $("#d-title").textContent = t.title || t.vid;
-  $("#d-kind").textContent = t.kind === "web" ? (t.meta && t.meta.site) || "网页" : KIND[t.kind] || t.kind;
-  $("#d-time").textContent = `${t.out_lang === "en" ? "English" : "中文"}总结 · ${ago(t.created_at)}`;
+  $("#d-kind").textContent = siteName(t);
+  $("#d-time").textContent = window.t("sum_lang", { l: window.t(t.out_lang === "en" ? "l_en" : "l_zh"), ago: ago(t.created_at) });
   $("#d-open").hidden = t.kind === "local"; if (t.kind !== "local") $("#d-open").href = t.source;
   const done = t.status === "done";
   $("#d-copy").disabled = $("#d-download").disabled = !done;
   $("#d-retry").disabled = $("#d-del").disabled = t.status === "running";
 
-  $("#steps").innerHTML = STAGES.map(([k, name], i) => {
+  const tr = window.t;
+  $("#steps").innerHTML = STAGES.map((k, i) => {
     const ok = t.timings[k] != null && !(t.status !== "done" && t.stage === k);
     const now = t.status === "running" && t.stage === k;
     const bad = t.status === "failed" && t.stage === k;
     const cls = bad ? "bad" : now ? "now" : ok ? "done" : "";
     const ic = bad ? ICON.x : now ? ICON.spin : ok ? ICON.check : `<b style="font-size:12px">${i + 1}</b>`;
-    const tm = bad ? "失败" : now ? "进行中…" : ok ? dur(t.timings[k]) : t.status === "queued" && i === 0 ? "排队中" : "等待";
-    return `<div class="step ${cls}"><span class="ic">${ic}</span><div><div class="nm">${name}</div><div class="tm">${tm}</div></div></div>`;
+    const tm = bad ? tr("step_failed") : now ? tr("step_now") : ok ? dur(t.timings[k]) : t.status === "queued" && i === 0 ? tr("step_queued") : tr("step_wait");
+    return `<div class="step ${cls}"><span class="ic">${ic}</span><div><div class="nm">${tr("st_" + k)}</div><div class="tm">${tm}</div></div></div>`;
   }).join("");
 
   const st = $("#d-status");
   st.className = "status-line " + (t.status === "failed" ? "bad" : done ? (t.check_ok ? "ok" : "warn") : "");
-  st.textContent = t.message || "";
+  st.textContent = trServer(t.message);
 
   const pre = $("#d-log");
   const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
@@ -325,9 +326,9 @@ function drawDetail(t) {
   else if (!done) {
     rendered.summary = false;
     $("#summary").innerHTML = t.status === "failed"
-      ? `<div class="empty-pane">没有生成总结。原因见上方提示和"日志";修好后点"重跑"。</div>`
+      ? `<div class="empty-pane">${tr("failed_pane")}</div>`
       : `<div class="skeleton">${"<i></i>".repeat(8).replace(/<i><\/i>/g, (m, i) => `<i style="width:${60 + ((i * 37) % 40)}%"></i>`)}</div>`;
-    if (!$("#chapters").children.length) $("#chapters").innerHTML = `<li class="chapters-empty">总结写好后显示章节</li>`;
+    if (!$("#chapters").children.length) $("#chapters").innerHTML = `<li class="chapters-empty">${tr("chapters_wait")}</li>`;
   }
   if (tab === "transcript" && !rendered.transcript) loadTranscript(t);
 }
@@ -396,7 +397,7 @@ function drawChapters(md) {
   }
   $("#chapters").innerHTML = items.map((c) =>
     `<li class="chapter" data-seek="${c.t}"><span class="c-t">${mmss(c.t)}</span><span class="c-n">${esc(c.name)}</span>${c.desc ? `<span class="c-d">${esc(c.desc)}</span>` : ""}</li>`
-  ).join("") || `<li class="chapters-empty">总结里没有章节时间线</li>`;
+  ).join("") || `<li class="chapters-empty">${t("chapters_none")}</li>`;
 }
 function markChapter(sec) {
   let best = null;
@@ -418,8 +419,8 @@ async function loadTranscript(t) {
       if (m && text) rows.push([+m[1] * 3600 + +m[2] * 60 + +m[3], text]);
     }
     box.innerHTML = rows.map(([s, x]) => `<div class="tr-line"><a class="ts" href="#" data-t="${s}">${mmss(s)}</a><span>${esc(x)}</span></div>`).join("")
-      || `<div class="empty-pane">文字稿是空的</div>`;
-  } catch (err) { rendered.transcript = false; box.innerHTML = `<div class="empty-pane">${esc(err.message)}</div>`; }
+      || `<div class="empty-pane">${window.t("transcript_empty")}</div>`;
+  } catch (err) { rendered.transcript = false; box.innerHTML = `<div class="empty-pane">${esc(trServer(err.message))}</div>`; }
 }
 
 // ---------- 播放器 ----------
@@ -441,12 +442,12 @@ function loadLocal(t) {
 function seek(t, sec) {
   const box = $("#player");
   if (t.kind === "local") {
-    if (!box.querySelector("video")) { if (!(t.meta && t.meta.media_path)) return toast("这个任务没有本地视频(只有字幕)"); loadLocal(t); }
+    if (!box.querySelector("video")) { if (!(t.meta && t.meta.media_path)) return toast(window.t("no_media")); loadLocal(t); }
     const v = box.querySelector("video"); v.currentTime = sec; v.play();
   } else if (t.kind === "web") {
     const u = jumpUrl(t, sec);
-    box.innerHTML = `<div class="player-link"><span>这个网站不能嵌在页面里播放</span><a href="${esc(u)}" target="_blank" rel="noopener">在原网站打开 ${mmss(sec)} ↗</a>
-      <span class="small">Twitch、Vimeo 会直接跳到这个时间;其它网站可能要手动拖到 ${mmss(sec)}</span></div>`;
+    box.innerHTML = `<div class="player-link"><span>${window.t("web_player")}</span><a href="${esc(u)}" target="_blank" rel="noopener">${window.t("web_open", { t: mmss(sec) })}</a>
+      <span class="small">${window.t("web_note", { t: mmss(sec) })}</span></div>`;
   } else {
     let src;
     if (t.kind === "youtube") src = `https://www.youtube.com/embed/${t.vid}?start=${sec}&autoplay=1`;
@@ -460,8 +461,8 @@ function seek(t, sec) {
 
 // ---------- 操作 ----------
 $("#d-copy").onclick = async () => {
-  try { await navigator.clipboard.writeText(rendered.md || await api(`/api/tasks/${current.id}/summary`)); toast("已复制 Markdown"); }
-  catch (_) { toast("复制失败"); }
+  try { await navigator.clipboard.writeText(rendered.md || await api(`/api/tasks/${current.id}/summary`)); toast(t("copied")); }
+  catch (_) { toast(t("copy_fail")); }
 };
 $("#d-download").onclick = () => {
   const a = document.createElement("a");
@@ -469,12 +470,12 @@ $("#d-download").onclick = () => {
   a.download = `${(current.title || current.vid).replace(/[\\/:*?"<>|]+/g, "_")}.md`; a.click();
 };
 $("#d-retry").onclick = async () => {
-  await api(`/api/tasks/${current.id}/retry`, { method: "POST" }); rendered = {}; toast("已重新排队"); refresh(); openTask(current.id);
+  await api(`/api/tasks/${current.id}/retry`, { method: "POST" }); rendered = {}; toast(t("requeued")); refresh(); openTask(current.id);
 };
 $("#d-del").onclick = async () => {
-  if (!confirm("删除这个任务和它的文字稿、总结?")) return;
+  if (!confirm(t("del_confirm"))) return;
   await api(`/api/tasks/${current.id}`, { method: "DELETE" });
-  toast("已删除"); await refresh(); location.hash = "#/library";
+  toast(t("deleted")); await refresh(); location.hash = "#/library";
 };
 
 // ---------- 轮询 ----------
@@ -490,5 +491,27 @@ async function tick() {
     }
   } catch (_) {}
 }
+// ---------- 语言 ----------
+function siteName(task) { return task.kind === "web" ? (task.meta && task.meta.site) || t("kind_web") : kindName(task.kind); }
+function setLang(l) {
+  LANG = l;
+  try { localStorage.setItem("wb-lang", l); } catch (_) {}
+  applyI18n(); drawTemplates(); drawList();
+  if (cfg) drawModelCard(cfg);
+  if (shownPage) $("#page-title").textContent = t(TITLES[shownPage]);
+  if (shownPage === "library") drawLibrary();
+  if (shownPage === "settings") drawSettings();
+  if (shownPage === "detail" && current) {
+    drawDetail(current);
+    if (!$("#chapters").querySelector(".chapter")) $("#chapters").innerHTML = "";
+    if (!$("#player iframe, #player video")) $("#player").innerHTML = `<div class="player-empty"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span>${t("player_empty")}</span></div>`;
+  }
+}
+$("#lang-btn").onclick = () => { setLang(LANG === "zh" ? "en" : "zh"); if (!outTouched) $("#out_lang").value = LANG; };
+let outTouched = false;   // 没手动选过总结语言时,跟着界面语言走
+$("#out_lang").addEventListener("change", () => { outTouched = true; });
+applyI18n();
+$("#out_lang").value = LANG;
+
 refresh().then(route);
 setInterval(tick, 2000);
