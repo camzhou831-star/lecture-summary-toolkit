@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>总结工作台</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+<body>
+<header>
+  <h1>总结工作台</h1>
+  <span id="model" class="muted"></span>
+</header>
+<main>
+  <aside>
+    <section class="card" id="new">
+      <h2>贴链接</h2>
+      <form id="form">
+        <textarea id="source" rows="3" placeholder="B 站 / YouTube 链接(可以连分享文案一起贴),或本地文件路径"></textarea>
+        <div class="row">
+          <label>视频语言
+            <select id="lang">
+              <option value="auto">自动(B站→中文,YouTube→英文)</option>
+              <option value="zh">中文</option>
+              <option value="en">英文</option>
+            </select>
+          </label>
+          <label>总结语言
+            <select id="out_lang"><option value="zh">中文</option><option value="en">English</option></select>
+          </label>
+        </div>
+        <div class="row">
+          <button type="submit">开始总结</button>
+          <label class="file">或选文件<input type="file" id="file" accept="video/*,audio/*,.srt,.vtt"></label>
+        </div>
+        <p id="formmsg" class="msg"></p>
+      </form>
+      <p class="muted small">模板:课程总结(API 模式)。抖音、学校 LMS 暂不支持:先自己下载,再选文件。</p>
+    </section>
+    <section class="card">
+      <h2>任务</h2>
+      <ul id="tasks"></ul>
+    </section>
+  </aside>
+  <section class="card" id="result">
+    <div id="empty" class="muted">左边贴一个链接开始;点任务看进度和结果。</div>
+    <div id="detail" hidden>
+      <div class="title-row">
+        <h2 id="d-title"></h2>
+        <div class="actions">
+          <a id="d-open" target="_blank" rel="noopener">在原站打开</a>
+          <button id="d-copy" class="ghost">复制 Markdown</button>
+          <button id="d-retry" class="ghost">重跑</button>
+          <button id="d-del" class="ghost danger">删除</button>
+        </div>
+      </div>
+      <p id="d-status" class="msg"></p>
+      <div id="stages" class="stages"></div>
+      <div id="player"></div>
+      <article id="summary" class="md"></article>
+      <details id="d-check"><summary>核对报告</summary><pre id="d-report"></pre></details>
+      <details><summary>运行日志</summary><pre id="d-log"></pre></details>
+    </div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

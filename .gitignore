@@ -22,3 +22,8 @@ __pycache__/
 /工作台数据/
 /dist/
 vendor/*.zip
+
+# 总结工作台:本地数据(下载的转写、总结、任务库)与虚拟环境
+/workbench/data/
+/workbench/.venv/
+.pytest_cache/

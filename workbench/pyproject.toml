@@ -1,0 +1,20 @@
+[project]
+name = "lecture-workbench"
+version = "0.1.0"
+description = "录播课总结工具的本地工作台:贴链接或文件 → 文字稿 → 课程总结 → 时间戳核对"
+requires-python = ">=3.10,<3.15"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
