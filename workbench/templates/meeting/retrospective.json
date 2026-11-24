@@ -1,0 +1,54 @@
+{
+  "name": "Retrospective (Agile)",
+  "description": "Sprint retrospective template for continuous improvement.",
+  "sections": [
+    {
+      "title": "Sprint",
+      "instruction": "Sprint name/number and date range",
+      "format": "string",
+      "title_zh": "迭代"
+    },
+    {
+      "title": "Attendance",
+      "instruction": "List of participants",
+      "format": "list",
+      "title_zh": "出席"
+    },
+    {
+      "title": "Start Doing",
+      "instruction": "Actions or experiments to start next sprint",
+      "format": "list",
+      "item_format": "| **Idea** | **Proposer** |\n| --- | --- |",
+      "title_zh": "开始做"
+    },
+    {
+      "title": "Stop Doing",
+      "instruction": "Practices to stop",
+      "format": "list",
+      "item_format": "| **Practice** | **Reason** |\n| --- | --- |",
+      "title_zh": "停止做"
+    },
+    {
+      "title": "Continue Doing",
+      "instruction": "Practices to continue",
+      "format": "list",
+      "item_format": "| **Practice** | **Notes** |\n| --- | --- |",
+      "title_zh": "继续做"
+    },
+    {
+      "title": "Action Items",
+      "instruction": "Concrete experiments with owners and success metrics",
+      "format": "list",
+      "item_format": "| **Owner** | **Task** | **Due Date** | **Success Metric** |\n| --- | --- | --- | --- |",
+      "title_zh": "待办事项"
+    },
+    {
+      "title": "Notes & Votes",
+      "instruction": "Summary and top-voted items",
+      "format": "paragraph",
+      "title_zh": "备注与投票"
+    }
+  ],
+  "name_zh": "复盘会",
+  "description_zh": "开始做、停止做、继续做"
+}

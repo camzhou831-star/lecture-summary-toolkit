@@ -43,9 +43,9 @@ function toast(msg) {
 const TEMPLATES = [
   { id: "course", key: "tpl_course", ready: true, icon: '<svg viewBox="0 0 24 24"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>',
   },
-  { id: "benchmark", key: "tpl_bench", ready: false, icon: '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  { id: "breakdown", key: "tpl_bench", ready: true, icon: '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   },
-  { id: "meeting", key: "tpl_meet", ready: false, icon: '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
+  { id: "meeting", key: "tpl_meet", ready: true, icon: '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
   },
 ];
 let template = "course";
@@ -59,11 +59,28 @@ function tplCard(t, pick) {
     ${pick ? "" : `<ul>${t(tp.key + "_p").map((p) => `<li>${p}</li>`).join("")}</ul>`}</button>`;
   })(window.t);
 }
+let meetings = [], meetingVariant = "meeting.standard_meeting";
+const tplId = () => template === "meeting" ? meetingVariant : template;   // 提交给后端的模板 id
+function tplName(id) {
+  if (!id || id === "course") return t("tpl_course");
+  if (id === "breakdown") return t("tpl_bench");
+  const m = meetings.find((x) => x.id === id);
+  return t("tpl_meet") + (m ? " · " + (LANG === "zh" ? m.name_zh : m.name_en) : "");
+}
 function drawTemplates() {
   $("#tpl-pick").innerHTML = TEMPLATES.map((t) => tplCard(t, true)).join("");
   $("#tpl-list").innerHTML = TEMPLATES.map((t) => tplCard(t, false)).join("");
-  document.querySelectorAll("#tpl-pick .tpl:not(:disabled)").forEach((b) => b.onclick = () => { template = b.dataset.tpl; drawTemplates(); });
+  document.querySelectorAll("#tpl-pick .tpl:not(:disabled)").forEach((b) => b.onclick = () => { template = b.dataset.tpl; drawTemplates(); drawSrcHint(); });
+  // 会议纪要:选中后在卡片下面选会议类型
+  let row = $("#meet-row");
+  if (!row) { row = document.createElement("div"); row.id = "meet-row"; row.className = "meet-row"; $("#tpl-pick").after(row); }
+  row.hidden = template !== "meeting" || !meetings.length;
+  row.innerHTML = `<label>${t("meet_type")}</label><select id="meet-type" class="select">${meetings.map((m) =>
+    `<option value="${m.id}" ${m.id === meetingVariant ? "selected" : ""}>${esc(LANG === "zh" ? m.name_zh : m.name_en)} — ${esc(LANG === "zh" ? m.desc_zh : m.desc_en)}</option>`).join("")}</select>
+    <span class="small muted">${(meetings.find((m) => m.id === meetingVariant) || {})[LANG === "zh" ? "sections_zh" : "sections_en"]?.join(" · ") || ""}</span>`;
+  const sel = $("#meet-type"); if (sel) sel.onchange = () => { meetingVariant = sel.value; drawTemplates(); };
 }
+api("/api/templates").then((x) => { meetings = x.meetings || []; drawTemplates(); }).catch(() => {});
 drawTemplates();
 
 // ---------- 模型状态 ----------
@@ -160,7 +177,7 @@ $("#form").addEventListener("submit", async (e) => {
   formMsg(t("submitting"));
   try {
     const t = await api("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, lang: $("#lang").value, out_lang: $("#out_lang").value }) });
+      body: JSON.stringify({ source, lang: $("#lang").value, out_lang: $("#out_lang").value, template: tplId() }) });
     $("#source").value = ""; formMsg("");
     await refresh(); location.hash = `#/t/${t.id}`;
   } catch (err) { formMsg(trServer(err.message), true); }
@@ -171,7 +188,7 @@ function formMsg(s, bad) { const m = $("#formmsg"); m.textContent = s; m.classLi
 
 async function upload(f) {
   const fd = new FormData();
-  fd.append("file", f); fd.append("lang", $("#lang").value); fd.append("out_lang", $("#out_lang").value);
+  fd.append("file", f); fd.append("lang", $("#lang").value); fd.append("out_lang", $("#out_lang").value); fd.append("template", tplId());
   formMsg(t("uploading", { n: f.name }));
   try {
     const t = await api("/api/upload", { method: "POST", body: fd });
@@ -226,7 +243,7 @@ function drawLibrary() {
     const total = Object.values(t.timings || {}).reduce((a, b) => a + b, 0);
     const st = t.status === "done" && !t.check_ok ? ["warn", window.t("done_warn")] : [t.status, statusName(t.status)];
     return `<tr data-id="${t.id}">
-      <td class="t-cell" title="${esc(t.title || t.vid)}">${esc(t.title || t.vid)}</td>
+      <td class="t-cell" title="${esc(t.title || t.vid)}">${esc(t.title || t.vid)}<div class="small muted">${esc(tplName(t.template))}</div></td>
       <td>${siteName(t)}</td>
       <td>${window.t(t.out_lang === "en" ? "l_en" : "l_zh")}</td>
       <td><span class="badge ${st[0]}">${st[1]}</span></td>
@@ -294,7 +311,7 @@ async function openTask(id) {
 function drawDetail(t) {
   $("#d-title").textContent = t.title || t.vid;
   $("#d-kind").textContent = siteName(t);
-  $("#d-time").textContent = window.t("sum_lang", { l: window.t(t.out_lang === "en" ? "l_en" : "l_zh"), ago: ago(t.created_at) });
+  $("#d-time").textContent = tplName(t.template) + " · " + window.t("sum_lang", { l: window.t(t.out_lang === "en" ? "l_en" : "l_zh"), ago: ago(t.created_at) });
   $("#d-open").hidden = t.kind === "local"; if (t.kind !== "local") $("#d-open").href = t.source;
   const done = t.status === "done";
   $("#d-copy").disabled = $("#d-download").disabled = !done;
@@ -359,7 +376,7 @@ async function loadSummary(t) {
     else { a.target = "_blank"; a.rel = "noopener"; }
   });
   linkify(box);
-  drawChapters(md);
+  drawChapters(md, t.template);
 }
 function linkify(box) {   // 正文里其余的时间戳也变成可点的
   const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), nodes = [];
@@ -384,9 +401,20 @@ document.addEventListener("click", (e) => {
   seek(current, sec);
 });
 
-function drawChapters(md) {
+function drawChapters(md, tpl = "course") {
   const lines = md.split("\n"); let inTl = false; const items = [];
-  for (const l of lines) {
+  $(".chapter-card .panel-title span").textContent = t(tpl === "breakdown" ? "seg_chapters" : "chapters");
+  if (tpl === "breakdown") {   // 对标拆稿:分段表的每一段当一个"章节"
+    let inSeg = false;
+    for (const l of lines) {
+      if (l.startsWith("## ")) inSeg = /^## 3\./.test(l);
+      const m = inSeg && l.match(/^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*\[(\d{1,3}):(\d{2})\][^|]*\|(?:[^|]*\|){5}\s*([^|]*?)\s*\|\s*$/);
+      if (m) items.push({ t: +m[3] * 60 + +m[4], name: `${m[1]}. ${m[2]}`, desc: m[5] });
+    }
+  } else if (tpl.startsWith("meeting")) {
+    $("#chapters").innerHTML = `<li class="chapters-empty">${t("no_chapters_tpl")}</li>`; return;
+  }
+  for (const l of tpl === "breakdown" ? [] : lines) {
     if (l.startsWith("## ")) inTl = /章节时间线|Timeline/.test(l);
     else if (inTl && l.startsWith("- ")) {
       const m = l.match(/\[(\d{1,3}):(\d{2})\]/);
@@ -552,7 +580,9 @@ const LOGIN_SITES = /panopto|echo360|kaltura|yuja|coursera|udemy|edx\.org|instru
 function drawSrcHint() {
   const v = $("#source").value.trim(), el = $("#srchint");
   let msg = "", warn = false;
-  if (/douyin\.com|iesdouyin/i.test(v)) { msg = t("hint_douyin"); warn = true; }
+  if (!v && template === "breakdown") msg = t("hint_bench");
+  else if (!v && template === "meeting") msg = t("hint_meet");
+  else if (/douyin\.com|iesdouyin/i.test(v)) { msg = t("hint_douyin"); warn = true; }
   else if (/^https?:\/\//i.test(v) || /https?:\/\/\S+/.test(v)) {
     if (LOGIN_SITES.test(v)) {
       const b = cfg && cfg.cookies_browser;

@@ -27,6 +27,7 @@ It comes in two parts:
   - **Claude Code**, signed in with your Claude Pro / Max plan
   - **Codex CLI**, signed in with your ChatGPT Plus / Pro plan
   - or **any OpenAI-compatible API** (DeepSeek by default) if you prefer pay-as-you-go
+- **Three templates.** *Lecture summary* (fixed seven-part notes with review cards); *Script breakdown* for short videos (sentence-by-sentence segments by role, with seconds, word counts and pace computed by code, not the AI); *Meeting notes* in five types (standard, daily standup, project sync, retrospective, client call), adapted from [Meetily](https://github.com/Zackriya-Solutions/meetily).
 - **Checked, not just generated.** Every timestamp is checked against the transcript. If something is out of range or lands in silence, the AI is asked to fix it once.
 - **Click a timestamp, jump to that second.** YouTube and Bilibili play inside the page. Twitch and Vimeo open at the right time. Local files play in the built-in player.
 - **English and Chinese.** Switch the interface with the button in the top bar (it follows your browser language the first time, or open `?lang=en`). Each summary can be written in English or Chinese.
@@ -113,6 +114,7 @@ On Windows, double-click `install.cmd`. After installing, say *"summarize &lt;vi
 ## Credits
 
 - UI design tokens and layout adapted from [TreeUI](https://github.com/Viserion77/treeui) (MIT)
+- Meeting-notes templates and prompt rules adapted from [Meetily](https://github.com/Zackriya-Solutions/meetily) (MIT); see `workbench/templates/meeting/`
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp), [whisper.cpp](https://github.com/ggml-org/whisper.cpp), [FFmpeg](https://ffmpeg.org/)
 
 ## License

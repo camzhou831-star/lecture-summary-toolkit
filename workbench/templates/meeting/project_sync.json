@@ -1,0 +1,61 @@
+{
+  "name": "Project Sync / Status Update",
+  "description": "Weekly or bi-weekly project status meeting focusing on milestones and risks.",
+  "sections": [
+    {
+      "title": "Meeting Date & Time",
+      "instruction": "Date, start/end time, facilitator name",
+      "format": "string",
+      "title_zh": "会议时间"
+    },
+    {
+      "title": "Attendees",
+      "instruction": "List attendees and their roles",
+      "format": "list",
+      "title_zh": "参会人"
+    },
+    {
+      "title": "Milestones & Status",
+      "instruction": "Current milestones with status and estimated completion date",
+      "format": "list",
+      "item_format": "| **Milestone** | **Status** | **ETA** |\n| --- | --- | --- |",
+      "title_zh": "里程碑与状态"
+    },
+    {
+      "title": "Progress Summary",
+      "instruction": "Short paragraph summarizing progress since last sync meeting",
+      "format": "paragraph",
+      "title_zh": "进展"
+    },
+    {
+      "title": "Top Risks & Mitigations",
+      "instruction": "List top risks with impact level, mitigation plan, and owner",
+      "format": "list",
+      "item_format": "| **Risk** | **Impact** | **Mitigation** | **Owner** |\n| --- | --- | --- | --- |",
+      "title_zh": "主要风险与对策"
+    },
+    {
+      "title": "Key Decisions",
+      "instruction": "Decisions made in this meeting with rationale and timestamp",
+      "format": "list",
+      "item_format": "| **Decision** | **Rationale** | **Timestamp** |\n| --- | --- | --- |",
+      "title_zh": "关键决定"
+    },
+    {
+      "title": "Action Items",
+      "instruction": "Tasks with owners, due dates, priority, and status",
+      "format": "list",
+      "item_format": "| **Owner** | **Task** | **Due Date** | **Priority** | **Status** |\n| --- | --- | --- | --- | --- |",
+      "title_zh": "待办事项"
+    },
+    {
+      "title": "Related Documents",
+      "instruction": "Links to relevant documents, tickets, or designs discussed",
+      "format": "list",
+      "item_format": "| **Document Title** | **URL** | **Type** |\n| --- | --- | --- |",
+      "title_zh": "相关文档"
+    }
+  ],
+  "name_zh": "项目同步",
+  "description_zh": "里程碑进度、风险、决定和待办"
+}

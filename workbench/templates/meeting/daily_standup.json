@@ -1,0 +1,47 @@
+{
+  "name": "Daily Standup",
+  "description": "Time-boxed daily updates for engineering/product teams.",
+  "sections": [
+    {
+      "title": "Date",
+      "instruction": "YYYY-MM-DD",
+      "format": "string",
+      "title_zh": "日期"
+    },
+    {
+      "title": "Attendees",
+      "instruction": "List of participants present",
+      "format": "list",
+      "title_zh": "参会人"
+    },
+    {
+      "title": "Yesterday",
+      "instruction": "What I completed yesterday (short bullets)",
+      "format": "list",
+      "example_item_format": "| **Owner** | **Completed Work** |\n| --- | --- |",
+      "title_zh": "昨天"
+    },
+    {
+      "title": "Today",
+      "instruction": "Planned work for today (short bullets)",
+      "format": "list",
+      "example_item_format": "| **Owner** | **Planned Work** |\n| --- | --- |",
+      "title_zh": "今天"
+    },
+    {
+      "title": "Blockers",
+      "instruction": "Any impediments and owner if known",
+      "format": "list",
+      "item_format": "| **Owner** | **Blocker** | Impact |\n| --- | --- | --- |",
+      "title_zh": "卡点"
+    },
+    {
+      "title": "Notes",
+      "instruction": "Optional quick notes or announcements",
+      "format": "paragraph",
+      "title_zh": "备注"
+    }
+  ],
+  "name_zh": "每日站会",
+  "description_zh": "昨天做了什么、今天做什么、卡在哪"
+}

@@ -54,6 +54,16 @@
 
 每个任务的文件在 `workbench/data/tasks/<id>/`(目录结构同录播课工具的 `COURSE_ROOT`:`课程视频/` 放 srt 和讲义稿,`总结/` 放总结),任务表是 `workbench/data/workbench.db`。`data/` 已在 `.gitignore`,不会进仓库。
 
+## 模板
+
+| 模板 | 给 AI 的输入 | AI 写什么 | 程序做什么 | 核对 |
+|---|---|---|---|---|
+| 课程总结 `course` | 按分钟合并的讲义稿 `[MM:SS]` | 七节固定结构(`policy.md`) | 章节时间线加回跳链接 | `工具/check_summary.py` |
+| 对标拆稿 `breakdown` | 逐句表(长段按句号、逗号切开,时间按字数分,约 ±1 秒) | 分段 JSON(10 个作用词、新信息点)+ 逐段要点、可学的写法、收藏点与借鉴边界 | 开头 / 结尾 15 秒原文、分段表、全片指标(`wb/breakdown.py`,口径照拉片流程的 `srt_stats.py`);标题块里的播放、点赞、评论和"大爆款 / 小爆款"门槛 | 分段要从第 1 句连到最后一句;必需小节;时间戳 |
+| 会议纪要 `meeting.<类型>` | 讲义稿 `[MM:SS]` | 按会议模板逐节填写,引用处照抄时间戳 | — | 必需小节;时间戳 |
+
+会议模板在 `templates/meeting/*.json`,5 种取自 [Meetily](https://github.com/Zackriya-Solutions/meetily)(MIT,见该目录的 README 和 `LICENSE-meetily`),拼提示词的规则照它的 Rust 代码改写进 `wb/templates.py`。核对没过时,三种模板都会把报告交回 AI 改一轮。
+
 ## 界面
 
 纯 HTML + CSS + JS,不用构建。界面中英双语:文字都在 `wb/static/i18n.js`(加功能时两套一起加,测试会查漏)。配色、圆角、阴影和动效时长 / 缓动取自 [TreeUI](https://github.com/Viserion77/treeui)(MIT)的设计 token(`docs/ai/TOKENS.yaml`),布局照它的 dashboard 示例:顶栏 + 左侧功能导航 + 浅灰内容面板 + 白色卡片。浅色 / 深色跟随系统,顶栏按钮可以手动切;⌘K 聚焦搜索。
@@ -81,7 +91,11 @@ uv run pytest -q
 | SoundCloud 讲座(40 分钟,无字幕)+ Claude Code | 306.6 秒(下音频 + whisper) | 0.1 秒 | 97.3 秒 | 0.0 秒 | 一次通过 |
 | Vimeo | — | | | | 这条视频现在要登录才能看,提示正确;没测「借浏览器登录状态」 |
 
-前三行写总结用的是 DeepSeek `deepseek-chat`。Twitch 回放的链接解析和时间跳转有单元测试,没跑真实视频。
+| 对标拆稿:B 站《别被同事发现…1分钟搞定高颜值动效网站》(44 秒,6078 赞) | 6.8 秒 | 0 秒 | 5.8 秒 | 0 秒 | 17 句、6 段,钩子 5.2 秒,321 字/分;一次通过 |
+| 会议纪要(项目同步,中文):GitLab Language Server 周会(25 分钟) | 4.1 秒 | 0 秒 | 8.2 秒 | 0 秒 | 里程碑、风险、6 条决定、8 条待办,一次通过 |
+| 会议纪要(标准会议,英文):GitLab Package 周会(15 分钟) | 3.9 秒 | 0 秒 | 6.6 秒 | 0 秒 | 一次通过 |
+
+前三行和最后三行写总结用的是 DeepSeek `deepseek-chat`。Twitch 回放的链接解析和时间跳转有单元测试,没跑真实视频。
 
 B 站注意:yt-dlp(2026.10.26)直接下载会被 B 站 CDN 回 HTTP 567([yt-dlp#17847](https://github.com/yt-dlp/yt-dlp/issues/17847),还没修)。工作台按 issue 里的临时解法给 B 站下载加了 `Range: bytes=0-` 请求头(`wb/sources.py` 的 `BILI_DL_ARGS`),等 yt-dlp 修好后可以删掉。
 
@@ -89,7 +103,8 @@ B 站注意:yt-dlp(2026.10.26)直接下载会被 B 站 CDN 回 HTTP 567([yt-dlp#
 
 ## 限制
 
-- 只有"课程总结"模板;"对标拆稿"、"会议纪要"还没做。
+- 对标拆稿面向几分钟内的短视频口播,整节课这种长视频会拆得很慢;收藏数 yt-dlp 一般拿不到,写"未取到"。
+- 会议纪要不区分说话人(没有声纹识别),参会人只能从对话内容推断。
 - 界面中英双语(`wb/static/i18n.js`,顶栏切换或 `?lang=en`);运行日志和核对报告是技术输出,保持中文。
 - 抖音不支持(匿名下载会被限流)。要登录的网站靠「借浏览器登录状态」,这条路还没实测;拿不到就自己下载后选文件。
 - 只在 macOS 上测过;Windows 理论上能跑(找 whisper-cli 用的是录播课工具的跨平台逻辑),没验证。

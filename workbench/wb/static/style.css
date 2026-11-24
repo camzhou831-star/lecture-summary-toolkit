@@ -585,3 +585,10 @@ a.ts:active { transform: scale(.95); }
 .srchint.warn { background: var(--warn-soft); color: var(--warn-on-soft); }
 .srchint a { color: inherit; font-weight: 600; }
 .tip-line { margin: -10px 0 18px; font-size: 13px; padding: 8px 12px; border-radius: var(--radius-md); background: var(--brand-soft); color: var(--brand-on-soft); }
+
+/* 会议纪要:模板卡片下面的会议类型选择 */
+.meet-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.meet-row label { font-size: 13px; font-weight: 600; }
+.meet-row .select { flex: 1 1 320px; min-width: 0; }
+.meet-row .small { flex-basis: 100%; }
+.t-cell .small { font-weight: 400; margin-top: 2px; }

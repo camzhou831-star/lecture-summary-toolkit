@@ -27,6 +27,7 @@
   - **Claude Code**：登录 Claude Pro / Max 订阅
   - **Codex CLI**：登录 ChatGPT Plus / Pro 账号
   - **任意 OpenAI 兼容 API**：默认 DeepSeek，按量付费
+- **三种模板。** **课程总结**（七节固定结构加复习卡）；**对标拆稿**，给短视频口播逐句拆：按作用分段，秒数、字数、语速由程序算，不让 AI 估；**会议纪要**，有标准会议、每日站会、项目同步、复盘会、客户沟通 5 种，模板取自开源项目 [Meetily](https://github.com/Zackriya-Solutions/meetily)。
 - **写完会核对。** 每个时间戳都和文字稿对一遍；超出视频时长或落在静音段的，让 AI 改一轮。
 - **点时间戳，跳到那一秒。** YouTube、B 站在页面里直接播；Twitch、Vimeo 在原站打开到对应时间；本地文件用页面里的播放器。
 - **中英双语。** 顶栏按钮切换界面语言（第一次按浏览器语言自动选，也可以打开 `?lang=zh`）；每份总结可以单独选中文或英文。
@@ -113,6 +114,7 @@ Windows 双击 `install.cmd`。装好后，在 Claude Code 或 Codex 里说"总�
 ## 致谢
 
 - 界面的设计 token 和布局来自 [TreeUI](https://github.com/Viserion77/treeui)（MIT）
+- 会议纪要的模板和提示词规则改编自 [Meetily](https://github.com/Zackriya-Solutions/meetily)（MIT），见 `workbench/templates/meeting/`
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)、[whisper.cpp](https://github.com/ggml-org/whisper.cpp)、[FFmpeg](https://ffmpeg.org/)
 
 ## 许可证

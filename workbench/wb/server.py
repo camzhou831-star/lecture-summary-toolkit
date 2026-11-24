@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, db, llm, pipeline, sources, worker
+from . import config, db, llm, pipeline, sources, templates, worker
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 LANGS = {"auto", "zh", "en", "ja", "ko", "fr", "de", "es"}
@@ -30,6 +30,12 @@ class NewTask(BaseModel):
     source: str
     lang: str = "auto"
     out_lang: str = "zh"
+    template: str = "course"
+
+
+def _check_template(t):
+    if not templates.valid(t):
+        raise HTTPException(400, f"不认识的模板 {t}")
 
 
 def _check_langs(lang, out_lang):
@@ -86,6 +92,11 @@ def set_cookies_browser(body: BrowserBody):
     return get_config()
 
 
+@app.get("/api/templates")
+def get_templates():
+    return templates.listing()
+
+
 @app.get("/api/status")
 def get_status():
     """设置页:外部程序装没装、whisper 模型在不在、数据放在哪、任务数"""
@@ -107,18 +118,20 @@ def get_status():
 @app.post("/api/tasks")
 def create_task(body: NewTask):
     _check_langs(body.lang, body.out_lang)
+    _check_template(body.template)
     try:
         kind, vid, source = sources.parse_source(body.source)
     except sources.SourceError as e:
         raise HTTPException(400, str(e))
-    tid = db.create(kind, source, vid, lang=body.lang, out_lang=body.out_lang)
+    tid = db.create(kind, source, vid, lang=body.lang, out_lang=body.out_lang, template=body.template)
     worker.kick()
     return _public(db.get(tid))
 
 
 @app.post("/api/upload")
-def upload(file: UploadFile = File(...), lang: str = Form("auto"), out_lang: str = Form("zh")):
+def upload(file: UploadFile = File(...), lang: str = Form("auto"), out_lang: str = Form("zh"), template: str = Form("course")):
     _check_langs(lang, out_lang)
+    _check_template(template)
     name = os.path.basename(file.filename or "upload")
     ext = os.path.splitext(name)[1].lower()
     if ext not in sources.VIDEO_EXTS + sources.SUB_EXTS:
@@ -134,7 +147,7 @@ def upload(file: UploadFile = File(...), lang: str = Form("auto"), out_lang: str
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f, 1 << 20)
     kind, vid, source = sources.parse_source(dest)
-    tid = db.create(kind, source, vid, lang=lang, out_lang=out_lang)
+    tid = db.create(kind, source, vid, lang=lang, out_lang=out_lang, template=template)
     worker.kick()
     return _public(db.get(tid))
 

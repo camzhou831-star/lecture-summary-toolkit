@@ -1,0 +1,53 @@
+{
+  "name": "Client / Sales Meeting",
+  "description": "Capture client goals, deliverables, and next steps.",
+  "sections": [
+    {
+      "title": "Meeting Metadata",
+      "instruction": "Date, time, location/modality, account manager",
+      "format": "string",
+      "title_zh": "会议信息"
+    },
+    {
+      "title": "Attendees",
+      "instruction": "Client and vendor attendees with roles",
+      "format": "list",
+      "title_zh": "参会人"
+    },
+    {
+      "title": "Client Goals & Success Criteria",
+      "instruction": "What the client wants to achieve and how success will be measured",
+      "format": "paragraph",
+      "title_zh": "客户目标与成功标准"
+    },
+    {
+      "title": "Agreed Deliverables",
+      "instruction": "Deliverables, owners, and due dates",
+      "format": "list",
+      "item_format": "| **Deliverable** | **Owner** | **Due Date** |\n| --- | --- | --- |",
+      "title_zh": "约定的交付物"
+    },
+    {
+      "title": "Commercial Terms Discussed",
+      "instruction": "Pricing, SLAs, payment terms or contract items discussed",
+      "format": "paragraph",
+      "title_zh": "讨论过的商务条款"
+    },
+    {
+      "title": "Risks & Concerns",
+      "instruction": "Client concerns, blockers, or escalation items",
+      "format": "list",
+      "item_format": "| **Concern** | **Impact** | **Owner** |\n| --- | --- | --- |",
+      "title_zh": "风险与顾虑"
+    },
+    {
+      "title": "Next Steps",
+      "instruction": "Actions, owners, and due dates",
+      "format": "list",
+      "item_format": "| **Owner** | **Action** | **Due Date** |\n| --- | --- | --- |",
+      "title_zh": "下一步"
+    }
+  ],
+  "name_zh": "客户沟通",
+  "description_zh": "客户目标、交付物、商务条款和下一步"
+}

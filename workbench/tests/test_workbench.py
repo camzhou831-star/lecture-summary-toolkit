@@ -1,6 +1,7 @@
 """工作台基本测试:不联网、不需要 whisper 和模型 Key(模型调用用假的替换)。运行: cd workbench && uv run pytest -q
 字幕素材在测试里现生成(仓库规定 .srt 不能放在 tests/ 和 examples/ 之外)。
 """
+import json
 import os
 import sys
 
@@ -230,7 +231,7 @@ def test_pipeline_repairs_once_when_check_fails(env, monkeypatch):
 
     def fake_chat(messages, on_progress=None, **k):
         if len(replies) == 1:
-            assert "check_summary.py" in messages[-1]["content"] and "59:00" in messages[-1]["content"]
+            assert "检查结果" in messages[-1]["content"] and "59:00" in messages[-1]["content"]
         return replies.pop(0), {"model": "fake", "usage": None, "finish_reason": "stop"}
     monkeypatch.setattr(llm, "chat", fake_chat)
     kind, vid, src = env["sources"].parse_source(env["srt"])
@@ -302,3 +303,80 @@ def test_i18n_keys_exist_in_both_languages():
     used |= {"st_" + k for k in ("fetch", "prepare", "summarize", "check")} | {"kind_" + k for k in ("youtube", "bilibili", "local", "web")}
     missing = sorted(k for k in used if k not in d["zh"])
     assert not missing, missing
+
+
+# ---------- 对标拆稿 / 会议纪要 ----------
+def short_srt(tmp_path):
+    p = tmp_path / "short.srt"
+    p.write_text("1\n00:00:00,000 --> 00:00:12,000\n你知道吗?九成的人都用错了。今天教你三步。\n\n"
+                 "2\n00:00:12,000 --> 00:00:30,000\n第一步打开设置,第二步找到隐私,第三步关掉追踪。我自己试过,一周省了两小时。\n\n"
+                 "3\n00:00:30,000 --> 00:00:36,000\n关注我,下期讲更多。\n", encoding="utf-8")
+    return str(p)
+
+
+def test_breakdown_sentences_and_stats(env, tmp_path):
+    from wb import breakdown as b
+    subs = b.sentences(short_srt(tmp_path))
+    assert [x[2] for x in subs][:3] == ["你知道吗?", "九成的人都用错了。", "今天教你三步。"]
+    assert abs(subs[-1][1] - 36) < 0.01 and all(x[1] >= x[0] for x in subs)
+    assert b.count("用 AI 做 3 个 demo") == 6                      # 汉字各 1,英文词和数字各算 1
+    segs = [{"from": 1, "to": 2, "role": "钩子", "points": 1, "note": "反常识"},
+            {"from": 3, "to": len(subs) - 2, "role": "清单", "points": 3, "note": "三步"},
+            {"from": len(subs) - 1, "to": len(subs), "role": "结尾", "points": 0, "note": "关注"}]
+    assert b.validate(segs, len(subs)) == []
+    assert b.validate([{"from": 1, "to": 2, "role": "钩子"}, {"from": 4, "to": len(subs), "role": "结尾"}], len(subs))   # 漏了第 3 句
+    md = b.stats(subs, segs)
+    assert "## 3. 分段表" in md and "## 4. 全片指标" in md and "| 1 | 钩子 | [00:00]" in md and "| 无 |" in md
+    seg_json, body = b.extract_segments('前言\n```segments\n[{"from":1,"to":2,"role":"钩子","points":1}]\n```\n## 5. 逐段要点\nx')
+    assert seg_json[0]["role"] == "钩子" and "```" not in body and body.endswith("x")
+    with pytest.raises(b.BreakdownError):
+        b.extract_segments("没有代码块")
+
+
+def test_meeting_templates_from_meetily(env):
+    from wb import templates as T
+    lst = T.listing()["meetings"]
+    assert [m["id"] for m in lst][0] == "meeting.standard_meeting" and len(lst) == 5
+    p = T.system_prompt("meeting.standard_meeting", "zh", None)
+    assert "## 关键决定" in p and "## 待办事项" in p and "Only use information present in the source text" in p and "[MM:SS]" in p
+    assert T.required("meeting.daily_standup", "en") == ["## Date", "## Attendees", "## Yesterday", "## Today", "## Blockers", "## Notes"]
+    assert T.valid("meeting.retrospective") and not T.valid("meeting.../x") and not T.valid("meeting.psychatric_session")
+
+
+def test_generic_check(env, tmp_path):
+    from wb import templates as T
+    srt = short_srt(tmp_path)
+    ok, rep = T.check("# t\n## 摘要\n说了 [00:20]\n## 关键决定\n- x\n## 待办事项\n## 讨论要点\n", srt, "meeting.standard_meeting", "zh")
+    assert ok, rep
+    ok, rep = T.check("# t\n## 摘要\n说了 [09:20]\n", srt, "meeting.standard_meeting", "zh")
+    assert not ok and "缺少小节 ## 关键决定" in rep and "超出视频时长" in rep
+
+
+def test_pipeline_breakdown_with_fake_model(env, monkeypatch, tmp_path):
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    srt = short_srt(tmp_path)
+    from wb import breakdown as b
+    n = len(b.sentences(srt))
+
+    def fake_chat(messages, on_progress=None, **k):
+        assert "逐句表" in messages[1]["content"] and "钩子 / 承诺" in messages[0]["content"]
+        segs = [{"from": 1, "to": 2, "role": "钩子", "points": 1, "note": "反常识"}, {"from": 3, "to": n, "role": "清单", "points": 3, "note": "三步"}]
+        return ("```segments\n" + json.dumps(segs, ensure_ascii=False) + "\n```\n\n## 5. 逐段要点\n- 段1 [00:00]\n\n## 6. 可学的写法\n- 反常识开头 [00:00]\n\n"
+                "## 7. 收藏点与借鉴边界\n- 三步清单 [00:12]"), {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    kind, vid, src = env["sources"].parse_source(srt)
+    tid = db.create(kind, src, vid, template="breakdown")
+    p.run_task(tid)
+    t = db.get(tid)
+    assert t["status"] == "done" and t["check_ok"] == 1, t["log"]
+    md = open(p.summary_path(t), encoding="utf-8").read()
+    assert md.index("## 1. 开头前 15 秒") < md.index("## 3. 分段表") < md.index("## 5. 逐段要点") and "```segments" not in md
+
+
+def test_api_rejects_unknown_template(env):
+    from fastapi.testclient import TestClient
+    with TestClient(env["server"].app) as c:
+        assert c.post("/api/tasks", json={"source": "https://youtu.be/aircAruvnKk", "template": "nope"}).status_code == 400
+        r = c.post("/api/tasks", json={"source": "https://youtu.be/aircAruvnKk", "template": "meeting.project_sync"})
+        assert r.status_code == 200 and r.json()["template"] == "meeting.project_sync"
+        assert len(c.get("/api/templates").json()["meetings"]) == 5
