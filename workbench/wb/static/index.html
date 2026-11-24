@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400..800&family=Google+Sans+Code:wght@400..600&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=8">
+<link rel="stylesheet" href="/static/style.css?v=9">
 <script>/* 深浅色和配色:先读本地记住的选择,避免闪一下 */ (function () { const d = document.documentElement; d.dataset.palette = "sage"; try { const t = localStorage.getItem("wb-theme"); if (t) d.dataset.theme = t; const p = localStorage.getItem("wb-palette"); if (p) d.dataset.palette = p; } catch (_) {} })();</script>
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
@@ -42,12 +42,12 @@
       <a class="nav-item" data-page="templates" href="#/templates">
         <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 10v10"/></svg><span class="nav-text"><b>模板</b><small>总结的结构和写法</small></span></a>
       <a class="nav-item" data-page="settings" href="#/settings">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span class="nav-text"><b>设置</b><small>模型、程序、数据</small></span></a>
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span class="nav-text"><b>设置</b><small>AI、登录、程序</small></span></a>
     </nav>
     <div class="side-label recent-label">最近<a href="#/library" class="side-more">全部</a></div>
     <ul id="tasks" class="task-list"></ul>
     <div class="side-card">
-      <div class="side-card-title">模型</div>
+      <div class="side-card-title">写总结的 AI</div>
       <div id="model" class="side-card-body"></div>
     </div>
   </aside>
@@ -58,9 +58,9 @@
     <section id="home" class="home">
       <div class="home-inner">
         <h1>贴一个链接,出一份课程总结</h1>
-        <p class="muted">支持 B 站、YouTube 链接,或本地视频 / 音频 / 字幕。带时间线,时间戳可点回原视频。</p>
+        <p class="muted">YouTube、Twitch、Vimeo、学校录播(Panopto / Kaltura……)等网页链接,或本地视频 / 音频 / 字幕。带时间线,时间戳可点回原视频。</p>
         <form id="form" class="composer" autocomplete="off">
-          <textarea id="source" rows="3" placeholder="粘贴链接(可以连分享文案一起贴),或本地文件路径"></textarea>
+          <textarea id="source" rows="3" placeholder="粘贴视频链接(YouTube、Twitch、Vimeo、学校录播页……),或本地文件路径"></textarea>
           <div class="composer-bar">
             <select id="lang" class="select" title="视频语言">
               <option value="auto">视频语言:自动</option>
@@ -79,7 +79,7 @@
         <p id="formmsg" class="formmsg"></p>
         <div class="section-label">选模板</div>
         <div id="tpl-pick" class="tpl-grid"></div>
-        <p class="muted small foot-note">抖音、学校 LMS(Echo360)暂不支持链接:先自己下载,再选文件或拖进来。</p>
+        <p class="muted small foot-note">要登录才能看的(学校录播、Coursera 等)先到「设置 → 网站登录」选浏览器;实在拿不到就下载后选文件或拖进来。抖音暂不支持。</p>
       </div>
       <div id="drop" class="drop"><div>松开即上传</div></div>
     </section>
@@ -93,7 +93,7 @@
       <div class="toolbar">
         <input id="lib-search" class="input input-sm" placeholder="搜索标题…">
         <div id="lib-kind" class="seg">
-          <button data-v="" class="on">全部</button><button data-v="bilibili">B 站</button><button data-v="youtube">YouTube</button><button data-v="local">本地</button>
+          <button data-v="" class="on">全部</button><button data-v="bilibili">B 站</button><button data-v="youtube">YouTube</button><button data-v="web">其他网站</button><button data-v="local">本地</button>
         </div>
         <div id="lib-status" class="seg">
           <button data-v="" class="on">全部状态</button><button data-v="done">完成</button><button data-v="running">进行中</button><button data-v="failed">失败</button>
@@ -118,9 +118,14 @@
       <header class="page-head"><div><div class="crumb">总结工作台 / 设置</div><h2>设置</h2><p class="muted">模型、本机程序和数据位置。改 Key 只需要改配置文件,不用重启。</p></div></header>
       <div class="cards">
         <div class="card">
-          <div class="card-title">模型</div>
-          <dl id="set-model" class="kv"></dl>
-          <p class="muted small">配置文件里写 <code>{"api_key": "sk-..."}</code>;也可以设环境变量 <code>DEEPSEEK_API_KEY</code>。换任意 OpenAI 兼容接口就改 <code>base_url</code> 和 <code>model</code>。</p>
+          <div class="card-title">写总结用哪个 AI</div>
+          <div id="providers" class="providers"></div>
+          <p class="muted small" style="margin:12px 0 0">有 Claude Pro / Max 或 ChatGPT Plus / Pro 的话,装好对应的命令行工具并登录一次就能用,<b>不用 API Key</b>,用量算在你的订阅里。没有订阅才需要 API Key:写进 <code id="cfg-path"></code> 的 <code>api_key</code>。</p>
+        </div>
+        <div class="card">
+          <div class="card-title">网站登录</div>
+          <p class="muted small" style="margin:0 0 10px">学校的 Panopto / Echo360 / Kaltura、Coursera、Udemy 这类要登录的视频:选一个你已经登录过的浏览器,下载时借用它的登录状态。只在本机用,不上传;不需要就保持"不用"。</p>
+          <select id="cookies-browser" class="select" style="width:100%"></select>
         </div>
         <div class="card">
           <div class="card-title">配色</div>
@@ -185,6 +190,6 @@
   </main>
 </div>
 <div id="toast" class="toast"></div>
-<script src="/static/app.js?v=8"></script>
+<script src="/static/app.js?v=9"></script>
 </body>
 </html>

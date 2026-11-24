@@ -7,7 +7,7 @@ const ICON = {
   dot: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
 };
 const STAGES = [["fetch", "拿文字稿"], ["prepare", "整理讲义稿"], ["summarize", "写总结"], ["check", "核对时间戳"]];
-const KIND = { youtube: "YouTube", bilibili: "B 站", local: "本地文件" };
+const KIND = { youtube: "YouTube", bilibili: "B 站", local: "本地文件", web: "网页" };
 const STATUS = { queued: "排队中", running: "进行中", done: "完成", failed: "失败" };
 
 let tasks = [];
@@ -70,8 +70,15 @@ drawTemplates();
 let cfg = null;
 api("/api/config").then((c) => {
   cfg = c;
-  $("#model").innerHTML = c.key_ok ? `<span class="ok">${esc(c.model)} · Key 已配置</span>` : `<span class="bad">还没配置 Key,见「设置」</span>`;
+  drawModelCard(c);
 });
+
+const PNAME = { claude: "Claude Code", codex: "Codex", api: "API" };
+function drawModelCard(c) {
+  $("#model").innerHTML = c.ready
+    ? `<span class="ok">${PNAME[c.active]}${c.active === "api" ? " · " + esc(c.model) : " · 本机账号"}${c.provider === "auto" ? "(自动)" : ""}</span>`
+    : `<span class="bad">还没有能用的 AI,见「设置」</span>`;
+}
 
 // ---------- 路由:#/ 新建 · #/library 资料库 · #/templates 模板 · #/settings 设置 · #/t/<id> 任务 ----------
 const PAGES = ["home", "library", "templates", "settings", "detail"];
@@ -229,13 +236,36 @@ function drawLibrary() {
 }
 
 // ---------- 设置 ----------
+const PDESC = {
+  claude: "用你登录的 Claude Pro / Max 订阅。没装:npm i -g @anthropic-ai/claude-code,再运行一次 claude 登录",
+  codex: "用你登录的 ChatGPT Plus / Pro 账号。没装:npm i -g @openai/codex(或 brew install codex),再运行一次 codex 登录",
+  api: "DeepSeek 或任意 OpenAI 兼容接口,按量付费",
+};
+function drawProviders(c) {
+  const opts = [{ id: "auto", name: "自动", ok: c.ready, note: c.ready ? `现在会用 ${PNAME[c.active]}` : "没有能用的" }, ...c.providers];
+  $("#providers").innerHTML = opts.map((p) => `<button type="button" class="provider ${c.provider === p.id ? "on" : ""}" data-p="${p.id}">
+    <span class="radio"></span><b>${p.id === "auto" ? "自动选择" : esc(p.name)}</b>
+    <span class="badge ${p.ok ? "done" : "failed"}">${p.ok ? "可用" : "不可用"}</span>
+    <small>${p.id === "auto" ? "有 API Key 用 API;没有就用本机的 Claude Code,再没有用 Codex · " + esc(p.note) : esc(PDESC[p.id]) + (p.ok ? "" : " · " + esc(p.note))}</small></button>`).join("");
+  document.querySelectorAll(".provider").forEach((b) => b.onclick = async () => {
+    const nc = await api("/api/config/provider", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: b.dataset.p }) });
+    drawProviders(nc); drawModelCard(nc); toast("已保存");
+  });
+  const sel = $("#cookies-browser");
+  sel.innerHTML = [["", "不用(默认)"], ...c.browsers.map((b) => [b, b[0].toUpperCase() + b.slice(1)])]
+    .map(([v, n]) => `<option value="${v}" ${v === c.cookies_browser ? "selected" : ""}>${v ? "借用 " + n + " 的登录状态" : n}</option>`).join("");
+  sel.onchange = async () => {
+    await api("/api/config/cookies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ browser: sel.value }) });
+    toast(sel.value ? "已保存;第一次读取时系统可能会问你是否允许" : "已关闭");
+  };
+}
+
 async function drawSettings() {
   drawPalettes();
   const [c, s] = await Promise.all([api("/api/config"), api("/api/status")]);
   const ok = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>', no = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>';
-  $("#set-model").innerHTML = `<dt>状态</dt><dd><span class="badge ${c.key_ok ? "done" : "failed"}">${c.key_ok ? "Key 已配置" : "没有 Key"}</span></dd>
-    <dt>模型</dt><dd>${esc(c.model)}</dd><dt>接口</dt><dd>${esc(c.base_url)}</dd><dt>Key 来源</dt><dd>${esc(c.key_source)}</dd>
-    <dt>配置文件</dt><dd><code>${esc(s.config_file)}</code></dd>`;
+  drawProviders(c);
+  $("#cfg-path").textContent = s.config_file;
   $("#set-tools").innerHTML = s.tools.map((t) => `<li><span class="ck ${t.path ? "ok" : "no"}">${t.path ? ok : no}</span>
     <span>${esc(t.name)}</span><span class="sub">${esc(t.need)}${t.path ? " · " + esc(t.path) : " · 没找到"}</span></li>`).join("");
   const n = s.counts, total = Object.values(n).reduce((a, b) => a + b, 0);
@@ -262,7 +292,7 @@ async function openTask(id) {
 
 function drawDetail(t) {
   $("#d-title").textContent = t.title || t.vid;
-  $("#d-kind").textContent = KIND[t.kind] || t.kind;
+  $("#d-kind").textContent = t.kind === "web" ? (t.meta && t.meta.site) || "网页" : KIND[t.kind] || t.kind;
   $("#d-time").textContent = `${t.out_lang === "en" ? "English" : "中文"}总结 · ${ago(t.created_at)}`;
   $("#d-open").hidden = t.kind === "local"; if (t.kind !== "local") $("#d-open").href = t.source;
   const done = t.status === "done";
@@ -396,6 +426,12 @@ async function loadTranscript(t) {
 function jumpUrl(t, sec) {
   if (t.kind === "youtube") return `${t.source}&t=${sec}s`;
   if (t.kind === "bilibili") return `${t.source}${t.source.includes("?") ? "&" : "?"}t=${sec}`;
+  if (t.kind === "web") {
+    const base = t.source.split("#")[0], low = base.toLowerCase();
+    if (low.includes("twitch.tv/videos/")) return `${base}${base.includes("?") ? "&" : "?"}t=${Math.floor(sec / 3600)}h${Math.floor(sec % 3600 / 60)}m${sec % 60}s`;
+    if (low.includes("vimeo.com/")) return `${base}#t=${sec}s`;
+    return `${base}#t=${sec}`;
+  }
   return null;
 }
 function loadLocal(t) {
@@ -407,6 +443,10 @@ function seek(t, sec) {
   if (t.kind === "local") {
     if (!box.querySelector("video")) { if (!(t.meta && t.meta.media_path)) return toast("这个任务没有本地视频(只有字幕)"); loadLocal(t); }
     const v = box.querySelector("video"); v.currentTime = sec; v.play();
+  } else if (t.kind === "web") {
+    const u = jumpUrl(t, sec);
+    box.innerHTML = `<div class="player-link"><span>这个网站不能嵌在页面里播放</span><a href="${esc(u)}" target="_blank" rel="noopener">在原网站打开 ${mmss(sec)} ↗</a>
+      <span class="small">Twitch、Vimeo 会直接跳到这个时间;其它网站可能要手动拖到 ${mmss(sec)}</span></div>`;
   } else {
     let src;
     if (t.kind === "youtube") src = `https://www.youtube.com/embed/${t.vid}?start=${sec}&autoplay=1`;

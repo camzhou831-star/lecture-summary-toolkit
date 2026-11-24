@@ -57,8 +57,11 @@ def parse_source(text):
         if not m:
             raise SourceError("YouTube 链接里认不出视频 id")
         return "youtube", m.group(1), f"https://www.youtube.com/watch?v={m.group(1)}"
-    if low.startswith(("http://", "https://")):
-        raise SourceError("暂时只支持 B 站和 YouTube 链接;其它网站先自己下载,再把文件拖进来。")
+    if low.startswith(("http://", "https://")):   # 其它网站:Twitch、Vimeo、TED、Kaltura、Panopto……都交给 yt-dlp 试
+        u = urllib.parse.urlparse(url)
+        host = (u.hostname or "web").removeprefix("www.")
+        tail = re.sub(r"[^0-9A-Za-z]+", "_", (u.path + ("_" + u.query if u.query else "")).strip("/"))[-40:].strip("_")
+        return "web", safe(f"{host.split('.')[0]}_{tail}" if tail else host), url
     path = os.path.expanduser(s.strip("'\""))
     if not os.path.isfile(path):
         raise SourceError(f"找不到文件 {path}")
@@ -88,7 +91,23 @@ def jump_url(kind, source, sec):
         return f"{source}&t={sec}s"
     if kind == "bilibili":
         return source + ("&" if "?" in source else "?") + f"t={sec}"
+    if kind == "web":
+        low = source.lower()
+        if "twitch.tv/videos/" in low:              # Twitch 回放:?t=1h2m3s
+            return source.split("#")[0] + ("&" if "?" in source else "?") + f"t={sec // 3600}h{sec % 3600 // 60}m{sec % 60}s"
+        if "vimeo.com/" in low:                     # Vimeo:#t=123s
+            return source.split("#")[0] + f"#t={sec}s"
+        return source.split("#")[0] + f"#t={sec}"  # 其它网站:HTML5 媒体片段语法,不保证每个网站都认
     return None
+
+
+SITE_NAMES = {"twitch": "Twitch", "vimeo": "Vimeo", "ted": "TED", "kaltura": "Kaltura", "panopto": "Panopto", "khanacademy": "Khan Academy",
+              "coursera": "Coursera", "udemy": "Udemy", "edx": "edX", "echo360": "Echo360", "yuja": "YuJa", "zoom": "Zoom", "loom": "Loom", "soundcloud": "SoundCloud", "archive.org": "Internet Archive", "dailymotion": "Dailymotion"}
+
+
+def site_name(url):
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    return next((v for k, v in SITE_NAMES.items() if k in host), host.removeprefix("www.") or "网页")
 
 
 # ---------- 文本格式(照搬 script_fetch.py) ----------
@@ -152,6 +171,16 @@ def run(cmd, log, timeout=3600, env=None):
     return p.returncode, "\n".join(tail)[-2000:]
 
 
+def ytdlp_auth():
+    """设置里选了「用浏览器登录状态」时,让 yt-dlp 读这个浏览器的 cookie(只在本机用,不上传)"""
+    b = config.cookies_browser()
+    return ["--cookies-from-browser", b] if b else []
+
+
+LOGIN_HINT = ("这个网站可能要登录才能看(学校的 Panopto / Echo360 / Kaltura、Coursera、Udemy 常见)。"
+              "可以在「设置 → 网站登录」里选你登录过的浏览器再重跑,或者自己下载后选文件。")
+
+
 def need(cmd):
     sys.path.insert(0, config.TOOLS)
     import deps                                     # 录播课工具的找程序逻辑(Windows 上还查常见安装位置)
@@ -198,7 +227,7 @@ def fetch(task, root, log):
     lang = task["lang"]
     if kind == "bilibili":
         need("yt-dlp")
-        code, tail = run([need("yt-dlp"), "-f", "ba", "--no-playlist", *BILI_DL_ARGS, "--write-info-json", "-o", os.path.join(vdir, "src.%(ext)s"), source],
+        code, tail = run([need("yt-dlp"), *ytdlp_auth(), "-f", "ba", "--no-playlist", *BILI_DL_ARGS, "--write-info-json", "-o", os.path.join(vdir, "src.%(ext)s"), source],
                          log, timeout=1800)
         src = [f for f in glob.glob(os.path.join(vdir, "src.*")) if not f.endswith(".json")]
         if not src:
@@ -211,7 +240,7 @@ def fetch(task, root, log):
     elif kind == "youtube":
         need("yt-dlp")
         sub = "en" if lang == "auto" else lang
-        code, tail = run([need("yt-dlp"), "--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", sub, "--sub-format", "vtt",
+        code, tail = run([need("yt-dlp"), *ytdlp_auth(), "--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", sub, "--sub-format", "vtt",
                           "--write-info-json", "-o", os.path.join(vdir, "src.%(ext)s"), source], log, timeout=600)
         meta = save_meta(os.path.join(vdir, "src.info.json"), meta_path)
         vtts = sorted(glob.glob(os.path.join(vdir, "src.*.vtt")))
@@ -219,13 +248,39 @@ def fetch(task, root, log):
             how = "yt-dlp 下的 YouTube 字幕(多半是自动字幕),断句是平台切的,时间精度约 ±1 秒"
         else:
             log(f"== 没有 {sub} 字幕,改为下载音频 + whisper 转写")
-            code, tail = run([need("yt-dlp"), "-f", "ba", "--no-playlist", "-o", os.path.join(vdir, "src.%(ext)s"), source], log, timeout=1800)
+            code, tail = run([need("yt-dlp"), *ytdlp_auth(), "-f", "ba", "--no-playlist", "-o", os.path.join(vdir, "src.%(ext)s"), source], log, timeout=1800)
             src = [f for f in glob.glob(os.path.join(vdir, "src.*")) if not f.endswith((".json", ".vtt"))]
             if not src:
                 raise SourceError("YouTube 字幕和音频都没拿到(可能限流或需要登录)。可以自己下载后把文件拖进来。\n" + tail[-300:])
             transcribe(src[0], base, "auto" if lang == "auto" else lang, log)
             os.remove(src[0])
             how = "yt-dlp 音频 + whisper large-v3-turbo 转写,时间精度约 ±0.5 秒,同音错字未校"
+        for v in vtts:
+            os.remove(v)
+    elif kind == "web":
+        yt = need("yt-dlp")
+        sub = "en,en-US,en-GB,en-orig" if lang in ("auto", "en") else f"{lang},{lang}-Hans,{lang}-CN"
+        code, tail = run([yt, *ytdlp_auth(), "--no-playlist", "--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", sub,
+                          "--sub-format", "vtt/best", "--convert-subs", "vtt", "--write-info-json", "-o", os.path.join(vdir, "src.%(ext)s"), source], log, timeout=600)
+        if code and not os.path.exists(os.path.join(vdir, "src.info.json")):
+            if "Unsupported URL" in tail:
+                raise SourceError("yt-dlp 不认识这个网页(网页里可能没有视频,或者视频藏在播放器框里)。可以打开视频所在的页面再复制链接,或者下载后选文件。")
+            raise SourceError(("拿不到视频信息。" + LOGIN_HINT) if re.search(r"login|log in|sign in|401|403|cookies|private|members", tail, re.I)
+                              else "拿不到视频信息:" + tail[-300:])
+        meta = save_meta(os.path.join(vdir, "src.info.json"), meta_path)
+        meta["site"] = site_name(source)
+        vtts = sorted(glob.glob(os.path.join(vdir, "src.*.vtt")))
+        if vtts and vtt_to_srt(vtts[0], srt) > 0:
+            how = f"yt-dlp 下的 {meta['site']} 字幕,时间精度约 ±1 秒"
+        else:
+            log("== 网页没有现成字幕,下载音频用 whisper 转写")
+            code, tail = run([yt, *ytdlp_auth(), "--no-playlist", "-f", "ba/b", "-o", os.path.join(vdir, "src.%(ext)s"), source], log, timeout=4 * 3600)
+            src = [f for f in glob.glob(os.path.join(vdir, "src.*")) if not f.endswith((".json", ".vtt", ".part"))]
+            if not src:
+                raise SourceError("音频没下载下来。" + LOGIN_HINT + "\n" + tail[-300:])
+            transcribe(src[0], base, lang, log)
+            os.remove(src[0])
+            how = f"yt-dlp 下 {meta['site']} 音频 + whisper large-v3-turbo 转写,时间精度约 ±0.5 秒,同音错字未校"
         for v in vtts:
             os.remove(v)
     elif kind == "local":

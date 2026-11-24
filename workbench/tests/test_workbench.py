@@ -54,6 +54,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKBENCH_DATA", str(tmp_path / "data"))
     monkeypatch.setenv("WORKBENCH_NO_WORKER", "1")
     monkeypatch.setenv("WORKBENCH_CONFIG", str(tmp_path / "none.json"))
+    monkeypatch.setenv("WORKBENCH_PROVIDER", "api")          # 测试不去调本机的 claude / codex
+    monkeypatch.delenv("WORKBENCH_COOKIES_BROWSER", raising=False)
     for k in ("DEEPSEEK_API_KEY", "LLM_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     import importlib
@@ -86,10 +88,47 @@ def test_parse_rejects(env):
     s = env["sources"]
     with pytest.raises(s.SourceError, match="抖音"):
         s.parse_source("https://v.douyin.com/abc/")
-    with pytest.raises(s.SourceError, match="只支持"):
-        s.parse_source("https://example.com/video")
     with pytest.raises(s.SourceError, match="找不到文件"):
         s.parse_source("/nope/x.mp4")
+
+
+def test_parse_other_sites_go_to_ytdlp(env):
+    s = env["sources"]
+    kind, vid, url = s.parse_source("https://www.twitch.tv/videos/2345678901")
+    assert (kind, url) == ("web", "https://www.twitch.tv/videos/2345678901") and vid == "twitch_videos_2345678901"
+    assert s.parse_source("https://vimeo.com/76979871")[0] == "web"
+    assert s.site_name("https://uwa.au.panopto.com/Panopto/Pages/Viewer.aspx?id=x") == "Panopto"
+
+
+def test_jump_url_web(env):
+    s = env["sources"]
+    assert s.jump_url("web", "https://www.twitch.tv/videos/1", 3725) == "https://www.twitch.tv/videos/1?t=1h2m5s"
+    assert s.jump_url("web", "https://vimeo.com/76979871", 75) == "https://vimeo.com/76979871#t=75s"
+
+
+def test_cookies_browser_only_when_chosen(env, tmp_path, monkeypatch):
+    s, cfg = env["sources"], __import__("wb.config", fromlist=["x"])
+    assert s.ytdlp_auth() == []
+    cfg.save_setting("cookies_browser", "chrome")
+    assert s.ytdlp_auth() == ["--cookies-from-browser", "chrome"]
+    cfg.save_setting("cookies_browser", "../evil")
+    assert s.ytdlp_auth() == []
+    assert oct(os.stat(cfg.CONFIG_FILE).st_mode & 0o777) == "0o600"
+
+
+def test_cli_provider_flatten_and_auto(env, monkeypatch):
+    llm = env["llm"]
+    sys_, prompt = llm._flatten([{"role": "system", "content": "S"}, {"role": "user", "content": "U"}])
+    assert (sys_, prompt) == ("S", "U")
+    _, prompt = llm._flatten([{"role": "system", "content": "S"}, {"role": "user", "content": "U"},
+                              {"role": "assistant", "content": "A"}, {"role": "user", "content": "FIX"}])
+    assert "你上一次的回答" in prompt and prompt.index("A") < prompt.index("FIX")
+    monkeypatch.setenv("WORKBENCH_PROVIDER", "auto")
+    monkeypatch.setattr(llm, "available", lambda: {"api": (False, ""), "claude": (False, ""), "codex": (True, "/x/codex")})
+    assert llm.resolve() == "codex"
+    monkeypatch.setattr(llm, "available", lambda: {"api": (False, ""), "claude": (False, ""), "codex": (False, "")})
+    with pytest.raises(llm.LLMError, match="Claude Code 或 Codex"):
+        llm.resolve()
 
 
 def test_parse_local(env):
@@ -215,7 +254,13 @@ def test_pipeline_without_key_fails_clearly(env):
 def test_api(env):
     from fastapi.testclient import TestClient
     with TestClient(env["server"].app) as c:
-        assert c.get("/api/config").json()["key_ok"] is False
+        cj = c.get("/api/config").json()
+        assert cj["key_ok"] is False and {p["id"] for p in cj["providers"]} == {"claude", "codex", "api"}
+        assert c.post("/api/config/provider", json={"provider": "nope"}).status_code == 400
+        assert c.post("/api/config/provider", json={"provider": "codex"}).status_code == 200
+        from wb import config as cfg
+        assert cfg._file_config()["provider"] == "codex"          # 写进配置文件(测试里环境变量优先,所以看文件)
+        assert c.post("/api/config/cookies", json={"browser": "netscape"}).status_code == 400
         st = c.get("/api/status").json()
         assert {t["name"] for t in st["tools"]} >= {"yt-dlp", "ffmpeg", "whisper-cli"} and st["counts"] == {}
         assert c.post("/api/tasks", json={"source": "https://v.douyin.com/x/"}).status_code == 400

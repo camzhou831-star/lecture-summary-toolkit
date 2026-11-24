@@ -28,6 +28,7 @@ class LLMConfig:
     base_url: str
     model: str
     source: str            # Key 从哪来的(给页面显示,不显示 Key 本身)
+    provider: str = "auto"  # auto / claude / codex / api(见 llm.py)
 
 
 def _file_config():
@@ -49,4 +50,29 @@ def llm_config() -> LLMConfig:
         key, source = fc["api_key"], f"配置文件 {CONFIG_FILE}"
     base = os.environ.get("LLM_BASE_URL") or fc.get("base_url") or DEFAULT_BASE_URL
     model = os.environ.get("LLM_MODEL") or fc.get("model") or DEFAULT_MODEL
-    return LLMConfig(key, base.rstrip("/"), model, source)
+    provider = os.environ.get("WORKBENCH_PROVIDER") or fc.get("provider") or "auto"
+    return LLMConfig(key, base.rstrip("/"), model, source, provider)
+
+
+BROWSERS = ("chrome", "safari", "firefox", "edge", "brave", "arc")
+
+
+def cookies_browser():
+    """要登录的网站用哪个浏览器的登录状态(yt-dlp --cookies-from-browser);默认空 = 不用"""
+    b = os.environ.get("WORKBENCH_COOKIES_BROWSER") or _file_config().get("cookies_browser") or ""
+    return b if b in BROWSERS else ""
+
+
+def save_provider(provider):
+    save_setting("provider", provider)
+
+
+def save_setting(key, value):
+    """只改配置文件里的一项,其余(包括 Key)原样保留;文件权限 600"""
+    fc = _file_config()
+    fc[key] = value
+    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+    fd = os.open(CONFIG_FILE + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(fc, f, ensure_ascii=False, indent=1)
+    os.replace(CONFIG_FILE + ".tmp", CONFIG_FILE)

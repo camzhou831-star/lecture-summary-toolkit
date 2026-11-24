@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, db, pipeline, sources, worker
+from . import config, db, llm, pipeline, sources, worker
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 LANGS = {"auto", "zh", "en", "ja", "ko", "fr", "de", "es"}
@@ -51,7 +51,39 @@ def _public(t, full=False):
 @app.get("/api/config")
 def get_config():
     c = config.llm_config()
-    return {"model": c.model, "base_url": c.base_url, "key_ok": bool(c.api_key), "key_source": c.source}
+    av = llm.available()
+    try:
+        active = llm.resolve()
+    except llm.LLMError:
+        active = None
+    return {"model": c.model, "base_url": c.base_url, "key_ok": bool(c.api_key), "key_source": c.source,
+            "provider": c.provider, "active": active, "ready": active is not None,
+            "cookies_browser": config.cookies_browser(), "browsers": list(config.BROWSERS),
+            "providers": [{"id": p, "name": info["name"], "ok": av[p][0], "note": av[p][1]} for p, info in llm.PROVIDERS.items()]}
+
+
+class ProviderBody(BaseModel):
+    provider: str
+
+
+@app.post("/api/config/provider")
+def set_provider(body: ProviderBody):
+    if body.provider not in ("auto", *llm.PROVIDERS):
+        raise HTTPException(400, "不认识的模型来源")
+    config.save_provider(body.provider)
+    return get_config()
+
+
+class BrowserBody(BaseModel):
+    browser: str = ""
+
+
+@app.post("/api/config/cookies")
+def set_cookies_browser(body: BrowserBody):
+    if body.browser and body.browser not in config.BROWSERS:
+        raise HTTPException(400, "不认识的浏览器")
+    config.save_setting("cookies_browser", body.browser)
+    return get_config()
 
 
 @app.get("/api/status")
