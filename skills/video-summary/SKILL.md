@@ -72,4 +72,4 @@ description: 自动总结长视频内容。输入本地视频/音频文件路径
 - 转写、OCR 全部本地运行;写总结和审核时,讲义稿会发给你正在使用的模型服务。
 - 音频文件(mp3/m4a/wav)同样支持,只是没有抓帧和 OCR。
 - 如果用户只要文字稿不要总结,直接给 `.txt` 或 `.compact.txt` 路径即可。
-- 本技能对 Claude Code 与 Codex CLI 通用(两者的 SKILL.md 格式相同);`AGENTS.md` 与 `CLAUDE.md` 由 `工具/sync_agents.sh` 从本文件生成,改流程只改本文件;写作规则只改 `policy.md`,审核规则只改 `review.md`。
+- 本技能对 Claude Code 与 Codex CLI 通用(两者的 SKILL.md 格式相同);改流程只改本文件;写作规则只改 `policy.md`,审核规则只改 `review.md`。

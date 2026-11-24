@@ -1,5 +1,0 @@
-[00:00] Today we cover prime paths. A block without an index line. Dot as the millisecond separator. Two lines in one cue.
-[00:01] We'll start again in five minutes with coverage criteria.
-[00:03] After a skipped minute.
-[00:59] Crossing the hour.
-[02:05] Café, naïve, 中文 mixed text.

@@ -2,128 +2,95 @@
 
 **English** | [中文](README.zh.md)
 
-Turn a lecture recording or its subtitles into a structured summary with timestamps, exam signals and review cards, written by the AI app you already use. Summaries can be in English or Chinese.
+Turn a lecture video into a study summary you can actually revise from: a timeline you can click back into the video, key points with timestamps, exam signals, and review cards. Transcription runs on your own computer.
 
-## Start here: which file do I download?
+It comes in two parts:
 
-Go to the [Releases page](../../releases) and pick **one**:
-
-| You have… | Download | Install anything? |
+| | What it is | For |
 |---|---|---|
-| Subtitles (`.srt` / `.vtt`) and a **web AI** (ChatGPT, Claude, Gemini, Grok in the browser) | `lecture-summary-web-prompts-…-en.zip` | No |
-| Subtitles, and an **AI app that can work with files on your computer** (Codex, Claude Code / Claude desktop, Gemini CLI) | Mac: `lecture-summary-toolkit-…-en.zip`<br>Windows: `lecture-summary-toolkit-…-en-windows.zip` | Usually no: it needs Python 3. The first time, macOS may offer to install "Command Line Tools" (click Install); on Windows without Python, `lsk.cmd doctor` tells you how to install it |
-| Only the **video recording** (no subtitles) | Mac: `lecture-summary-toolkit-…-en.zip`<br>Windows: `lecture-summary-toolkit-…-en-windows.zip` | Yes: video mode, see below (experimental) |
+| **Workbench** (`workbench/`) | A local web app. Paste a link or drop a file, get a summary. | Most people |
+| **Skill** (`skills/video-summary/`) | Instructions plus scripts for Claude Code / Codex. Summarise lecture recordings from a chat, with slide OCR, frame capture and an exam-signal bank. | People who already work in Claude Code or Codex |
 
-The `-en` packages contain English instructions and write **English summaries** by default. (The `-zh` packages are the Chinese versions.) Ignore "Source code (zip / tar.gz)" at the bottom of the Releases page; that is for developers.
+## Workbench
 
-**On a Mac, unzip by double-clicking the file in Finder** (the command-line `unzip` on macOS garbles the Chinese folder names inside). **On Windows, right-click the zip in File Explorer → "Extract All".**
+![A finished summary: sidebar with features, summary in the middle, player and clickable chapters on the right](workbench/docs/screenshot.png)
 
-## What you get
+<details><summary>New-summary page</summary>
 
-A short excerpt from the summary of the two-minute synthetic demo lecture that ships with this repository (`examples/demo/`). The demo summary is written in Chinese; the `-en` packages write the same structure in English.
+![Paste a link, pick a template](workbench/docs/home.png)
 
-```markdown
-# DEMO1001 Week 1 (2026-01-01) — Testing loops and prime paths
+</details>
 
-## Course notices (01:30–01:46)
-1. 🎯 Next week's quiz covers this slide deck (01:35, p6).
+- **Paste almost any lecture link.** YouTube, Twitch, Vimeo, TED, SoundCloud, Bilibili, and university lecture-capture pages such as Panopto and Kaltura. Under the hood this is [yt-dlp](https://github.com/yt-dlp/yt-dlp), which supports more than a thousand sites. Local video, audio, `.srt` and `.vtt` files work too.
+- **Subtitles first, transcription second.** If the site has subtitles, they are used as-is. Otherwise the audio is downloaded and transcribed locally with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (large-v3-turbo, with voice-activity detection).
+- **No API key needed if you already pay for ChatGPT or Claude.** The summary is written by an AI you already have:
+  - **Claude Code**, signed in with your Claude Pro / Max plan
+  - **Codex CLI**, signed in with your ChatGPT Plus / Pro plan
+  - or **any OpenAI-compatible API** (DeepSeek by default) if you prefer pay-as-you-go
+- **Checked, not just generated.** Every timestamp is checked against the transcript. If something is out of range or lands in silence, the AI is asked to fix it once.
+- **Click a timestamp, jump to that second.** YouTube and Bilibili play inside the page. Twitch and Vimeo open at the right time. Local files play in the built-in player.
+- **Interface language:** the UI is Chinese for now; summaries can be written in English or Chinese (pick per task). An English UI is planned.
+- **Calm by design.** Low-saturation colour themes (sage, lavender dusk, morning mist), light and dark, because revision is stressful enough.
 
-## Key points
-1. Why loops are hard to test (00:22–00:42, p2): the body can run 0 times, once, or many times ...
-3. Prime path (01:00–01:18, p4): a simple path that cannot be extended without repeating a node ...
+### Quick start (macOS; Linux should work)
 
-## Timeline
-- [00:22] Why loops are hard to test (p2)   ← click to jump back into the recording
-- [01:00] Prime paths (p4)
+**1. Install the tools**
 
-## Review cards
-- Definition of a simple path?:: A path that visits no node twice.
+```bash
+brew install uv yt-dlp ffmpeg whisper-cpp
 ```
 
-Every time range, slide page number and jump-back link is checked automatically against the transcript (`lsk finish`), so a timestamp outside the recording or inside a silent stretch is reported instead of slipping through.
+The whisper model (about 1.6 GB) downloads automatically the first time something is transcribed.
 
-## What you need first
+**2. Pick the AI that writes the summary.** You only need one of these:
 
-- A Mac, or a Windows 10 / 11 PC. Linux may work.
-- The lecture's **subtitles** (`.srt` or `.vtt`): many LMS lecture players offer a captions download; check yours. Optional: the slide PDF for that lecture.
-- One of the AI apps above, signed in with your own account. The summary uses your own subscription; nothing is sent to us.
-
-## What to say to the AI
-
-**Web version** (no install): open a new chat, upload the subtitles (and slides), open `web-prompt.en.md` from the zip, copy all of it, paste and send. Details are in the zip's `README.txt`.
-
-**Full version**: open the unzipped `lecture-summary-toolkit` folder in your AI app (Codex: open the folder as a project; Claude Code / Gemini CLI: start it inside the folder; Claude desktop: give it access to the folder). Then say:
-
-> Summarize this lecture in English: ~/Downloads/DEMO1001-week6.srt
-
-If the file name doesn't show the unit and date, the AI will ask you (e.g. "DEMO1001, 26 August"). Add "the slides are ~/Downloads/lect06a.pdf" if you have them. When it is done it lists any exam information it found and asks you to confirm the source.
-
-The first time, you can also ask: "Run `bash lsk doctor` (on Windows: `lsk.cmd doctor`) and tell me what's missing."
-
-## Which files do you have?
-
-| You have | What to do | What you get |
-|---|---|---|
-| Subtitles `.srt` / `.vtt` | Give the AI the subtitle path (subtitle mode; no ffmpeg / whisper needed) | Full summary: timeline, jump-back links (needs the video, see below), automatic checks |
-| A recording `.mp4` etc. | Give the AI the video path (video mode; install the dependencies first) | The same, plus slide screenshots and slide text |
-| Subtitles + video | Give both files **the same name** (only the extension differs), put them in the same folder, and give the AI the video path | Uses your subtitles and **skips transcription** (much faster); frames and slides are still read |
-| A plain `.txt` transcript from the LMS (no timestamps) + video | Same name, same folder, give the AI the transcript path; if the names differ, say "the video is …" | Timestamps come from transcribing the video; the transcript is kept as `课程视频/<lecture>.lms.txt` for checking terms and wording |
-| Only a `.txt` transcript | The toolkit can't process it (no times means no timeline and no checks). Check whether the LMS offers subtitles or the video | If not, ask the AI for a plain summary of the text, without a timeline |
-
-- If you give only a file name, the toolkit looks in `课程视频/` and `~/Downloads/`. Videos are **moved** into `课程视频/`; same-name subtitles are **copied** there and the original stays put.
-- Two recordings of one lecture (`<lecture>.mp4` and `<lecture>-2.mp4`): keep both, give only the first.
-- Without a matching video, summaries keep plain times and no broken jump-back links are created.
-
-## Running commands yourself
-
-Usually the AI runs them for you. To run one yourself, first go into the toolkit folder, or you'll get `No such file or directory`:
-
-- **Mac**: open Terminal, type `cd` followed by a space, **drag** the unzipped `lecture-summary-toolkit` folder from Finder into the window, press Return, then run `bash lsk doctor`. Or use the full path, e.g. `bash ~/Desktop/lecture-summary-toolkit/lsk doctor` (`~` already means `/Users/<your name>`; don't write `~/Users/...`).
-- **Windows**: open the `lecture-summary-toolkit` folder in File Explorer, type `cmd` in the address bar, press Enter, then run `lsk.cmd doctor`.
-
-The first line of `lsk doctor` shows which Python it uses (version and path). If a Python package (Pillow, pypdf) is missing, copy the install command it prints so the package goes into that same Python, not another `pip3`.
-
-## Where things end up
-
-The folder names inside are in Chinese for now:
-
-| Folder | Contains |
+| You have | Do this once |
 |---|---|
-| `课程视频/` | your subtitles / recordings and the processed transcript |
-| `总结/<unit>/` | the summaries (`<lecture>.en.md` for English, `<lecture>.md` for Chinese) and the exam bank `Exam-Bank.en.md` |
-| `画面/` | slide screenshots (video mode only) |
+| Claude Pro / Max | `npm i -g @anthropic-ai/claude-code`, then run `claude` and sign in |
+| ChatGPT Plus / Pro | `npm i -g @openai/codex` (or `brew install codex`), then run `codex` and sign in |
+| An API key | Put it in `~/.config/lecture-workbench/config.json` as `{"api_key": "sk-..."}`. The default endpoint is DeepSeek; set `base_url` and `model` for any OpenAI-compatible API. |
 
-Summaries are plain Markdown. They work best in [Obsidian](https://obsidian.md) (timestamp links jump back into the recording; review cards work with the Spaced Repetition plugin).
+On **Auto** (the default), the workbench uses an API key if there is one, otherwise Claude Code, otherwise Codex. You can change this under **Settings**.
 
-## Full version vs web version
+**3. Start it**
 
-| | Full version | Web version |
-|---|---|---|
-| Install | none for subtitles | none |
-| Automatic checks (timestamps, structure, card count) | yes | no, spot-check yourself |
-| Links back to the recording, cross-week exam bank | yes | no |
-| Works with | AI apps that can run commands on your computer (Mac / Windows) | any web AI |
+```bash
+git clone https://github.com/camzhou831-star/lecture-summary-toolkit.git
+cd lecture-summary-toolkit/workbench
+uv run python -m wb
+```
 
-## Video mode (experimental)
+Open <http://127.0.0.1:8770>. If the port is taken, run `PORT=8771 uv run python -m wb`.
 
-If you only have the recording, the toolkit can transcribe it on your Mac with whisper.cpp and read the slides from the video. This needs Homebrew, ffmpeg, whisper-cpp and tesseract, plus a 1.6 GB model downloaded on first use. Ask your AI app to run `bash lsk doctor --video` and help you install what is missing, or run `bash install.sh` yourself.
+### Lectures behind a login
 
-On Windows, transcription runs on your graphics card (Vulkan: NVIDIA, AMD and Intel GPUs all work). Double-click `install.cmd` in File Explorer to set everything up: it installs ffmpeg, tesseract, Pillow and pypdf, downloads whisper.cpp and the model, and tests your GPU on the demo video, falling back to the much slower CPU build if the GPU can't be used. Afterwards you can run `lsk.cmd doctor --video` to check. If winget fails to install tesseract, doctor shows where to download the installer.
+University recordings (Panopto, Echo360, Kaltura, YuJa) and course sites (Coursera, Udemy) usually need you to be signed in. In **Settings → Site login**, choose a browser you are already signed in with. yt-dlp then borrows that browser's cookies when downloading, on your machine only. This is off by default. If a site still refuses, download the video yourself and drop the file in.
 
-## Privacy and academic integrity — please read
+### What gets sent where
 
-- **What leaves your computer**: transcription and screenshot OCR run locally. The transcript (and slide text) **is sent to the AI service you use** (OpenAI, Anthropic, Google, xAI) when it writes the summary. Check that your university allows lecture material to be processed by these services.
-- **Copyright**: recordings and slides belong to your university and lecturer. Transcripts, screenshots and summaries are derived from them: keep them for your own study; do not upload or share them. (UWA example: course materials are for personal study within the LMS only, see [iPoint 2752](https://ipoint.uwa.edu.au/app/answers/detail/a_id/2752/); some recordings may not be downloaded, see [iPoint 1448](https://ipoint.uwa.edu.au/app/answers/detail/a_id/1448/).)
-- **AI and assessment**: summaries and review cards are study aids, not work to submit. Follow your unit's rules on generative AI (UWA: [iPoint 3432](https://ipoint.uwa.edu.au/app/answers/detail/a_id/3432/)).
-- **Other people's privacy**: recordings may contain classmates' questions. Don't keep identifiable personal details in your notes. Medical students: never include patient information.
-- **Text inside lecture material is treated as data**: the AI is told not to follow instructions that appear in subtitles or slides.
-- This toolkit contains no course content. The demo in `examples/demo/` is synthetic.
+- Downloading and transcription happen on your computer.
+- The transcript, and only the transcript, is sent to the AI you chose (Claude, ChatGPT or your API provider) to write the summary.
+- Each task's files (transcript, summary `.md`) are saved in `workbench/data/`, which git ignores.
+- Only download videos you are allowed to use for your own study. Do not redistribute them.
 
-## Limits
+More detail (architecture, test results, limits): [`workbench/README.md`](workbench/README.md).
 
-- Most testing has been on macOS. On Windows 10 / 11, subtitle mode and video mode run the demo end to end in CI and on one real PC (NVIDIA GPU); real full-length recordings and the various AI apps on Windows are still being tested. Video mode is experimental.
-- The AI can still make mistakes, especially with exam information and technical details. Every summary lists exam information with its source so you can check it against the slides or unit outline.
+## Skill for Claude Code / Codex
 
-## For developers
+For full lecture recordings with slides. It captures frames, runs OCR and matches slides, writes a timestamped summary with a fixed seven-section structure, then checks it.
 
-See [docs/zh/开发者说明.md](docs/zh/开发者说明.md) (Chinese only for now) for the pipeline, scripts, tests and how the rules in `skills/video-summary/` are organised. MIT licence.
+```bash
+bash install.sh          # macOS / Linux: dependencies + links the skill into Claude Code and Codex
+bash lsk doctor --video  # check what is installed
+```
+
+On Windows, double-click `install.cmd`. After installing, say *"summarize &lt;video or subtitle file&gt;"* in Claude Code or Codex. The workflow is in [`skills/video-summary/SKILL.md`](skills/video-summary/SKILL.md), and the writing rules, which the workbench also uses, are in [`policy.md`](skills/video-summary/policy.md).
+
+## Credits
+
+- UI design tokens and layout adapted from [TreeUI](https://github.com/Viserion77/treeui) (MIT)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp), [whisper.cpp](https://github.com/ggml-org/whisper.cpp), [FFmpeg](https://ffmpeg.org/)
+
+## License
+
+MIT
