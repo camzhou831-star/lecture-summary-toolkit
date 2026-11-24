@@ -263,6 +263,7 @@ def test_api(env):
         assert c.post("/api/config/cookies", json={"browser": "netscape"}).status_code == 400
         st = c.get("/api/status").json()
         assert {t["name"] for t in st["tools"]} >= {"yt-dlp", "ffmpeg", "whisper-cli"} and st["counts"] == {}
+        assert {"platform", "brew", "npm", "model_ready", "workbench_dir"} <= set(st) and st["workbench_dir"].endswith("workbench")
         assert c.post("/api/tasks", json={"source": "https://v.douyin.com/x/"}).status_code == 400
         assert c.post("/api/tasks", json={"source": "https://youtu.be/aircAruvnKk", "out_lang": "fr"}).status_code == 400
         r = c.post("/api/tasks", json={"source": "https://youtu.be/aircAruvnKk"})

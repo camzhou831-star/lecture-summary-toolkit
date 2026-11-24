@@ -99,7 +99,9 @@ def get_status():
     counts = {}
     for t in db.list_all(limit=100000):
         counts[t["status"]] = counts.get(t["status"], 0) + 1
-    return {"tools": tools, "data_dir": config.DATA, "config_file": config.CONFIG_FILE, "counts": counts}
+    return {"tools": tools, "data_dir": config.DATA, "config_file": config.CONFIG_FILE, "counts": counts,
+            "platform": sys.platform, "brew": bool(deps.find("brew")), "npm": bool(deps.find("npm")),
+            "model_ready": os.path.isfile(model), "workbench_dir": config.WB_DIR}
 
 
 @app.post("/api/tasks")

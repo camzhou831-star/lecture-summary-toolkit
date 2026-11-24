@@ -6,6 +6,10 @@
 
 ## 启动
 
+最省事:`bash setup.sh`(缺的工具用 Homebrew 装好、`uv sync`、检查写总结的 AI,然后启动并打开浏览器;可以重复运行,`--no-start` 只装不启动)。首页的「开始前检查」卡片会列出还缺什么、给可复制的命令,全部就绪后收成一行。
+
+手动的话:
+
 需要:[uv](https://docs.astral.sh/uv/)、`yt-dlp`、`ffmpeg`、`whisper-cli`(macOS:`brew install uv yt-dlp ffmpeg whisper-cpp`)。whisper 模型第一次转写时自动下载(约 1.6 GB,和录播课工具共用 `~/.local/share/whisper-models/`)。
 
 1. 选写总结的 AI(在「设置」里也能改;默认"自动":有 API Key 用 API,否则本机 Claude Code,再否则 Codex):

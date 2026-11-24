@@ -148,7 +148,7 @@ function route() {
   if (h === "#/library") { show("library"); drawLibrary(); }
   else if (h === "#/templates") show("templates");
   else if (h === "#/settings") { show("settings"); drawSettings(); }
-  else { show("home"); setTimeout(() => $("#source").focus(), 0); }
+  else { show("home"); drawOnboard(); setTimeout(() => $("#source").focus(), 0); }
 }
 window.addEventListener("hashchange", route);
 
@@ -194,6 +194,7 @@ home.addEventListener("drop", (e) => {
 async function refresh() {
   tasks = await api("/api/tasks"); drawList();
   $("#nav-count").textContent = tasks.length || "";
+  drawTabTitle();
   if (!$("#library").hidden) drawLibrary();
 }
 function drawList() {
@@ -313,6 +314,7 @@ function drawDetail(t) {
   const st = $("#d-status");
   st.className = "status-line " + (t.status === "failed" ? "bad" : done ? (t.check_ok ? "ok" : "warn") : "");
   st.textContent = trServer(t.message);
+  drawTip(t);
 
   const pre = $("#d-log");
   const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
@@ -491,12 +493,106 @@ async function tick() {
     }
   } catch (_) {}
 }
+// ---------- 开始前检查(首页卡片) ----------
+let obHidden = false;
+try { obHidden = localStorage.getItem("wb-onboard-hidden") === "1"; } catch (_) {}
+let status = null;
+const OKI = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>';
+function cmdBox(c) { return `<div class="cmd"><code>${esc(c)}</code><button type="button" class="btn btn-ghost" data-copy="${esc(c)}">${LANG === "zh" ? "复制" : "Copy"}</button></div>`; }
+async function drawOnboard(recheck) {
+  const box = $("#onboard");
+  if (recheck) box.innerHTML = `<div class="ob-sub">${t("ob_checking")}</div>`;
+  try { [status, cfg] = await Promise.all([api("/api/status"), api("/api/config")]); } catch (_) { return; }
+  drawModelCard(cfg);
+  const has = (n) => !!(status.tools.find((x) => x.name === n) || {}).path;
+  const mac = status.platform === "darwin", win = status.platform.startsWith("win");
+  const dl = has("yt-dlp"), tr = has("ffmpeg") && has("whisper-cli"), ai = cfg.ready;
+  box.hidden = false;
+  if (dl && tr && ai) {   // 都好了:只留一行"准备就绪"
+    box.className = "onboard ready";
+    box.innerHTML = `<span class="ob-item"><span class="ck ok">${OKI}</span></span><span class="ob-ready">${t("ob_ready", { n: PNAME[cfg.active] })}${status.model_ready ? "" : " " + t("ob_model")}</span>`;
+    return;
+  }
+  if (obHidden && !recheck) {
+    box.className = "onboard ready";
+    box.innerHTML = `<span class="ob-ready" style="color:var(--warn-on-soft)">${t("ob_title")}: ${[dl, tr, ai].filter((x) => !x).length} ✗</span><button type="button" class="btn btn-ghost btn-sm" id="ob-show">${t("ob_show")}</button>`;
+    $("#ob-show").onclick = () => { obHidden = false; try { localStorage.removeItem("wb-onboard-hidden"); } catch (_) {} drawOnboard(); };
+    return;
+  }
+  box.className = "onboard";
+  const item = (ok, title, desc, extra = "") => `<li class="ob-item"><span class="ck ${ok ? "ok" : "no"}">${ok ? OKI : "!"}</span><span class="ob-t">${title}</span>
+    <span class="ob-d">${desc}</span>${ok ? "" : extra}</li>`;
+  const brewCmd = '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"';
+  let rows = "";
+  if (mac && !status.brew && !(dl && tr)) rows += item(false, t("ob_brew"), t("ob_brew_d"), cmdBox(brewCmd));
+  const osNote = win ? `<div class="ob-note">${t("ob_win")}</div>` : !mac ? `<div class="ob-note">${t("ob_linux")}</div>` : "";
+  rows += item(dl, t("ob_dl"), t("ob_dl_d"), mac ? cmdBox("brew install yt-dlp") : osNote);
+  rows += item(tr, t("ob_tr"), t("ob_tr_d") + (status.model_ready ? "" : `<div class="ob-note">${t("ob_model")}</div>`), mac ? cmdBox("brew install ffmpeg whisper-cpp") : osNote);
+  rows += item(ai, t("ob_ai"), ai ? t("ob_ai_ok", { n: PNAME[cfg.active] }) : t("ob_ai_d"),
+    `<div class="ob-note">${t("ob_ai_claude")}</div>${cmdBox("npm i -g @anthropic-ai/claude-code && claude")}
+     <div class="ob-note">${t("ob_ai_codex")}</div>${cmdBox("npm i -g @openai/codex && codex")}
+     ${status.npm ? "" : `<div class="ob-note">${t("ob_ai_node")}</div>${cmdBox(mac ? "brew install node" : "https://nodejs.org")}`}
+     <div class="ob-note"><a href="#/settings">${t("ob_ai_api")}</a></div>`);
+  const oneclick = !win ? `<div class="ob-or" style="grid-column:auto;margin-top:12px">${t("ob_oneclick")}</div>${cmdBox(`bash "${status.workbench_dir}/setup.sh"`).replace('class="cmd"', 'class="cmd" style="grid-column:auto"')}` : "";
+  box.innerHTML = `<div class="ob-head"><b>${t("ob_title")}</b></div><p class="ob-sub">${t("ob_sub")}</p><ul class="ob-list">${rows}</ul>${oneclick}
+    <div class="ob-actions"><button type="button" class="btn btn-primary btn-sm" id="ob-recheck">${t("ob_recheck")}</button><button type="button" class="btn btn-ghost btn-sm" id="ob-hide">${t("ob_hide")}</button></div>`;
+  $("#ob-recheck").onclick = () => drawOnboard(true);
+  $("#ob-hide").onclick = () => { obHidden = true; try { localStorage.setItem("wb-onboard-hidden", "1"); } catch (_) {} drawOnboard(); };
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-copy]");
+  if (!b) return;
+  try { await navigator.clipboard.writeText(b.dataset.copy); toast(t("ob_copied")); } catch (_) { toast(t("copy_fail")); }
+});
+// 窗口切回来时(用户可能刚在终端装完)自动重查一次
+window.addEventListener("focus", () => { if (shownPage === "home" && !$("#onboard").classList.contains("ready")) drawOnboard(); });
+
+// ---------- 输入框下的用前提示 ----------
+const LOGIN_SITES = /panopto|echo360|kaltura|yuja|coursera|udemy|edx\.org|instructure|canvas|moodle|blackboard|brightspace|d2l|lms\.|mediasite|zoom\.us\/rec|vimeo\.com/i;
+function drawSrcHint() {
+  const v = $("#source").value.trim(), el = $("#srchint");
+  let msg = "", warn = false;
+  if (/douyin\.com|iesdouyin/i.test(v)) { msg = t("hint_douyin"); warn = true; }
+  else if (/^https?:\/\//i.test(v) || /https?:\/\/\S+/.test(v)) {
+    if (LOGIN_SITES.test(v)) {
+      const b = cfg && cfg.cookies_browser;
+      msg = b ? t("hint_login_ok", { b: b[0].toUpperCase() + b.slice(1) }) : `${t("hint_login")} <a href="#/settings">→</a>`;
+      warn = !b;
+    } else if (status && !status.model_ready && !/youtube\.com|youtu\.be/i.test(v)) msg = t("hint_long");
+  } else if (/^(\/|~\/|[A-Za-z]:\\)/.test(v)) msg = t("hint_local");
+  el.hidden = !msg; el.className = "srchint" + (warn ? " warn" : ""); el.innerHTML = msg;
+}
+$("#source").addEventListener("input", drawSrcHint);
+
+// ---------- 详情页的进度提示 + 浏览器标签标题 ----------
+function drawTip(task) {
+  const el = $("#d-tip");
+  let msg = "";
+  if (task.status === "running") {
+    if (task.stage === "fetch") {
+      const m = (task.log || "").match(/首次使用,下载 whisper 模型[\s\S]*?(\d+)%[^\n]*$/);
+      msg = /首次使用,下载 whisper 模型/.test(task.log || "") && !/开始转写/.test(task.log || "")
+        ? t("tip_model", { p: m ? ` (${m[1]}%)` : "" }) : t("tip_fetch");
+    } else if (task.stage === "summarize") msg = cfg && cfg.active && cfg.active !== "api" ? t("tip_cli", { n: PNAME[cfg.active] }) : t("tip_api");
+  }
+  el.hidden = !msg; el.textContent = msg;
+}
+function drawTabTitle() {
+  const run = tasks.find((x) => x.status === "running");
+  if (run) document.title = `${t("tab_running", { s: trServer(run.message) || statusName("running") })} · ${t("app")}`;
+  else if (drawTabTitle.wasRunning) document.title = `${t("tab_done")} · ${t("app")}`;
+  else document.title = t("app");
+  drawTabTitle.wasRunning = drawTabTitle.wasRunning || !!run;
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !tasks.some((x) => x.status === "running")) { drawTabTitle.wasRunning = false; document.title = t("app"); } });
+
 // ---------- 语言 ----------
 function siteName(task) { return task.kind === "web" ? (task.meta && task.meta.site) || t("kind_web") : kindName(task.kind); }
 function setLang(l) {
   LANG = l;
   try { localStorage.setItem("wb-lang", l); } catch (_) {}
-  applyI18n(); drawTemplates(); drawList();
+  applyI18n(); drawTemplates(); drawList(); drawSrcHint(); drawTabTitle();
+  if (shownPage === "home") drawOnboard();
   if (cfg) drawModelCard(cfg);
   if (shownPage) $("#page-title").textContent = t(TITLES[shownPage]);
   if (shownPage === "library") drawLibrary();

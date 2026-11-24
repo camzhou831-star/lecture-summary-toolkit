@@ -32,7 +32,29 @@ It comes in two parts:
 - **English and Chinese.** Switch the interface with the button in the top bar (it follows your browser language the first time, or open `?lang=en`). Each summary can be written in English or Chinese.
 - **Calm by design.** Low-saturation colour themes (sage, lavender dusk, morning mist), light and dark, because revision is stressful enough.
 
-### Quick start (macOS; Linux should work)
+### First time? Five steps (macOS)
+
+1. **Open Terminal.** Press ⌘ Space, type `Terminal`, press Return.
+2. **Get the code.** Paste this and press Return (if your Mac asks to install developer tools, click Install and run it again):
+
+   ```bash
+   git clone https://github.com/camzhou831-star/lecture-summary-toolkit.git
+   ```
+
+   No git? Click **Code → Download ZIP** on GitHub and unzip it instead.
+3. **Run the setup script.** It installs whatever is missing (skipping what you already have), then starts the workbench and opens it in your browser:
+
+   ```bash
+   bash lecture-summary-toolkit/workbench/setup.sh
+   ```
+
+   If it says Homebrew is missing, it prints the one line to install it. Run that, then run the script again.
+4. **Follow the "Before you start" card** at the top of the page. It checks what's installed and gives you a command to copy for anything that's missing. The main thing is the AI that writes summaries: if you pay for Claude or ChatGPT, install Claude Code or Codex and sign in once. No API key needed.
+5. **Paste a lecture link and click Summarize.** The first transcription also downloads a speech model (about 1.6 GB, once only). Long videos take a few minutes; the browser tab shows ✓ when it's done.
+
+**Next time:** run `bash lecture-summary-toolkit/workbench/setup.sh` again. It skips the installs and just starts the workbench.
+
+<details><summary>Manual setup (if you'd rather do it yourself)</summary>
 
 **1. Install the tools**
 
@@ -61,6 +83,8 @@ uv run python -m wb
 ```
 
 Open <http://127.0.0.1:8770>. If the port is taken, run `PORT=8771 uv run python -m wb`.
+
+</details>
 
 ### Lectures behind a login
 

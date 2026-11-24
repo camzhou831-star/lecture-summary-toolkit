@@ -32,7 +32,29 @@
 - **中英双语。** 顶栏按钮切换界面语言（第一次按浏览器语言自动选，也可以打开 `?lang=zh`）；每份总结可以单独选中文或英文。
 - **看着放松。** 三套低饱和配色可选（鼠尾草、薰衣草暮色、晨雾），浅色深色都有。复习本来就烦，界面不该再刺眼。
 
-### 开始用（macOS；Linux 应该也行）
+### 第一次用？五步（macOS）
+
+1. **打开「终端」。** 按 ⌘ 空格，输入「终端」或 `Terminal`，回车。
+2. **下载代码。** 粘贴下面这行回车。如果 Mac 弹窗问要不要装开发者工具，点「安装」，装完再运行一次：
+
+   ```bash
+   git clone https://github.com/camzhou831-star/lecture-summary-toolkit.git
+   ```
+
+   没有 git 的话，也可以在 GitHub 页面点 **Code → Download ZIP**，下载后解压。
+3. **运行安装脚本。** 缺什么装什么（已经有的会跳过），装完自动启动工作台并打开浏览器：
+
+   ```bash
+   bash lecture-summary-toolkit/workbench/setup.sh
+   ```
+
+   如果提示缺 Homebrew，它会把安装那一行打印出来。照着运行后，再运行一次这个脚本。
+4. **看网页顶部的「开始前检查」。** 它会检查哪些装好了；缺的那一项旁边有命令，复制运行就行。最关键的是写总结的 AI：有 Claude 或 ChatGPT 会员的话，装 Claude Code 或 Codex 并登录一次，不用 API Key。
+5. **贴一个课程链接，点「开始总结」。** 第一次转写还会下载语音模型（约 1.6 GB，只下一次）。长视频要几分钟，完成后浏览器标签上会显示 ✓。
+
+**以后再用：** 再运行一次 `bash lecture-summary-toolkit/workbench/setup.sh`，它会跳过安装，直接启动。
+
+<details><summary>手动安装（想自己一步步来的话）</summary>
 
 **1. 装工具**
 
@@ -61,6 +83,8 @@ uv run python -m wb
 ```
 
 打开 <http://127.0.0.1:8770>。端口被占的话，用 `PORT=8771 uv run python -m wb`。
+
+</details>
 
 ### 要登录才能看的课
 

@@ -556,3 +556,32 @@ a.ts:active { transform: scale(.95); }
   border: 1px solid var(--border); border-radius: var(--radius-lg); color: var(--muted); font-size: 13px; }
 .player-link a { font-size: 15px; }
 .lang-btn { width: auto; min-width: 40px; padding: 0 10px; font: inherit; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+
+/* ---------- 开始前检查(首页卡片) ---------- */
+.onboard { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); padding: 16px 18px; margin-bottom: 28px; }
+.onboard.ready { padding: 10px 14px; display: flex; align-items: center; gap: 10px; box-shadow: var(--shadow-xs); }
+.onboard.ready .ob-ready { font-size: 13px; color: var(--ok-on-soft); flex: 1; }
+.ob-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.ob-head b { font-size: 16px; }
+.ob-sub { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
+.ob-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.ob-item { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 2px 10px; min-width: 0; }
+.ob-item .ck { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.ob-item .ck svg { width: 13px; height: 13px; stroke-width: 2.4; }
+.ob-item .ck.ok { background: var(--ok-soft); color: var(--ok-on-soft); }
+.ob-item .ck.no { background: var(--warn-soft); color: var(--warn-on-soft); }
+.ob-item .ob-t { font-weight: 600; font-size: 14px; padding-top: 2px; }
+.ob-item .ob-d { grid-column: 2; font-size: 13px; color: var(--muted); }
+.ob-item .ob-d a { color: var(--brand); }
+.cmd { grid-column: 2; min-width: 0; display: flex; align-items: center; gap: 8px; margin-top: 6px; background: var(--canvas); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 6px 6px 6px 12px; }
+.cmd code { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12.5px; overflow-x: auto; white-space: nowrap; color: var(--fg); }
+.cmd .btn { height: 28px; padding: 0 10px; font-size: 12px; }
+.ob-or { grid-column: 2; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.ob-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.ob-note { grid-column: 2; font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+/* 输入框下面的用前提示、详情页的进度提示 */
+.srchint { margin: 10px 2px 0; font-size: 13px; padding: 8px 12px; border-radius: var(--radius-md); background: var(--brand-soft); color: var(--brand-on-soft); }
+.srchint.warn { background: var(--warn-soft); color: var(--warn-on-soft); }
+.srchint a { color: inherit; font-weight: 600; }
+.tip-line { margin: -10px 0 18px; font-size: 13px; padding: 8px 12px; border-radius: var(--radius-md); background: var(--brand-soft); color: var(--brand-on-soft); }
