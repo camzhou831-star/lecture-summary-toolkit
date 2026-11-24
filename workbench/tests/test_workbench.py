@@ -114,6 +114,22 @@ def test_vtt_rolling_captions(env, tmp_path):
     assert "00:00:01,000 --> 00:00:03,000\nhello world" in text and "next line" in text and text.count("hello world") == 1
 
 
+def test_bilibili_download_sends_range_header(env, monkeypatch, tmp_path):
+    """B 站 CDN 不带 Range 头会回 567(yt-dlp issue #17847);下载命令里必须带上"""
+    s = env["sources"]
+    seen = []
+
+    def fake_run(cmd, log, timeout=0, env=None):
+        seen.append(cmd)
+        return 1, "HTTP Error 567: Unknown Status"
+    monkeypatch.setattr(s, "run", fake_run)
+    monkeypatch.setattr(s, "need", lambda c: c)
+    task = {"kind": "bilibili", "source": "https://www.bilibili.com/video/BV1Wv411h7kN", "vid": "BV1Wv411h7kN", "lang": "auto"}
+    with pytest.raises(s.SourceError, match="567"):
+        s.fetch(task, str(tmp_path / "root"), lambda m: None)
+    assert "Range:bytes=0-" in seen[0] and seen[0][seen[0].index("Range:bytes=0-") - 1] == "--add-header"
+
+
 # ---------- 处理 ----------
 def test_api_transcript_uses_mmss(env, tmp_path):
     p = env["pipeline"]

@@ -21,6 +21,9 @@ from . import config
 
 VIDEO_EXTS = (".mp4", ".mkv", ".mov", ".webm", ".m4a", ".mp3", ".wav", ".flac", ".aac", ".ogg")
 SUB_EXTS = (".srt", ".vtt")
+# B 站 CDN 对不带 Range 头的下载返回 HTTP 567(yt-dlp issue #17847,2026-11 仍未修);
+# 照 issue 里给的临时解法带上 Range: bytes=0-(浏览器播放时也发这个头),yt-dlp 修好后可删
+BILI_DL_ARGS = ["--add-header", "Range:bytes=0-"]
 META_KEYS = ["id", "title", "uploader", "duration", "upload_date", "view_count", "like_count", "comment_count", "webpage_url", "language"]
 
 
@@ -195,10 +198,11 @@ def fetch(task, root, log):
     lang = task["lang"]
     if kind == "bilibili":
         need("yt-dlp")
-        code, tail = run([need("yt-dlp"), "-f", "ba", "--no-playlist", "--write-info-json", "-o", os.path.join(vdir, "src.%(ext)s"), source], log, timeout=1800)
+        code, tail = run([need("yt-dlp"), "-f", "ba", "--no-playlist", *BILI_DL_ARGS, "--write-info-json", "-o", os.path.join(vdir, "src.%(ext)s"), source],
+                         log, timeout=1800)
         src = [f for f in glob.glob(os.path.join(vdir, "src.*")) if not f.endswith(".json")]
         if not src:
-            why = "B 站 CDN 拒绝了下载(HTTP 567)" if "567" in tail else "B 站音频没下载下来(可能限流、需要登录或是付费视频)"
+            why = "B 站 CDN 拒绝了下载(HTTP 567,见 yt-dlp issue #17847)" if "567" in tail else "B 站音频没下载下来(可能限流、需要登录或是付费视频)"
             raise SourceError(why + "。可以自己下载后选文件。\n" + tail[-300:])
         meta = save_meta(os.path.join(vdir, "src.info.json"), meta_path)
         transcribe(src[0], base, "zh" if lang == "auto" else lang, log)
