@@ -49,6 +49,10 @@
 
 每个任务的文件在 `workbench/data/tasks/<id>/`(目录结构同录播课工具的 `COURSE_ROOT`:`课程视频/` 放 srt 和讲义稿,`总结/` 放总结),任务表是 `workbench/data/workbench.db`。`data/` 已在 `.gitignore`,不会进仓库。
 
+## 界面
+
+纯 HTML + CSS + JS,不用构建。配色、圆角、阴影和动效时长 / 缓动取自 [TreeUI](https://github.com/Viserion77/treeui)(MIT)的设计 token(`docs/ai/TOKENS.yaml`),布局照它的 dashboard 示例:顶栏 + 左侧功能导航 + 浅灰内容面板 + 白色卡片。浅色 / 深色跟随系统,顶栏按钮可以手动切;⌘K 聚焦搜索。
+
 ## 测试
 
 ```bash

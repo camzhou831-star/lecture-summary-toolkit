@@ -70,17 +70,51 @@ drawTemplates();
 let cfg = null;
 api("/api/config").then((c) => {
   cfg = c;
-  $("#model").innerHTML = c.key_ok ? `<span class="ok">${esc(c.model)}</span>` : `<span class="bad">还没配置模型 Key</span>`;
+  $("#model").innerHTML = c.key_ok ? `<span class="ok">${esc(c.model)} · Key 已配置</span>` : `<span class="bad">还没配置 Key,见「设置」</span>`;
 });
 
 // ---------- 路由:#/ 新建 · #/library 资料库 · #/templates 模板 · #/settings 设置 · #/t/<id> 任务 ----------
 const PAGES = ["home", "library", "templates", "settings", "detail"];
+const TITLES = { home: "新建总结", library: "资料库", templates: "模板", settings: "设置", detail: "总结" };
+let shownPage = null;
 function show(page) {
   PAGES.forEach((p) => $("#" + p).hidden = p !== page);
-  const nav = page === "detail" ? "library" : page;
-  document.querySelectorAll(".nav-item").forEach((a) => a.classList.toggle("on", a.dataset.page === nav && page !== "detail"));
-  $(".main").scrollTop = 0;
+  document.querySelectorAll(".nav-item").forEach((a) => a.classList.toggle("on", a.dataset.page === page));
+  $("#page-title").textContent = TITLES[page];
+  if (shownPage !== page) {   // 换页时:页面上浮淡入,卡片依次出现(TreeUI 的 200/300ms + easeOut)
+    const el = $("#" + page);
+    el.classList.remove("enter"); void el.offsetWidth; el.classList.add("enter");
+    el.querySelectorAll(".tpl-grid, .cards, .steps").forEach((g) => { g.classList.remove("stagger"); void g.offsetWidth; g.classList.add("stagger"); });
+    $(".main").scrollTop = 0;
+  }
+  shownPage = page;
 }
+
+// ---------- 顶栏:搜索(⌘K)、深浅色 ----------
+$("#top-search").addEventListener("input", (e) => {
+  lib.q = e.target.value.trim().toLowerCase(); $("#lib-search").value = e.target.value;
+  if (location.hash !== "#/library") location.hash = "#/library"; else drawLibrary();
+});
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); $("#top-search").focus(); $("#top-search").select(); }
+  if (e.key === "Escape" && document.activeElement === $("#top-search")) $("#top-search").blur();
+});
+function isDark() {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+}
+function drawThemeBtn() {
+  $("#theme-btn").innerHTML = isDark()
+    ? '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
+    : '<svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+}
+$("#theme-btn").onclick = () => {
+  const next = isDark() ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("wb-theme", next); } catch (_) {}
+  drawThemeBtn();
+};
+drawThemeBtn();
 function route() {
   const h = location.hash;
   const m = h.match(/^#\/t\/(\d+)/);
@@ -361,6 +395,7 @@ function seek(t, sec) {
     box.innerHTML = `<iframe src="${src}" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>`;
   }
   markChapter(sec);
+  box.classList.remove("flash"); void box.offsetWidth; box.classList.add("flash");   // 播放器闪一圈蓝光,提示"跳到这里了"
   if (window.matchMedia("(max-width: 1100px)").matches) box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
