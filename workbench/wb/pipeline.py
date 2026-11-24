@@ -139,7 +139,9 @@ def run_task(task_id):
         stage(key)
         t0 = time.time()
         res = fn()
-        timings[key] = round(time.time() - t0, 1)
+        took = round(time.time() - t0, 1)
+        if not (key == "fetch" and took < 1 and timings.get("fetch")):   # 重跑时复用了文字稿,保留第一次拿稿的真实用时
+            timings[key] = took
         db.update(task_id, timings=timings)
         log(f"== {STAGES[key]} 用时 {timings[key]} 秒")
         return res
