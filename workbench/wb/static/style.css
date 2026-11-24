@@ -178,7 +178,7 @@ code, kbd, pre { font-family: var(--mono); }
 .formmsg { min-height: 20px; font-size: 13px; margin: 10px 2px 0; color: var(--muted); }
 .formmsg.bad { color: var(--bad); }
 .section-label { font-size: 13px; font-weight: 500; color: var(--muted); margin: 26px 2px 10px; }
-.foot-note { margin-top: 16px; }
+.foot-note { margin: 20px 2px 0; }
 .drop { position: absolute; inset: 16px; border: 2px dashed var(--brand); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--brand-soft) 88%, transparent);
   display: grid; place-items: center; font-size: 18px; font-weight: 600; color: var(--brand-on-soft); pointer-events: none; opacity: 0; transform: scale(.99);
   transition: opacity var(--dur-moderate) var(--ease), transform var(--dur-moderate) var(--ease); }
@@ -383,3 +383,158 @@ a.ts:active { transform: scale(.95); }
   .toolbar .input-sm { width: 100%; }
   .table th:nth-child(3), .table td:nth-child(3), .table th:nth-child(5), .table td:nth-child(5) { display: none; }
 }
+
+/* =====================================================================
+   放松配色(盖在 TreeUI 结构之上):低饱和的绿 / 紫 / 蓝绿 + 暖白底 + 很淡的渐变。
+   复习本来就烦,界面不该再刺眼。设置页可切换,存在 localStorage 的 wb-palette。
+   ===================================================================== */
+:root, :root[data-palette="sage"] {
+  --shell: #f7f7f2; --canvas: #f1f3ee; --surface: #fffffd; --subtle: #ebeee7;
+  --border: #dde2d8; --border-strong: #c3cabd; --border-interactive: #8b9585;
+  --fg: #2b322e; --muted: #67716a;
+  --brand: #4f7f6f; --brand-hover: #426d5f; --brand-press: #375b4f; --brand-soft: #e3eee8; --brand-soft-hover: #d2e4da; --brand-on-soft: #3b6a5b;
+  --nav-on-bg: #e3eee8; --nav-on-fg: #3b6a5b; --focus-ring: rgba(79, 127, 111, .3);
+  --hover-bg: #eef1ea; --press-bg: #e4e8df;
+  --ok: #4f8a5b; --ok-soft: #e4f0e4; --ok-on-soft: #3d7448;
+  --warn: #a7772a; --warn-soft: #f6eedd; --warn-on-soft: #8a6020;
+  --bad: #b8574f; --bad-soft: #f7e6e3; --bad-on-soft: #a0453e;
+  --grad-brand: linear-gradient(135deg, #5d8f7e 0%, #4f7f6f 55%, #5b7f8f 100%);
+  --grad-text: linear-gradient(120deg, #3f6f60 0%, #5a8a7a 45%, #7a8fa8 100%);
+  --wash: radial-gradient(1200px 600px at 10% -10%, rgba(196, 223, 205, .55), transparent 60%),
+          radial-gradient(900px 500px at 100% 0%, rgba(232, 226, 205, .55), transparent 55%),
+          radial-gradient(900px 600px at 60% 120%, rgba(214, 222, 238, .5), transparent 60%);
+  --orb-1: rgba(160, 205, 180, .55); --orb-2: rgba(236, 222, 190, .6); --orb-3: rgba(196, 206, 236, .55);
+  --shadow-rgb: 47, 66, 56;
+}
+:root[data-palette="lavender"] {
+  --shell: #f8f6f4; --canvas: #f3f0f2; --surface: #fffefe; --subtle: #eeeaee;
+  --border: #e2dce3; --border-strong: #cbc2cd; --border-interactive: #948a98;
+  --fg: #312c35; --muted: #6f6874;
+  --brand: #7a6aa8; --brand-hover: #6a5b96; --brand-press: #5b4d83; --brand-soft: #ece8f5; --brand-soft-hover: #ddd6ee; --brand-on-soft: #64559a;
+  --nav-on-bg: #ece8f5; --nav-on-fg: #64559a; --focus-ring: rgba(122, 106, 168, .3);
+  --hover-bg: #f1eef1; --press-bg: #e8e3e9;
+  --grad-brand: linear-gradient(135deg, #8a78b8 0%, #7a6aa8 50%, #b48a9a 100%);
+  --grad-text: linear-gradient(120deg, #6a5b96 0%, #9a7aa8 50%, #c4917f 100%);
+  --wash: radial-gradient(1200px 600px at 10% -10%, rgba(214, 204, 236, .6), transparent 60%),
+          radial-gradient(900px 500px at 100% 0%, rgba(246, 218, 205, .55), transparent 55%),
+          radial-gradient(900px 600px at 60% 120%, rgba(232, 214, 226, .5), transparent 60%);
+  --orb-1: rgba(196, 182, 232, .6); --orb-2: rgba(248, 210, 194, .6); --orb-3: rgba(226, 196, 220, .5);
+  --shadow-rgb: 60, 48, 72;
+}
+:root[data-palette="mist"] {
+  --shell: #f5f8f8; --canvas: #eef3f4; --surface: #fdfefe; --subtle: #e7eef0;
+  --border: #d8e2e5; --border-strong: #bccbd0; --border-interactive: #84979d;
+  --fg: #263236; --muted: #63737a;
+  --brand: #3e7c94; --brand-hover: #346b80; --brand-press: #2b5a6c; --brand-soft: #e0eef3; --brand-soft-hover: #cce3eb; --brand-on-soft: #2f6a80;
+  --nav-on-bg: #e0eef3; --nav-on-fg: #2f6a80; --focus-ring: rgba(62, 124, 148, .3);
+  --hover-bg: #ebf1f2; --press-bg: #e0e9eb;
+  --grad-brand: linear-gradient(135deg, #4a8ea6 0%, #3e7c94 50%, #5c9a86 100%);
+  --grad-text: linear-gradient(120deg, #2f6a80 0%, #4f93a0 50%, #6aa38a 100%);
+  --wash: radial-gradient(1200px 600px at 10% -10%, rgba(190, 220, 232, .6), transparent 60%),
+          radial-gradient(900px 500px at 100% 0%, rgba(206, 232, 214, .55), transparent 55%),
+          radial-gradient(900px 600px at 60% 120%, rgba(220, 226, 240, .5), transparent 60%);
+  --orb-1: rgba(160, 206, 224, .55); --orb-2: rgba(190, 226, 200, .55); --orb-3: rgba(206, 214, 240, .5);
+  --shadow-rgb: 38, 60, 68;
+}
+/* 深色:不是纯黑,带一点所选色调的深墨色,对比不刺眼 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]), :root[data-palette="sage"]:not([data-theme="light"]) {
+    --shell: #161b19; --canvas: #1c2220; --surface: #232a27; --subtle: #2b3330;
+    --border: #36403c; --border-strong: #4a5550; --border-interactive: #6c7872;
+    --fg: #d5ddd8; --muted: #9aa8a1;
+    --brand: #8cc0ad; --brand-hover: #a0cdbc; --brand-press: #7ab29e; --brand-soft: #24362f; --brand-soft-hover: #2d4239; --brand-on-soft: #a6d4c2;
+    --nav-on-bg: #24362f; --nav-on-fg: #a6d4c2; --focus-ring: rgba(140, 192, 173, .3);
+    --hover-bg: #262e2b; --press-bg: #2e3733;
+    --grad-brand: linear-gradient(135deg, #8cc0ad 0%, #7aae9c 50%, #8aa6bc 100%);
+    --grad-text: linear-gradient(120deg, #a6d4c2 0%, #b8d0c4 45%, #b4c2dc 100%);
+    --wash: radial-gradient(1200px 600px at 10% -10%, rgba(80, 130, 110, .22), transparent 60%), radial-gradient(900px 600px at 100% 110%, rgba(90, 100, 140, .18), transparent 60%);
+    --orb-1: rgba(90, 150, 125, .35); --orb-2: rgba(150, 130, 90, .22); --orb-3: rgba(100, 110, 160, .28);
+  }
+  :root[data-palette="lavender"]:not([data-theme="light"]) {
+    --shell: #1a1820; --canvas: #201e27; --surface: #28252f; --subtle: #302d38; --border: #3d3946; --border-strong: #514c5c;
+    --fg: #ddd8e3; --muted: #a59eae;
+    --brand: #b8a8e6; --brand-hover: #c8bbee; --brand-press: #a898d8; --brand-soft: #332d47; --brand-soft-hover: #3d3655; --brand-on-soft: #cbbff0;
+    --nav-on-bg: #332d47; --nav-on-fg: #cbbff0; --focus-ring: rgba(184, 168, 230, .3); --hover-bg: #2b2833; --press-bg: #34303d;
+    --grad-brand: linear-gradient(135deg, #b8a8e6 0%, #a898d8 50%, #d6a8b4 100%);
+    --grad-text: linear-gradient(120deg, #cbbff0 0%, #d8b8d4 50%, #e8bca8 100%);
+    --wash: radial-gradient(1200px 600px at 10% -10%, rgba(120, 100, 170, .25), transparent 60%), radial-gradient(900px 600px at 100% 110%, rgba(170, 110, 120, .18), transparent 60%);
+    --orb-1: rgba(130, 110, 190, .35); --orb-2: rgba(180, 120, 110, .22); --orb-3: rgba(160, 110, 160, .25);
+  }
+  :root[data-palette="mist"]:not([data-theme="light"]) {
+    --shell: #141b1d; --canvas: #1a2224; --surface: #212a2d; --subtle: #293336; --border: #344045; --border-strong: #47565c;
+    --fg: #d3dee1; --muted: #98a9ae;
+    --brand: #84bed2; --brand-hover: #9acbdc; --brand-press: #72afc4; --brand-soft: #1f3640; --brand-soft-hover: #27414c; --brand-on-soft: #a2d2e2;
+    --nav-on-bg: #1f3640; --nav-on-fg: #a2d2e2; --focus-ring: rgba(132, 190, 210, .3); --hover-bg: #243033; --press-bg: #2c393d;
+    --grad-brand: linear-gradient(135deg, #84bed2 0%, #72afc4 50%, #8cc4a8 100%);
+    --grad-text: linear-gradient(120deg, #a2d2e2 0%, #9ccfc4 50%, #b0d4b0 100%);
+    --wash: radial-gradient(1200px 600px at 10% -10%, rgba(70, 130, 150, .24), transparent 60%), radial-gradient(900px 600px at 100% 110%, rgba(80, 140, 110, .18), transparent 60%);
+    --orb-1: rgba(70, 140, 165, .35); --orb-2: rgba(90, 150, 115, .25); --orb-3: rgba(100, 115, 165, .25);
+  }
+}
+:root[data-theme="dark"], :root[data-theme="dark"][data-palette="sage"] {
+  --shell: #161b19; --canvas: #1c2220; --surface: #232a27; --subtle: #2b3330;
+  --border: #36403c; --border-strong: #4a5550; --border-interactive: #6c7872;
+  --fg: #d5ddd8; --muted: #9aa8a1;
+  --brand: #8cc0ad; --brand-hover: #a0cdbc; --brand-press: #7ab29e; --brand-soft: #24362f; --brand-soft-hover: #2d4239; --brand-on-soft: #a6d4c2;
+  --nav-on-bg: #24362f; --nav-on-fg: #a6d4c2; --focus-ring: rgba(140, 192, 173, .3);
+  --hover-bg: #262e2b; --press-bg: #2e3733;
+  --grad-brand: linear-gradient(135deg, #8cc0ad 0%, #7aae9c 50%, #8aa6bc 100%);
+  --grad-text: linear-gradient(120deg, #a6d4c2 0%, #b8d0c4 45%, #b4c2dc 100%);
+  --wash: radial-gradient(1200px 600px at 10% -10%, rgba(80, 130, 110, .22), transparent 60%), radial-gradient(900px 600px at 100% 110%, rgba(90, 100, 140, .18), transparent 60%);
+  --orb-1: rgba(90, 150, 125, .35); --orb-2: rgba(150, 130, 90, .22); --orb-3: rgba(100, 110, 160, .28);
+}
+:root[data-theme="dark"][data-palette="lavender"] {
+  --shell: #1a1820; --canvas: #201e27; --surface: #28252f; --subtle: #302d38; --border: #3d3946; --border-strong: #514c5c;
+  --fg: #ddd8e3; --muted: #a59eae;
+  --brand: #b8a8e6; --brand-hover: #c8bbee; --brand-press: #a898d8; --brand-soft: #332d47; --brand-soft-hover: #3d3655; --brand-on-soft: #cbbff0;
+  --nav-on-bg: #332d47; --nav-on-fg: #cbbff0; --focus-ring: rgba(184, 168, 230, .3); --hover-bg: #2b2833; --press-bg: #34303d;
+  --grad-brand: linear-gradient(135deg, #b8a8e6 0%, #a898d8 50%, #d6a8b4 100%);
+  --grad-text: linear-gradient(120deg, #cbbff0 0%, #d8b8d4 50%, #e8bca8 100%);
+  --wash: radial-gradient(1200px 600px at 10% -10%, rgba(120, 100, 170, .25), transparent 60%), radial-gradient(900px 600px at 100% 110%, rgba(170, 110, 120, .18), transparent 60%);
+  --orb-1: rgba(130, 110, 190, .35); --orb-2: rgba(180, 120, 110, .22); --orb-3: rgba(160, 110, 160, .25);
+}
+:root[data-theme="dark"][data-palette="mist"] {
+  --shell: #141b1d; --canvas: #1a2224; --surface: #212a2d; --subtle: #293336; --border: #344045; --border-strong: #47565c;
+  --fg: #d3dee1; --muted: #98a9ae;
+  --brand: #84bed2; --brand-hover: #9acbdc; --brand-press: #72afc4; --brand-soft: #1f3640; --brand-soft-hover: #27414c; --brand-on-soft: #a2d2e2;
+  --nav-on-bg: #1f3640; --nav-on-fg: #a2d2e2; --focus-ring: rgba(132, 190, 210, .3); --hover-bg: #243033; --press-bg: #2c393d;
+  --grad-brand: linear-gradient(135deg, #84bed2 0%, #72afc4 50%, #8cc4a8 100%);
+  --grad-text: linear-gradient(120deg, #a2d2e2 0%, #9ccfc4 50%, #b0d4b0 100%);
+  --wash: radial-gradient(1200px 600px at 10% -10%, rgba(70, 130, 150, .24), transparent 60%), radial-gradient(900px 600px at 100% 110%, rgba(80, 140, 110, .18), transparent 60%);
+  --orb-1: rgba(70, 140, 165, .35); --orb-2: rgba(90, 150, 115, .25); --orb-3: rgba(100, 115, 165, .25);
+}
+
+/* 渐变用在哪:内容面板铺一层很淡的色雾;主按钮、标志、首页标题、进度条用渐变 */
+.main { background: var(--wash), var(--canvas); background-attachment: local; }
+.btn-primary, .btn-primary:hover:not(:disabled) { background: var(--grad-brand); color: #fff; box-shadow: 0 6px 16px -8px var(--brand); }
+.btn-primary:hover:not(:disabled) { filter: brightness(1.05) saturate(1.05); box-shadow: 0 10px 22px -10px var(--brand); }
+.btn-primary:active:not(:disabled) { filter: brightness(.95); }
+:root[data-theme="dark"] .btn-primary, :root[data-theme="dark"] .btn-primary:hover:not(:disabled) { color: #10201a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn-primary, :root:not([data-theme="light"]) .btn-primary:hover:not(:disabled) { color: #10201a; } }
+.logo { border: 0; background: var(--grad-brand); color: #fff; }
+.home h1 { background: var(--grad-text); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.step.now::after { background: var(--grad-brand); }
+.chapter.on::before { background: var(--grad-brand); }
+.md blockquote { border-left-color: var(--brand); }
+
+/* 首页背后三团慢慢漂动的柔光(20–26 秒一圈,很慢,只是"在呼吸") */
+.home { position: relative; overflow: hidden; isolation: isolate; }
+.home::before, .home::after, .home-inner::before { content: ""; position: absolute; z-index: -1; border-radius: 50%; filter: blur(60px); pointer-events: none; }
+.home::before { width: 520px; height: 520px; left: -120px; top: -140px; background: var(--orb-1); animation: drift1 22s ease-in-out infinite alternate; }
+.home::after { width: 460px; height: 460px; right: -120px; top: 10%; background: var(--orb-2); animation: drift2 26s ease-in-out infinite alternate; }
+.home-inner { position: relative; }
+.home-inner::before { width: 520px; height: 420px; left: 20%; bottom: -260px; background: var(--orb-3); animation: drift3 24s ease-in-out infinite alternate; }
+@keyframes drift1 { to { transform: translate(120px, 80px) scale(1.08); } }
+@keyframes drift2 { to { transform: translate(-100px, 120px) scale(.94); } }
+@keyframes drift3 { to { transform: translate(-80px, -60px) scale(1.1); } }
+
+/* 设置页:配色选择 */
+.palettes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.palette { font: inherit; color: inherit; text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-md); padding: 10px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 8px; transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-moderate) var(--ease), transform var(--dur-moderate) var(--ease); }
+.palette:hover { border-color: var(--border-strong); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.palette.on { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.palette .sw { height: 44px; border-radius: 8px; }
+.palette b { font-size: 13px; font-weight: 600; }
+.palette small { font-size: 11px; color: var(--muted); line-height: 1.4; }
+@media (max-width: 900px) { .palettes { grid-template-columns: 1fr; } }

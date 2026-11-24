@@ -115,6 +115,24 @@ $("#theme-btn").onclick = () => {
   drawThemeBtn();
 };
 drawThemeBtn();
+
+// ---------- 配色(设置页) ----------
+const PALETTES = [
+  { id: "sage", name: "鼠尾草", desc: "灰绿 + 米白,最安静", sw: "linear-gradient(135deg, #c4dfcd, #f1ead8 55%, #d6deee)", dot: "#4f7f6f" },
+  { id: "lavender", name: "薰衣草暮色", desc: "灰紫 + 浅杏,傍晚的感觉", sw: "linear-gradient(135deg, #d6cced, #f6dacd 55%, #e8d6e2)", dot: "#7a6aa8" },
+  { id: "mist", name: "晨雾", desc: "雾蓝绿,清爽", sw: "linear-gradient(135deg, #bedce8, #cee8d6 55%, #dce2f0)", dot: "#3e7c94" },
+];
+function drawPalettes() {
+  const cur = document.documentElement.dataset.palette || "sage";
+  $("#palettes").innerHTML = PALETTES.map((p) => `<button type="button" class="palette ${p.id === cur ? "on" : ""}" data-p="${p.id}">
+    <span class="sw" style="background:${p.sw}; box-shadow: inset -14px 0 0 -8px ${p.dot}"></span>
+    <b>${p.name}</b><small>${p.desc}</small></button>`).join("");
+  document.querySelectorAll(".palette").forEach((b) => b.onclick = () => {
+    document.documentElement.dataset.palette = b.dataset.p;
+    try { localStorage.setItem("wb-palette", b.dataset.p); } catch (_) {}
+    drawPalettes(); toast(`已换成「${PALETTES.find((x) => x.id === b.dataset.p).name}」`);
+  });
+}
 function route() {
   const h = location.hash;
   const m = h.match(/^#\/t\/(\d+)/);
@@ -212,6 +230,7 @@ function drawLibrary() {
 
 // ---------- 设置 ----------
 async function drawSettings() {
+  drawPalettes();
   const [c, s] = await Promise.all([api("/api/config"), api("/api/status")]);
   const ok = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>', no = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>';
   $("#set-model").innerHTML = `<dt>状态</dt><dd><span class="badge ${c.key_ok ? "done" : "failed"}">${c.key_ok ? "Key 已配置" : "没有 Key"}</span></dd>

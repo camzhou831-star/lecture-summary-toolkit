@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400..800&family=Google+Sans+Code:wght@400..600&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=7">
-<script>/* 深浅色:先读本地记住的选择,避免闪一下 */ try { const t = localStorage.getItem("wb-theme"); if (t) document.documentElement.dataset.theme = t; } catch (_) {}</script>
+<link rel="stylesheet" href="/static/style.css?v=8">
+<script>/* 深浅色和配色:先读本地记住的选择,避免闪一下 */ (function () { const d = document.documentElement; d.dataset.palette = "sage"; try { const t = localStorage.getItem("wb-theme"); if (t) d.dataset.theme = t; const p = localStorage.getItem("wb-palette"); if (p) d.dataset.palette = p; } catch (_) {} })();</script>
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 </head>
@@ -123,6 +123,11 @@
           <p class="muted small">配置文件里写 <code>{"api_key": "sk-..."}</code>;也可以设环境变量 <code>DEEPSEEK_API_KEY</code>。换任意 OpenAI 兼容接口就改 <code>base_url</code> 和 <code>model</code>。</p>
         </div>
         <div class="card">
+          <div class="card-title">配色</div>
+          <div id="palettes" class="palettes"></div>
+          <p class="muted small" style="margin:12px 0 0">低饱和的绿、紫、蓝绿看着更放松。深浅色跟随系统,也可以点顶栏的月亮手动切。</p>
+        </div>
+        <div class="card">
           <div class="card-title">本机程序</div>
           <ul id="set-tools" class="checklist"></ul>
         </div>
@@ -180,6 +185,6 @@
   </main>
 </div>
 <div id="toast" class="toast"></div>
-<script src="/static/app.js?v=6"></script>
+<script src="/static/app.js?v=8"></script>
 </body>
 </html>
