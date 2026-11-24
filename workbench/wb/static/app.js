@@ -39,23 +39,59 @@ function toast(msg) {
   clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 1600);
 }
 
+// ---------- 模板(第一期只有课程总结可用) ----------
+const TEMPLATES = [
+  { id: "course", name: "课程总结", ready: true, icon: '<svg viewBox="0 0 24 24"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>',
+    desc: "录播课、公开课。七节固定结构 + 复习卡,时间戳自动核对。",
+    parts: ["课程通知", "一句话概括", "核心要点(带时间段)", "章节时间线(可回跳)", "金句 / 考点信号", "复习卡 8–15 张"] },
+  { id: "benchmark", name: "对标拆稿", ready: false, icon: '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+    desc: "短视频口播逐句拆:作用分段、秒数、字数、信息点。",
+    parts: ["逐句拆稿表", "结构骨架", "可复用句式"] },
+  { id: "meeting", name: "会议纪要", ready: false, icon: '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
+    desc: "会议录音:议题、结论、待办和负责人。",
+    parts: ["议题", "结论", "待办与负责人"] },
+];
+let template = "course";
+function tplCard(t, pick) {
+  const tag = t.ready ? (pick && t.id === template ? "已选" : "可用") : "即将上线";
+  return `<button type="button" class="tpl ${pick && t.id === template ? "on" : ""}" data-tpl="${t.id}" ${t.ready ? "" : "disabled"}>
+    <span class="tpl-tag">${tag}</span><span class="tpl-ic">${t.icon}</span>
+    <span class="tpl-n">${t.name}</span><span class="tpl-d">${t.desc}</span>
+    ${pick ? "" : `<ul>${t.parts.map((p) => `<li>${p}</li>`).join("")}</ul>`}</button>`;
+}
+function drawTemplates() {
+  $("#tpl-pick").innerHTML = TEMPLATES.map((t) => tplCard(t, true)).join("");
+  $("#tpl-list").innerHTML = TEMPLATES.map((t) => tplCard(t, false)).join("");
+  document.querySelectorAll("#tpl-pick .tpl:not(:disabled)").forEach((b) => b.onclick = () => { template = b.dataset.tpl; drawTemplates(); });
+}
+drawTemplates();
+
 // ---------- 模型状态 ----------
+let cfg = null;
 api("/api/config").then((c) => {
-  $("#model").innerHTML = c.key_ok ? `<span class="ok">${esc(c.model)}</span>` : `<span class="bad">还没配置模型 Key(见 README)</span>`;
-  $("#hint-model").textContent = c.key_ok ? c.model : "未配置 Key";
+  cfg = c;
+  $("#model").innerHTML = c.key_ok ? `<span class="ok">${esc(c.model)}</span>` : `<span class="bad">还没配置模型 Key</span>`;
 });
 
-// ---------- 路由 ----------
+// ---------- 路由:#/ 新建 · #/library 资料库 · #/templates 模板 · #/settings 设置 · #/t/<id> 任务 ----------
+const PAGES = ["home", "library", "templates", "settings", "detail"];
+function show(page) {
+  PAGES.forEach((p) => $("#" + p).hidden = p !== page);
+  const nav = page === "detail" ? "library" : page;
+  document.querySelectorAll(".nav-item").forEach((a) => a.classList.toggle("on", a.dataset.page === nav && page !== "detail"));
+  $(".main").scrollTop = 0;
+}
 function route() {
-  const m = location.hash.match(/^#\/t\/(\d+)/);
-  if (m) openTask(+m[1]); else showHome();
+  const h = location.hash;
+  const m = h.match(/^#\/t\/(\d+)/);
+  if (m) return openTask(+m[1]);
+  current = null; drawList();
+  if (h === "#/library") { show("library"); drawLibrary(); }
+  else if (h === "#/templates") show("templates");
+  else if (h === "#/settings") { show("settings"); drawSettings(); }
+  else { show("home"); setTimeout(() => $("#source").focus(), 0); }
 }
 window.addEventListener("hashchange", route);
-$("#new-btn").onclick = () => { location.hash = ""; showHome(); };
-function showHome() {
-  current = null; $("#detail").hidden = true; $("#home").hidden = false;
-  drawList(); setTimeout(() => $("#source").focus(), 0);
-}
 
 // ---------- 新建 ----------
 $("#form").addEventListener("submit", async (e) => {
@@ -95,19 +131,63 @@ home.addEventListener("drop", (e) => {
   const f = e.dataTransfer.files[0]; if (f) upload(f);
 });
 
-// ---------- 历史列表 ----------
-async function refresh() { tasks = await api("/api/tasks"); drawList(); }
-$("#search").addEventListener("input", drawList);
+// ---------- 左栏最近任务 ----------
+async function refresh() {
+  tasks = await api("/api/tasks"); drawList();
+  $("#nav-count").textContent = tasks.length || "";
+  if (!$("#library").hidden) drawLibrary();
+}
 function drawList() {
-  const q = $("#search").value.trim().toLowerCase();
-  const list = tasks.filter((t) => !q || (t.title || t.vid || "").toLowerCase().includes(q));
+  const list = tasks.slice(0, 8);
   $("#tasks").innerHTML = list.map((t) => `
     <li class="task ${current && t.id === current.id ? "on" : ""}" data-id="${t.id}" title="${esc(t.title || t.vid)}">
       <span class="s-dot ${t.status}"></span>
       <span class="t-title">${esc(t.title || t.vid)}</span>
       <span class="t-sub">${KIND[t.kind] || t.kind} · ${t.status === "done" ? ago(t.updated_at) : esc(t.status === "running" ? t.message : STATUS[t.status])}</span>
-    </li>`).join("") || `<li class="task-empty">${q ? "没有匹配的任务" : "还没有任务"}</li>`;
+    </li>`).join("") || `<li class="task-empty">还没有任务</li>`;
   document.querySelectorAll(".task[data-id]").forEach((li) => li.onclick = () => { location.hash = `#/t/${li.dataset.id}`; });
+}
+
+// ---------- 资料库 ----------
+const lib = { q: "", kind: "", status: "" };
+$("#lib-search").addEventListener("input", (e) => { lib.q = e.target.value.trim().toLowerCase(); drawLibrary(); });
+for (const [id, key] of [["#lib-kind", "kind"], ["#lib-status", "status"]]) {
+  document.querySelectorAll(`${id} button`).forEach((b) => b.onclick = () => {
+    lib[key] = b.dataset.v;
+    document.querySelectorAll(`${id} button`).forEach((x) => x.classList.toggle("on", x === b));
+    drawLibrary();
+  });
+}
+function drawLibrary() {
+  const rows = tasks.filter((t) => (!lib.q || (t.title || t.vid || "").toLowerCase().includes(lib.q))
+    && (!lib.kind || t.kind === lib.kind)
+    && (!lib.status || t.status === lib.status || (lib.status === "running" && t.status === "queued")));
+  $("#lib-rows").innerHTML = rows.map((t) => {
+    const total = Object.values(t.timings || {}).reduce((a, b) => a + b, 0);
+    const st = t.status === "done" && !t.check_ok ? ["warn", "完成(核对有问题)"] : [t.status, STATUS[t.status]];
+    return `<tr data-id="${t.id}">
+      <td class="t-cell" title="${esc(t.title || t.vid)}">${esc(t.title || t.vid)}</td>
+      <td>${KIND[t.kind] || t.kind}</td>
+      <td>${t.out_lang === "en" ? "English" : "中文"}</td>
+      <td><span class="badge ${st[0]}">${st[1]}</span></td>
+      <td class="num">${t.status === "done" ? dur(Math.round(total)) : "—"}</td>
+      <td class="muted">${ago(t.created_at)}</td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="table-empty">${tasks.length ? "没有符合条件的任务" : "还没有任务,去「新建总结」贴一个链接"}</td></tr>`;
+  document.querySelectorAll("#lib-rows tr[data-id]").forEach((tr) => tr.onclick = () => { location.hash = `#/t/${tr.dataset.id}`; });
+}
+
+// ---------- 设置 ----------
+async function drawSettings() {
+  const [c, s] = await Promise.all([api("/api/config"), api("/api/status")]);
+  const ok = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>', no = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+  $("#set-model").innerHTML = `<dt>状态</dt><dd><span class="badge ${c.key_ok ? "done" : "failed"}">${c.key_ok ? "Key 已配置" : "没有 Key"}</span></dd>
+    <dt>模型</dt><dd>${esc(c.model)}</dd><dt>接口</dt><dd>${esc(c.base_url)}</dd><dt>Key 来源</dt><dd>${esc(c.key_source)}</dd>
+    <dt>配置文件</dt><dd><code>${esc(s.config_file)}</code></dd>`;
+  $("#set-tools").innerHTML = s.tools.map((t) => `<li><span class="ck ${t.path ? "ok" : "no"}">${t.path ? ok : no}</span>
+    <span>${esc(t.name)}</span><span class="sub">${esc(t.need)}${t.path ? " · " + esc(t.path) : " · 没找到"}</span></li>`).join("");
+  const n = s.counts, total = Object.values(n).reduce((a, b) => a + b, 0);
+  $("#set-data").innerHTML = `<dt>任务</dt><dd>共 ${total} 个 · 完成 ${n.done || 0} · 失败 ${n.failed || 0}</dd>
+    <dt>数据目录</dt><dd><code>${esc(s.data_dir)}</code></dd><dt>说明</dt><dd class="muted">每个任务一个文件夹,里面有文字稿、讲义稿和总结 .md;不进 git。</dd>`;
 }
 
 // ---------- 详情 ----------
@@ -122,7 +202,7 @@ async function openTask(id) {
     $("#chapters").innerHTML = "";
     $("#d-log").textContent = "";
   }
-  $("#home").hidden = true; $("#detail").hidden = false;
+  show("detail");
   drawList(); drawDetail(t);
   if (switched && t.kind === "local" && t.meta && t.meta.media_path) loadLocal(t);
 }
@@ -300,7 +380,7 @@ $("#d-retry").onclick = async () => {
 $("#d-del").onclick = async () => {
   if (!confirm("删除这个任务和它的文字稿、总结?")) return;
   await api(`/api/tasks/${current.id}`, { method: "DELETE" });
-  toast("已删除"); await refresh(); location.hash = "";
+  toast("已删除"); await refresh(); location.hash = "#/library";
 };
 
 // ---------- 轮询 ----------

@@ -216,6 +216,8 @@ def test_api(env):
     from fastapi.testclient import TestClient
     with TestClient(env["server"].app) as c:
         assert c.get("/api/config").json()["key_ok"] is False
+        st = c.get("/api/status").json()
+        assert {t["name"] for t in st["tools"]} >= {"yt-dlp", "ffmpeg", "whisper-cli"} and st["counts"] == {}
         assert c.post("/api/tasks", json={"source": "https://v.douyin.com/x/"}).status_code == 400
         assert c.post("/api/tasks", json={"source": "https://youtu.be/aircAruvnKk", "out_lang": "fr"}).status_code == 400
         r = c.post("/api/tasks", json={"source": "https://youtu.be/aircAruvnKk"})

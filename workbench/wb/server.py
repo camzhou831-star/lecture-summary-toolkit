@@ -54,6 +54,22 @@ def get_config():
     return {"model": c.model, "base_url": c.base_url, "key_ok": bool(c.api_key), "key_source": c.source}
 
 
+@app.get("/api/status")
+def get_status():
+    """设置页:外部程序装没装、whisper 模型在不在、数据放在哪、任务数"""
+    import sys
+    sys.path.insert(0, config.TOOLS)
+    import deps
+    model = os.path.join(deps.MODEL_DIR, "ggml-" + os.environ.get("WHISPER_MODEL", "large-v3-turbo") + ".bin")
+    tools = [{"name": n, "path": deps.find(n), "need": need} for n, need in
+             (("yt-dlp", "B 站 / YouTube 链接"), ("ffmpeg", "转写前抽音频"), ("ffprobe", "读视频时长"), ("whisper-cli", "本地转写"))]
+    tools.append({"name": "whisper 模型 " + os.path.basename(model), "path": model if os.path.isfile(model) else None, "need": "本地转写(第一次用时自动下载)"})
+    counts = {}
+    for t in db.list_all(limit=100000):
+        counts[t["status"]] = counts.get(t["status"], 0) + 1
+    return {"tools": tools, "data_dir": config.DATA, "config_file": config.CONFIG_FILE, "counts": counts}
+
+
 @app.post("/api/tasks")
 def create_task(body: NewTask):
     _check_langs(body.lang, body.out_lang)
