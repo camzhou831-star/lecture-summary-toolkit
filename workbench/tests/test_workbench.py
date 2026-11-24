@@ -156,6 +156,13 @@ def test_system_prompt_contains_policy_and_headings(env):
     assert "Review Cards" in sp and "写作规则(policy.md)" in sp and "{lang_hint}" not in sp
 
 
+def test_duration_not_written_as_timestamp(env):
+    """时长写成 MM:SS 会被模型照抄进引用块,check_summary 当成时间戳判"超出时长"(英文实测踩过)"""
+    task = {"kind": "youtube", "source": "x", "vid": "x", "out_lang": "en"}
+    up = env["pipeline"].user_prompt(task, {"duration": 1120}, "")
+    assert "18 分 40 秒" in up and "18:40" not in up
+
+
 def test_pipeline_end_to_end_with_fake_model(env, monkeypatch):
     """本地 .srt → 整理 → (假)模型 → 加链接 + check_summary 通过"""
     db, p, llm = env["db"], env["pipeline"], env["llm"]
