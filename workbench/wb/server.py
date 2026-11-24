@@ -154,7 +154,7 @@ def delete_task(tid: int):
 
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(STATIC, "index.html"))
+    return FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-cache"})   # 改了前端刷新就生效
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
