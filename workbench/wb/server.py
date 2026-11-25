@@ -103,7 +103,7 @@ def get_config():
         active = llm.resolve()
     except llm.LLMError:
         active = None
-    return {"model": c.model, "base_url": c.base_url, "key_ok": bool(c.api_key), "key_source": c.source,
+    return {"model": c.model, "base_url": c.base_url, "review_model": config.review_model(), "key_ok": bool(c.api_key), "key_source": c.source,
             "provider": c.provider, "active": active, "ready": active is not None,
             "cookies_browser": config.cookies_browser(), "browsers": list(config.BROWSERS),
             "providers": [{"id": p, "name": info["name"], "ok": av[p][0], "note": av[p][1]} for p, info in llm.PROVIDERS.items()]}

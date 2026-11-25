@@ -50,6 +50,7 @@ const TEMPLATES = [
   },
 ];
 let template = "course";
+let status = null, cfg = null, slidesFile = null;   // 首页检查结果、选好的课件 PDF(提前声明:drawTemplates → drawReady 一开始就会用到)
 function tplCard(t, pick) {
   const tp = t;   // 模板对象(下面的 t() 是翻译函数)
   return ((t) => {
@@ -80,12 +81,12 @@ function drawTemplates() {
     `<option value="${m.id}" ${m.id === meetingVariant ? "selected" : ""}>${esc(LANG === "zh" ? m.name_zh : m.name_en)} — ${esc(LANG === "zh" ? m.desc_zh : m.desc_en)}</option>`).join("")}</select>
     <span class="small muted">${(meetings.find((m) => m.id === meetingVariant) || {})[LANG === "zh" ? "sections_zh" : "sections_en"]?.join(" · ") || ""}</span>`;
   const sel = $("#meet-type"); if (sel) sel.onchange = () => { meetingVariant = sel.value; drawTemplates(); };
+  drawReady();
 }
 api("/api/templates").then((x) => { meetings = x.meetings || []; drawTemplates(); }).catch(() => {});
 drawTemplates();
 
 // ---------- 模型状态 ----------
-let cfg = null;
 api("/api/config").then((c) => {
   cfg = c;
   drawModelCard(c);
@@ -189,11 +190,11 @@ $("#file").addEventListener("change", () => { if ($("#file").files[0]) upload($(
 function formMsg(s, bad) { const m = $("#formmsg"); m.textContent = s; m.classList.toggle("bad", !!bad); }
 
 // 课件 PDF(只给课程总结):先选好,提交任务时先传课件、拿到文件名再建任务
-let slidesFile = null;
 function setSlides(f) {
   slidesFile = f; $("#slides").value = "";
   const chip = $("#slides-chip");
   chip.hidden = !f; if (f) chip.querySelector(".nm").textContent = f.name;
+  drawReady();
 }
 function drawSlidesBtn() { const on = template === "course"; $("#slides-btn").hidden = !on; if (!on) setSlides(null); }
 $("#slides").addEventListener("change", () => { const f = $("#slides").files[0]; if (f) setSlides(f); });
@@ -695,7 +696,6 @@ async function tick() {
 // ---------- 开始前检查(首页卡片) ----------
 let obHidden = false;
 try { obHidden = localStorage.getItem("wb-onboard-hidden") === "1"; } catch (_) {}
-let status = null;
 const OKI = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>';
 function cmdBox(c) { return `<div class="cmd"><code>${esc(c)}</code><button type="button" class="btn btn-ghost" data-copy="${esc(c)}">${LANG === "zh" ? "复制" : "Copy"}</button></div>`; }
 // 时区 UTC+8(中国大陆、港澳台、新加坡等)→ 推荐 DeepSeek
@@ -718,6 +718,34 @@ document.addEventListener("submit", async (e) => {
     if (shownPage === "settings") drawSettings(); else drawOnboard(true);
   } catch (err) { toast(trServer(err.message)); } finally { b.disabled = false; }
 });
+// 「准备就绪」一行:按当前选的模板、写总结的 AI、有没有附课件、输入的是链接还是本地视频,说清这次会怎么做
+function aiName(c) {
+  if (c.active !== "api") return PNAME[c.active];
+  return /deepseek\.com/.test(c.base_url || "") ? `DeepSeek${LANG === "zh" ? "" : " "}(${c.model})` : `API · ${c.model}`;
+}
+function drawReady() {
+  const box = $("#onboard");
+  if (!status || !cfg || !cfg.ready || !box.classList.contains("allok")) return;   // 只改「都好了」那一行,检查清单不动
+  const ok = (id) => (cfg.providers.find((p) => p.id === id) || {}).ok;
+  const has = (n) => !!(status.tools.find((x) => x.name === n) || {}).path;
+  const n = aiName(cfg), parts = [];
+  if (template === "breakdown") parts.push(t("rd_bench", { n }));
+  else if (template === "meeting") {
+    const m = meetings.find((x) => x.id === meetingVariant);
+    parts.push(t("rd_meet", { n, m: m ? (LANG === "zh" ? m.name_zh : m.name_en) : "" }));
+  } else {
+    parts.push(t("rd_course", { n }) + (cfg.active === "claude" ? t("rd_see") : ""));
+    const other = { claude: "codex", codex: "claude" }[cfg.active];
+    if (other && ok(other)) parts.push(t("rd_cross", { r: PNAME[other] }));
+    else if (cfg.active === "api") parts.push(t("rd_api_rev", { m: cfg.review_model || cfg.model }) + t("rd_noimg"));
+    else parts.push(t("rd_self", { r: PNAME[cfg.active] }));
+    parts.push(slidesFile ? t("rd_slides", { f: esc(slidesFile.name) }) : t("rd_noslides"));
+    const v = $("#source").value.trim();
+    if (/^https?:\/\//i.test(v) || /https?:\/\/\S+/.test(v)) parts.push(t("rd_link"));
+    else parts.push(has("tesseract") ? t("rd_frames") : t("rd_noframes"));
+  }
+  box.innerHTML = `<span class="ob-item"><span class="ck ok">${OKI}</span></span><span class="ob-ready rd">${t("rd_head")}${parts.join(t("rd_sep"))}${t("rd_end")}${status.model_ready ? "" : " " + t("ob_model")}</span>`;
+}
 async function drawOnboard(recheck) {
   const box = $("#onboard");
   if (recheck) box.innerHTML = `<div class="ob-sub">${t("ob_checking")}</div>`;
@@ -727,9 +755,9 @@ async function drawOnboard(recheck) {
   const mac = status.platform === "darwin", win = status.platform.startsWith("win");
   const dl = has("yt-dlp"), tr = has("ffmpeg") && has("whisper-cli"), ai = cfg.ready;
   box.hidden = false;
-  if (dl && tr && ai) {   // 都好了:只留一行"准备就绪"
-    box.className = "onboard ready";
-    box.innerHTML = `<span class="ob-item"><span class="ck ok">${OKI}</span></span><span class="ob-ready">${t("ob_ready", { n: PNAME[cfg.active] })}${status.model_ready ? "" : " " + t("ob_model")}</span>`;
+  if (dl && tr && ai) {   // 都好了:只留一行"准备就绪",内容跟着所选模板 / AI / 课件 / 输入变
+    box.className = "onboard ready allok";
+    drawReady();
     return;
   }
   if (obHidden && !recheck) {
@@ -788,7 +816,7 @@ function drawSrcHint() {
   } else if (/^(\/|~\/|[A-Za-z]:\\)/.test(v)) msg = t("hint_local");
   el.hidden = !msg; el.className = "srchint" + (warn ? " warn" : ""); el.innerHTML = msg;
 }
-$("#source").addEventListener("input", drawSrcHint);
+$("#source").addEventListener("input", () => { drawSrcHint(); drawReady(); });
 
 // ---------- 详情页的进度提示 + 浏览器标签标题 ----------
 // 专名核对结果:校正了哪些、哪些待核实(点开看清单)
