@@ -679,3 +679,13 @@ a.ts:active { transform: scale(.95); }
   .step .ic { width: 24px; height: 24px; }
   .step .nm { font-size: 13px; }
 }
+
+/* 粘贴 API Key */
+.keyform { grid-column: 2; display: flex; gap: 8px; margin-top: 6px; }
+.keyform .input { flex: 1; min-width: 0; }
+.keybox { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.keybox .keyform { margin-top: 8px; }
+.keyline { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); }
+.keyline a, .ob-note a { color: var(--brand); }
+.rec-tag { display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 999px; background: var(--brand); color: var(--on-brand, #fff); font-size: 11px; font-weight: 600; vertical-align: 1px; }
+.ob-sep { margin-top: 12px; font-weight: 500; }

@@ -2,6 +2,8 @@
 import json
 import os
 import shutil
+
+import httpx
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -90,6 +92,35 @@ def set_cookies_browser(body: BrowserBody):
     if body.browser and body.browser not in config.BROWSERS:
         raise HTTPException(400, "不认识的浏览器")
     config.save_setting("cookies_browser", body.browser)
+    return get_config()
+
+
+class KeyBody(BaseModel):
+    api_key: str = ""
+    base_url: str = config.DEFAULT_BASE_URL
+    model: str = config.DEFAULT_MODEL
+
+
+@app.post("/api/config/key")
+def set_key(body: KeyBody):
+    """在界面里填 API Key(默认 DeepSeek)。先用 /models 试一下 Key 对不对,对了才存;空字符串 = 删掉 Key"""
+    key, base = body.api_key.strip(), (body.base_url.strip() or config.DEFAULT_BASE_URL).rstrip("/")
+    if key:
+        if not base.startswith(("https://", "http://127.0.0.1", "http://localhost")):
+            raise HTTPException(400, "接口地址要以 https:// 开头")
+        try:
+            r = httpx.get(base + "/models", headers={"Authorization": f"Bearer {key}"}, timeout=15)
+        except httpx.HTTPError as e:
+            raise HTTPException(400, f"连不上 {base}: {e}")
+        if r.status_code in (401, 403):
+            raise HTTPException(400, "Key 不对:接口说没有权限,检查一下有没有复制完整")
+    config.save_setting("api_key", key)
+    config.save_setting("base_url", base)
+    config.save_setting("model", body.model.strip() or config.DEFAULT_MODEL)
+    if key:
+        config.save_provider("api")
+    elif config.llm_config().provider == "api":
+        config.save_provider("auto")
     return get_config()
 
 

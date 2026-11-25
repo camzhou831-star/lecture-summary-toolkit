@@ -283,6 +283,12 @@ async function drawSettings() {
   const ok = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>', no = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>';
   drawProviders(c);
   $("#cfg-path").textContent = s.config_file;
+  $("#set-key").innerHTML = `<div class="keyline"><span>${c.key_ok ? t("key_have", { s: esc(c.key_source) }) : t("key_empty")}</span>
+    ${c.key_ok ? `<button type="button" class="btn btn-ghost btn-sm" id="key-clear">${t("key_clear")}</button>` : `<a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">${t("ob_ds_link")} ↗</a>`}</div>${keyForm("set")}`;
+  if (c.key_ok) $("#key-clear").onclick = async () => {
+    try { cfg = await api("/api/config/key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: "" }) }); toast(t("key_cleared")); drawSettings(); }
+    catch (err) { toast(trServer(err.message)); }
+  };
   const NEED = { "yt-dlp": "tool_ytdlp", ffmpeg: "tool_ffmpeg", ffprobe: "tool_ffprobe", "whisper-cli": "tool_whisper" };
   $("#set-tools").innerHTML = s.tools.map((x) => `<li><span class="ck ${x.path ? "ok" : "no"}">${x.path ? ok : no}</span>
     <span>${esc(x.name.replace("whisper 模型", "whisper model"))}</span><span class="sub">${t(NEED[x.name] || "tool_model")}${x.path ? " · " + esc(x.path) : " · " + t("not_found")}</span></li>`).join("");
@@ -668,6 +674,26 @@ try { obHidden = localStorage.getItem("wb-onboard-hidden") === "1"; } catch (_) 
 let status = null;
 const OKI = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>';
 function cmdBox(c) { return `<div class="cmd"><code>${esc(c)}</code><button type="button" class="btn btn-ghost" data-copy="${esc(c)}">${LANG === "zh" ? "复制" : "Copy"}</button></div>`; }
+// 时区 UTC+8(中国大陆、港澳台、新加坡等)→ 推荐 DeepSeek
+function inUTC8() { return new Date().getTimezoneOffset() === -480; }
+// 粘贴 API Key 的小表单(新手引导和设置页共用)
+function keyForm(id) {
+  return `<form class="keyform" data-key-form="${id}" autocomplete="off"><input type="password" class="input input-sm" name="k" placeholder="${t("key_ph")}" spellcheck="false">
+    <button type="submit" class="btn btn-primary btn-sm">${t("key_save")}</button></form>`;
+}
+document.addEventListener("submit", async (e) => {
+  const f = e.target.closest("[data-key-form]");
+  if (!f) return;
+  e.preventDefault();
+  const k = f.k.value.trim();
+  if (!k) return f.k.focus();
+  const b = f.querySelector("button"); b.disabled = true;
+  try {
+    cfg = await api("/api/config/key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: k }) });
+    toast(t("key_ok")); f.k.value = "";
+    if (shownPage === "settings") drawSettings(); else drawOnboard(true);
+  } catch (err) { toast(trServer(err.message)); } finally { b.disabled = false; }
+});
 async function drawOnboard(recheck) {
   const box = $("#onboard");
   if (recheck) box.innerHTML = `<div class="ob-sub">${t("ob_checking")}</div>`;
@@ -698,11 +724,14 @@ async function drawOnboard(recheck) {
   rows += item(dl, t("ob_dl"), t("ob_dl_d"), mac ? cmdBox("brew install yt-dlp") : win ? cmdBox("winget install -e --id yt-dlp.yt-dlp") : osNote);
   rows += item(tr, t("ob_tr"), t("ob_tr_d") + (status.model_ready ? "" : `<div class="ob-note">${t("ob_model")}</div>`),
     mac ? cmdBox("brew install ffmpeg whisper-cpp") : win ? cmdBox("winget install -e --id Gyan.FFmpeg") + osNote : osNote);
-  rows += item(ai, t("ob_ai"), ai ? t("ob_ai_ok", { n: PNAME[cfg.active] }) : t("ob_ai_d"),
-    `<div class="ob-note">${t("ob_ai_claude")}</div>${cmdBox("npm i -g @anthropic-ai/claude-code && claude")}
-     <div class="ob-note">${t("ob_ai_codex")}</div>${cmdBox("npm i -g @openai/codex && codex")}
-     ${status.npm ? "" : `<div class="ob-note">${t("ob_ai_node")}</div>${cmdBox(mac ? "brew install node" : win ? "winget install OpenJS.NodeJS.LTS" : "https://nodejs.org")}`}
-     <div class="ob-note"><a href="#/settings">${t("ob_ai_api")}</a></div>`);
+  // 写总结的 AI:按时区排推荐顺序(UTC+8 → DeepSeek 在前;其他 → 先用已有的 ChatGPT / Claude 会员)
+  const cn = inUTC8(), rec = `<span class="rec-tag">${t("ob_rec")}</span>`;
+  const ds = `<div class="ob-note">${cn ? rec : ""}${t("ob_ds")} · <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">${t("ob_ds_link")} ↗</a></div>${keyForm("ob")}`;
+  const subs = `<div class="ob-note">${cn ? "" : rec}${t("ob_ai_claude")}</div>${cmdBox("npm i -g @anthropic-ai/claude-code && claude")}
+     <div class="ob-note">${cn ? "" : rec}${t("ob_ai_codex")}</div>${cmdBox("npm i -g @openai/codex && codex")}
+     ${status.npm ? "" : `<div class="ob-note">${t("ob_ai_node")}</div>${cmdBox(mac ? "brew install node" : win ? "winget install OpenJS.NodeJS.LTS" : "https://nodejs.org")}`}`;
+  rows += item(ai, t("ob_ai"), ai ? t("ob_ai_ok", { n: PNAME[cfg.active] }) : t(cn ? "ob_tz_cn" : "ob_tz_intl"),
+    cn ? `${ds}<div class="ob-note ob-sep">${t("ob_alt")}</div>${subs}` : `${subs}<div class="ob-note ob-sep">${t("ob_alt_api")}</div>${ds}`);
   const oneclick = win ? `<div class="ob-or" style="grid-column:auto;margin-top:12px">${t("ob_oneclick_win")}</div>`
     : `<div class="ob-or" style="grid-column:auto;margin-top:12px">${t("ob_oneclick")}</div>${cmdBox(`bash "${status.workbench_dir}/setup.sh"`).replace('class="cmd"', 'class="cmd" style="grid-column:auto"')}`;
   box.innerHTML = `<div class="ob-head"><b>${t("ob_title")}</b></div><p class="ob-sub">${t("ob_sub")}</p><ul class="ob-list">${rows}</ul>${oneclick}

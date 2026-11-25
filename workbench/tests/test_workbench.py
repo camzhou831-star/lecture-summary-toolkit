@@ -466,3 +466,27 @@ def test_names_check_failure_does_not_fail_task(env, monkeypatch):
     p.run_task(tid)
     t = db.get(tid)
     assert t["status"] == "done" and t["check_ok"] == 1 and "专名核对没做成" in t["log"] and "names" not in (t["meta"] or {})
+
+
+def test_save_api_key_from_ui(env, monkeypatch):
+    """界面里粘贴 Key:先试 /models,401 不存;对了就存进配置文件并切到 api;空字符串删掉"""
+    from fastapi.testclient import TestClient
+    import httpx
+    from wb import config as cfg
+    monkeypatch.delenv("WORKBENCH_PROVIDER", raising=False)
+    seen = []
+
+    def fake_get(url, headers=None, timeout=None):
+        seen.append((url, headers["Authorization"]))
+        return httpx.Response(401 if headers["Authorization"].endswith("bad") else 200, request=httpx.Request("GET", url))
+    monkeypatch.setattr(env["server"].httpx, "get", fake_get)
+    with TestClient(env["server"].app) as c:
+        r = c.post("/api/config/key", json={"api_key": "sk-bad"})
+        assert r.status_code == 400 and "Key 不对" in r.json()["detail"] and not cfg._file_config().get("api_key")
+        assert c.post("/api/config/key", json={"api_key": "sk-1", "base_url": "http://evil.example"}).status_code == 400
+        j = c.post("/api/config/key", json={"api_key": " sk-good "}).json()
+        assert j["key_ok"] and j["provider"] == "api" and cfg._file_config()["api_key"] == "sk-good"
+        assert seen[-1] == ("https://api.deepseek.com/models", "Bearer sk-good")
+        assert oct(os.stat(cfg.CONFIG_FILE).st_mode & 0o777) == "0o600"
+        j = c.post("/api/config/key", json={"api_key": ""}).json()
+        assert not j["key_ok"] and j["provider"] == "auto"

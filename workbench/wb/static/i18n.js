@@ -19,7 +19,10 @@ const I18N = {
     tpl_crumb: "总结工作台 / 模板", tpl_p: "模板决定总结的结构和写法。选好模板后在「新建总结」里贴链接。",
     set_crumb: "总结工作台 / 设置", set_p: "写总结的 AI、网站登录、配色、本机程序和数据位置。改设置不用重启。",
     set_ai: "写总结用哪个 AI",
-    set_ai_note: "有 Claude Pro / Max 或 ChatGPT Plus / Pro 的话,装好对应的命令行工具并登录一次就能用,<b>不用 API Key</b>,用量算在你的订阅里。没有订阅才需要 API Key:写进 <code id=\"cfg-path\"></code> 的 <code>api_key</code>。",
+    set_ai_note: "有 Claude Pro / Max 或 ChatGPT Plus / Pro 的话,装好对应的命令行工具并登录一次就能用,<b>不用 API Key</b>,用量算在你的订阅里。没有订阅才需要 API Key,粘贴到下面即可(保存在本机 <code id=\"cfg-path\"></code>,不上传)。",
+    ob_rec: "推荐", ob_tz_cn: "检测到你在 UTC+8 时区,推荐用 DeepSeek:国内直接能用,按量付费,不需要会员。", ob_tz_intl: "推荐直接用你已有的 ChatGPT 或 Claude 会员,不用 API Key。",
+    ob_ds: "DeepSeek:到 DeepSeek 开放平台注册、充值,创建一个 API Key,粘贴到下面", ob_ds_link: "打开 DeepSeek 开放平台", ob_alt: "其他选择(有会员的话):", ob_alt_api: "都没有会员:用 API Key(按量付费)",
+    key_ph: "粘贴 API Key(sk- 开头)", key_save: "保存并试一下", key_ok: "Key 可以用,已保存", key_cleared: "已删除 Key", key_clear: "删除 Key", key_have: "已填 Key:{s}", key_empty: "还没填 API Key",
     set_login: "网站登录",
     set_login_note: "学校的 Panopto / Echo360 / Kaltura、Coursera、Udemy 这类要登录的视频:选一个你已经登录过的浏览器,下载时借用它的登录状态。只在本机用,不上传;不需要就保持「不用」。",
     set_palette: "配色", set_palette_note: "低饱和的绿、紫、蓝绿看着更放松。深浅色跟随系统,也可以点顶栏的月亮手动切。",
@@ -102,7 +105,10 @@ const I18N = {
     tpl_crumb: "Workbench / Templates", tpl_p: "A template decides how a summary is structured and written. Pick one, then paste a link under New summary.",
     set_crumb: "Workbench / Settings", set_p: "Which AI writes summaries, site logins, colours, local tools and where data lives. No restart needed.",
     set_ai: "Which AI writes the summary",
-    set_ai_note: "With Claude Pro / Max or ChatGPT Plus / Pro, install the matching command-line tool and sign in once: <b>no API key needed</b>, usage counts against your plan. Only without a plan do you need an API key: put it as <code>api_key</code> in <code id=\"cfg-path\"></code>.",
+    set_ai_note: "With Claude Pro / Max or ChatGPT Plus / Pro, install the matching command-line tool and sign in once: <b>no API key needed</b>, usage counts against your plan. Only without a plan do you need an API key: paste it below (kept on this computer in <code id=\"cfg-path\"></code>, never uploaded).",
+    ob_rec: "Recommended", ob_tz_cn: "You are in UTC+8, so DeepSeek is recommended: it works directly in mainland China, pay as you go, no subscription needed.", ob_tz_intl: "Recommended: use the ChatGPT or Claude subscription you already have. No API key needed.",
+    ob_ds: "DeepSeek: sign up on the DeepSeek platform, add credit, create an API key and paste it below", ob_ds_link: "Open the DeepSeek platform", ob_alt: "Other options (if you have a subscription):", ob_alt_api: "No subscription: use an API key (pay as you go)",
+    key_ph: "Paste your API key (starts with sk-)", key_save: "Save and test", key_ok: "The key works and has been saved", key_cleared: "Key removed", key_clear: "Remove key", key_have: "Key set: {s}", key_empty: "No API key yet",
     set_login: "Site login",
     set_login_note: "For videos behind a login (Panopto / Echo360 / Kaltura at your university, Coursera, Udemy): choose a browser you are signed in with and downloads will borrow its login. Stays on this computer. Leave it on \"Off\" if you don't need it.",
     set_palette: "Colours", set_palette_note: "Low-saturation greens, purples and teals feel calmer. Light/dark follows your system; use the moon button in the top bar to switch.",
@@ -194,7 +200,7 @@ function applyI18n(root = document) {
 
 // 后端的中文进度 / 报错 → 英文(按开头匹配;对不上的原样返回)
 const SERVER_EN = [
-  [/^排队中$/, "Queued"], [/^排队中\(沿用任务 (\d+) 的文字稿\)$/, "Queued (reusing the transcript of #$1)"], [/^这个任务还没拿到文字稿/, "The transcript isn't ready yet; try again once it is"], [/^重新排队$/, "Queued again"], [/^上次未完成,重新排队$/, "Interrupted last time, queued again"],
+  [/^排队中$/, "Queued"], [/^Key 不对/, "That key was rejected; check you copied all of it"], [/^连不上 (\S+?):/, "Could not reach $1"], [/^接口地址要以/, "The API address must start with https://"], [/^排队中\(沿用任务 (\d+) 的文字稿\)$/, "Queued (reusing the transcript of #$1)"], [/^这个任务还没拿到文字稿/, "The transcript isn't ready yet; try again once it is"], [/^重新排队$/, "Queued again"], [/^上次未完成,重新排队$/, "Interrupted last time, queued again"],
   [/^拿文字稿…$/, "Getting the transcript…"], [/^整理讲义稿…$/, "Preparing the transcript…"], [/^写总结…$/, "Writing the summary…"], [/^核对时间戳…$/, "Checking timestamps…"], [/^核对专名…$/, "Checking names…"],
   [/^写总结… 已生成 (\d+) 字$/, "Writing the summary… $1 characters so far"],
   [/^核对没过,让模型按检查结果改一轮…$/, "The check found issues; asking the AI to fix them…"],
