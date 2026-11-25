@@ -33,7 +33,17 @@ It comes in two parts:
 - **English and Chinese.** Switch the interface with the button in the top bar (it follows your browser language the first time, or open `?lang=en`). Each summary can be written in English or Chinese.
 - **Calm by design.** Low-saturation colour themes (sage, lavender dusk, morning mist), light and dark, because revision is stressful enough.
 
-### First time? Five steps (macOS)
+### Easiest: download and double-click (macOS)
+
+1. Download **`lecture-workbench-mac.zip`** from the [latest release](https://github.com/camzhou831-star/lecture-summary-toolkit/releases/latest) and double-click it to unzip.
+2. In the unzipped folder, double-click **`启动工作台.command`** ("Start Workbench").
+   - The first time, macOS will say it can't check the file. **Control-click it → Open → Open.** On newer macOS, if there is no Open button, go to **System Settings → Privacy & Security** and click **Open Anyway** next to the message.
+3. A Terminal window opens and installs whatever is missing (it asks before installing Homebrew, and you type your Mac password yourself). Then the workbench opens in your browser.
+4. Follow the **Before you start** card on the page, paste a link, done.
+
+Keep that Terminal window open while you use the workbench; close it to stop. Next time, just double-click the same file again.
+
+### First time? Five steps (macOS, with Terminal)
 
 1. **Open Terminal.** Press ⌘ Space, type `Terminal`, press Return.
 2. **Get the code.** Paste this and press Return (if your Mac asks to install developer tools, click Install and run it again):

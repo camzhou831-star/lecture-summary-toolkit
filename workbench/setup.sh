@@ -18,12 +18,30 @@ have() { command -v "$1" >/dev/null 2>&1; }
 say "== 总结工作台:检查和安装" "== Lecture Workbench: checking and installing"
 OS="$(uname -s)"
 
+brew_env() {   # 装了 Homebrew 但这个窗口的 PATH 里还没有(双击启动、刚装完)时,补上
+  for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$b" ] && { eval "$("$b" shellenv)"; return 0; }
+  done
+  return 1
+}
+BREW_CMD='/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+
 if [ "$OS" = "Darwin" ]; then
+  have brew || brew_env || true
   if ! have brew; then
-    say "需要先装 Homebrew(Mac 上装软件用)。在终端运行下面这一行,按提示输入开机密码,装完再运行一次本脚本:" \
-        "Homebrew is needed first (it installs software on a Mac). Run this line, enter your Mac password when asked, then run this script again:"
-    echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
-    exit 1
+    say "需要先装 Homebrew(Mac 上装软件用的官方工具,https://brew.sh)。" "Homebrew is needed first (the standard way to install software on a Mac, https://brew.sh)."
+    if [ -t 0 ]; then
+      if zh; then read -r -p "现在安装吗?过程中要输入一次开机密码 [y/N] " ans; else read -r -p "Install it now? You'll be asked for your Mac password once [y/N] " ans; fi
+      case "$ans" in
+        y|Y|yes|YES) /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && brew_env || true ;;
+      esac
+    fi
+    if ! have brew; then
+      say "没有装上。可以在终端运行下面这一行装好,再重新运行本脚本(或再双击「启动工作台」):" \
+          "Not installed. Run this line in Terminal, then run this script again (or double-click Start again):"
+      echo "  $BREW_CMD"
+      exit 1
+    fi
   fi
   for pkg in uv yt-dlp ffmpeg whisper-cpp; do
     if brew list --formula "$pkg" >/dev/null 2>&1; then say "   ✓ $pkg 已安装" "   ✓ $pkg installed"
