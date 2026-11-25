@@ -53,14 +53,22 @@ def resolve(provider=None):
     raise LLMError("没有能用的模型:装好并登录 Claude Code 或 Codex,或者在「设置」里填 API Key(见 README)")
 
 
-def chat(messages, on_progress=None, max_tokens=8000, temperature=0.3, timeout=1200, provider=None, model=None):
-    """provider 不给就按设置选(见 resolve);审核时传另一家(见 review.reviewer)。model 只对 API 有效(审核用推理模型)"""
+def chat(messages, on_progress=None, max_tokens=8000, temperature=0.3, timeout=1200, provider=None, model=None,
+         images_dir=None, images=()):
+    """provider 不给就按设置选(见 resolve);审核时传另一家(见 review.reviewer)。model 只对 API 有效(审核用推理模型)。
+    看图:Claude Code 给 images_dir(只读,用 Read 工具自己挑着看);Codex 把 images 里的图附在提示后面;API 不看图"""
     p = provider if provider in PROVIDERS else resolve()
     if p == "api":
         return _api(messages, on_progress, max_tokens, temperature, timeout, model)
     if on_progress:
         on_progress(0)
-    return (_claude if p == "claude" else _codex)(messages, timeout)
+    if p == "claude":
+        return _claude(messages, timeout, images_dir)
+    return _codex(messages, timeout, images)
+
+
+def can_see_images(provider):
+    return provider in ("claude", "codex")
 
 
 # ---------- 本机命令行 ----------
@@ -93,13 +101,14 @@ def _run(cmd, stdin_text, timeout, cwd):
     return r.stdout
 
 
-def _claude(messages, timeout):
+def _claude(messages, timeout, images_dir=None):
     system, prompt = _flatten(messages)
     with tempfile.TemporaryDirectory(prefix="wb-claude-") as tmp:
         sp = os.path.join(tmp, "system.md")
         open(sp, "w", encoding="utf-8").write(system)
+        see = ["--add-dir", images_dir, "--allowedTools", "Read,Glob"] if images_dir and os.path.isdir(images_dir) else []
         out = _run(["claude", "-p", "--output-format", "json", "--no-session-persistence",
-                    "--system-prompt-file", sp, "--disallowedTools", "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch"],
+                    "--system-prompt-file", sp, *see, "--disallowedTools", "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch"],
                    prompt, timeout, tmp)
     try:
         j = json.loads(out)
@@ -115,12 +124,13 @@ def _claude(messages, timeout):
                   "finish_reason": j.get("subtype")}
 
 
-def _codex(messages, timeout):
+def _codex(messages, timeout, images=()):
     system, prompt = _flatten(messages)
+    imgs = [f"--image={f}" for f in list(images)[:20] if os.path.isfile(f)]       # 附图:最多 20 张(用 = 写法,免得后面的 - 被当成图)
     with tempfile.TemporaryDirectory(prefix="wb-codex-") as tmp:
         last = os.path.join(tmp, "last.md")
         _run(["codex", "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "--color", "never",
-              "-C", tmp, "-o", last, "-"],
+              "-C", tmp, "-o", last, *imgs, "-"],
              f"{system}\n\n---\n\n{prompt}\n\n(直接输出回答全文,不要运行任何命令、不要读写文件。)", timeout, tmp)
         text = open(last, encoding="utf-8").read().strip() if os.path.exists(last) else ""
     if not text:

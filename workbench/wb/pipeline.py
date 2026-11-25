@@ -100,9 +100,16 @@ RULES = {
 }
 
 
-def materials_rule(has_slides, has_frames):
+SEE = ("**你可以看截图**:用 Read 工具打开 `{dir}/<文件名>`(讲义稿里 📄 行写的文件名,文件名即秒数)。"
+       "这几类一定要打开看,把图上的文字、数值、表格写进总结:讲义稿标了「⚠️文字少,建议看图」的;OCR 明显是乱码的;"
+       "投屏的文档(评分细则、作业要求、课程通知、Unit Outline)、表格、图表、代码。其余不用逐张看,总共不超过 40 张。"
+       "图上看到的内容照常标来源 `[课件 t01234s.jpg]` / `[课件 pN]`。")
+
+
+def materials_rule(has_slides, has_frames, see_dir=None):
     if has_frames:
-        return RULES["frames"] + (" 另外附了课件逐页文字(每页以 `[课件 pN/M]` 开头),用来核对术语、数值、年份和讲师口误。" if has_slides else "")
+        frames = RULES["frames"].replace("你看不到图:讲义稿标了文字少的页,不要猜图里的内容。", SEE.format(dir=see_dir)) if see_dir else RULES["frames"]
+        return frames + (" 另外附了课件逐页文字(每页以 `[课件 pN/M]` 开头),用来核对术语、数值、年份和讲师口误。" if has_slides else "")
     return RULES["slides"] if has_slides else RULES["none"]
 
 
@@ -237,12 +244,21 @@ def run_task(task_id):
 
         out = summary_path(task)
         os.makedirs(os.path.dirname(out), exist_ok=True)
-        rule = materials_rule(bool(slides), has_frames) if is_course else None
+        try:
+            writer = llm.resolve()
+        except llm.LLMError:
+            writer = None
+        fdir = materials.frames_dir(root, task["vid"]) if has_frames else None
+        see_dir = fdir if fdir and writer == "claude" else None       # 写作方能看图:本机 Claude Code(只读这个目录)
+        wkw = {"images_dir": see_dir} if see_dir else {}
+        if see_dir:
+            log("== 写总结的 Claude Code 可以打开截图看图")
+        rule = materials_rule(bool(slides), has_frames, see_dir) if is_course else None
         messages = [{"role": "system", "content": system_prompt(task["out_lang"], task["template"], rule)},
                     {"role": "user", "content": user_prompt(task, meta, transcript, slides)}]
 
         def write():
-            text, info = llm.chat(messages, on_progress=lambda n: db.update(task_id, message=f"写总结… 已生成 {n} 字"))
+            text, info = llm.chat(messages, on_progress=lambda n: db.update(task_id, message=f"写总结… 已生成 {n} 字"), **wkw)
             log(f"== 模型 {info['model']} · {json.dumps(info.get('usage') or {}, ensure_ascii=False)} · 结束原因 {info.get('finish_reason')}")
             if info.get("finish_reason") == "length":
                 log("⚠️ 输出被截断(到了 max_tokens),总结可能不完整")
@@ -287,7 +303,7 @@ def run_task(task_id):
                 fix = convo + [{"role": "assistant", "content": text},
                                {"role": "user", "content": "检查结果如下。只修正这些问题(时间戳必须照抄输入里的 [MM:SS] 标签;对标拆稿要重新给出完整的 segments 代码块),"
                                                            "其余内容不动,按原来的格式输出完整的修正后结果:\n\n" + report + bad_lines(report, md)}]
-                text = strip_fence(llm.chat(fix)[0])
+                text = strip_fence(llm.chat(fix, **wkw)[0])
                 md, pre = render(text)
                 open(out, "w", encoding="utf-8").write(md)
                 ok, report = (False, "❌ " + pre) if pre else verify(md)
@@ -336,14 +352,18 @@ def run_task(task_id):
             """审核内容(见 review.py):独立审核 → 程序核对依据原文 → 两次独立复核 → 一致成立的改、有分歧的标待核实 → 重新核对格式;
             直到没有要处理的严重 / 一般问题,最多 REVIEW_ROUNDS 轮"""
             nonlocal ok, report
-            try:
-                writer = llm.resolve()
-            except llm.LLMError:
-                writer = None
             who, cross = review.reviewer(writer, llm.available())
             judges = [(writer, 0.2), (who, 0.2)] if cross else [(who, 0.2), (who, 0.8)]   # 交叉时两家各判一次;一家时同一家独立判两次
             rmodel = config.review_model()          # API(DeepSeek)审核和复核用推理更强的模型,写总结仍用默认模型
-            rkw = lambda prov: {"model": rmodel, "max_tokens": 20000} if prov == "api" and rmodel else {}
+            def rkw(prov, md=""):
+                """审核方的额外参数:DeepSeek 换推理模型;Claude 给截图目录;Codex 附上总结引用的截图"""
+                if prov == "api":
+                    return {"model": rmodel, "max_tokens": 20000} if rmodel else {}
+                if prov == "claude" and fdir:
+                    return {"images_dir": fdir}
+                if prov == "codex" and fdir:
+                    return {"images": [os.path.join(fdir, f) for f in dict.fromkeys(re.findall(r"t\d{5}s(?:-\d+)?\.jpg", md))]}
+                return {}
             mats = user_prompt(task, meta, transcript, slides)
             corpus = transcript + "\n" + slides + "\n" + open(srt, encoding="utf-8", errors="replace").read()
             rounds, remaining, passed, settled, marked, fixed = [], [], False, [], [], []
@@ -364,7 +384,7 @@ def run_task(task_id):
                 md = open(out, encoding="utf-8").read()
                 convo = messages + [{"role": "assistant", "content": md}, {"role": "user", "content": review.fix_prompt(items, lang)}]
                 try:
-                    new, no = review.split_declined(llm.chat(convo)[0], items)
+                    new, no = review.split_declined(llm.chat(convo, **wkw)[0], items)
                     ok2, report2, _ = settle(strip_fence(new), convo, "修正后核对没过")
                 except llm.LLMError as e:
                     log(f"⚠️ {label}没做成: {e}")
@@ -382,7 +402,8 @@ def run_task(task_id):
                 md = open(out, encoding="utf-8").read()
                 db.update(task_id, message=f"审核内容第 {n} 轮({who})…")
                 try:
-                    text = ask(review.messages(mats, md, lang, settled), **{"max_tokens": 6000, "temperature": 0, "provider": who, **rkw(who)})
+                    text = ask(review.messages(mats, md, lang, settled, see=fdir if who == "claude" else None),
+                               **{"max_tokens": 6000, "temperature": 0, "provider": who, **rkw(who, md)})
                     issues = review.parse(text)
                 except (llm.LLMError, review.ReviewError) as e:
                     log(f"⚠️ 第 {n} 轮审核没做成: {e}")
@@ -397,8 +418,8 @@ def run_task(task_id):
                     votes = []
                     for prov, temp in judges:
                         try:
-                            votes.append(review.parse_votes(ask(review.judge_messages(mats, md, bad, lang),
-                                                                **{"max_tokens": 3000, "temperature": temp, "provider": prov, **rkw(prov)}), len(bad)))
+                            votes.append(review.parse_votes(ask(review.judge_messages(mats, md, bad, lang, see=fdir if prov == "claude" else None),
+                                                                **{"max_tokens": 3000, "temperature": temp, "provider": prov, **rkw(prov, md)}), len(bad)))
                         except llm.LLMError as e:
                             log(f"⚠️ 复核没做成({prov}): {e}")
                             votes.append(["无法确定"] * len(bad))

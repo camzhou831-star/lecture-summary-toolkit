@@ -704,3 +704,36 @@ def test_writer_can_decline_wrong_review_issue(env, monkeypatch):
     rv = t["meta"]["review"]
     assert rv["passed"] and "写作方核实后不采纳:讲师口误,课件为准" in seen[1] and "写作方核实后没采纳" in rv["report"]
     assert "declined" not in open(p.summary_path(t), encoding="utf-8").read()
+
+
+def test_claude_writer_can_open_screenshots(env, monkeypatch):
+    """有画面时:写总结的 Claude Code 拿到截图目录(只读);交叉审核的 Codex 附上总结引用的截图"""
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    kind, vid, src = env["sources"].parse_source(env["srt"])
+    tid = db.create(kind, src, vid)
+    fdir = os.path.join(p.task_root(tid), "画面", vid)
+    os.makedirs(fdir)
+    open(os.path.join(fdir, "t00060s.jpg"), "wb").write(b"jpg")
+    json.dump([{"file": "t00060s.jpg", "t": 60, "text": "Rubric: zero marks", "chars": 18}], open(os.path.join(fdir, "ocr.json"), "w"))
+    cited = GOOD.replace("学习率决定步长", "学习率决定步长 [课件 t00060s.jpg]")
+    calls = []
+
+    def fake_chat(messages, on_progress=None, **k):
+        sysm = messages[0]["content"]
+        calls.append((sysm[:20], k))
+        if "专名校对员" in sysm:
+            return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "课程总结的审核员" in sysm:
+            return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        assert "Read 工具打开" in sysm and fdir in sysm
+        return cited, {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    monkeypatch.setattr(llm, "resolve", lambda provider=None: "claude")
+    monkeypatch.setattr(llm, "available", lambda: {"claude": (True, ""), "codex": (True, ""), "api": (False, "")})
+    p.run_task(tid)
+    t = db.get(tid)
+    assert t["status"] == "done", t["log"]
+    writer = [k for s, k in calls if not s.startswith(("你是专名", "你是课程总结的审核员"))][0]
+    rev = [k for s, k in calls if s.startswith("你是课程总结的审核员")][0]
+    assert writer.get("images_dir") == fdir
+    assert rev["provider"] == "codex" and rev["images"] == [os.path.join(fdir, "t00060s.jpg")] and t["meta"]["review"]["cross"]
