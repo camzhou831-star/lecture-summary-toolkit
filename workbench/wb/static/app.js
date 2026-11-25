@@ -6,7 +6,8 @@ const ICON = {
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   dot: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
 };
-const STAGES = ["fetch", "prepare", "summarize", "check", "names"];
+const STAGES = ["fetch", "prepare", "summarize", "check", "names", "review"];
+const stagesOf = (tpl) => !tpl || tpl === "course" ? STAGES : STAGES.filter((k) => k !== "review");   // 审核内容只有课程总结有
 const kindName = (k) => t("kind_" + k);
 const statusName = (s) => t("status_" + s);
 
@@ -70,7 +71,7 @@ function tplName(id) {
 function drawTemplates() {
   $("#tpl-pick").innerHTML = TEMPLATES.map((t) => tplCard(t, true)).join("");
   $("#tpl-list").innerHTML = TEMPLATES.map((t) => tplCard(t, false)).join("");
-  document.querySelectorAll("#tpl-pick .tpl:not(:disabled)").forEach((b) => b.onclick = () => { template = b.dataset.tpl; drawTemplates(); drawSrcHint(); });
+  document.querySelectorAll("#tpl-pick .tpl:not(:disabled)").forEach((b) => b.onclick = () => { template = b.dataset.tpl; drawTemplates(); drawSrcHint(); drawSlidesBtn(); });
   // 会议纪要:选中后在卡片下面选会议类型
   let row = $("#meet-row");
   if (!row) { row = document.createElement("div"); row.id = "meet-row"; row.className = "meet-row"; $("#tpl-pick").after(row); }
@@ -176,9 +177,10 @@ $("#form").addEventListener("submit", async (e) => {
   if (!source) return $("#source").focus();
   formMsg(t("submitting"));
   try {
+    const slides = await sendSlides();
     const t = await api("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, lang: $("#lang").value, out_lang: $("#out_lang").value, template: tplId() }) });
-    $("#source").value = ""; formMsg("");
+      body: JSON.stringify({ source, lang: $("#lang").value, out_lang: $("#out_lang").value, template: tplId(), slides }) });
+    $("#source").value = ""; formMsg(""); setSlides(null);
     await refresh(); location.hash = `#/t/${t.id}`;
   } catch (err) { formMsg(trServer(err.message), true); }
 });
@@ -186,14 +188,33 @@ $("#source").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.me
 $("#file").addEventListener("change", () => { if ($("#file").files[0]) upload($("#file").files[0]); });
 function formMsg(s, bad) { const m = $("#formmsg"); m.textContent = s; m.classList.toggle("bad", !!bad); }
 
+// 课件 PDF(只给课程总结):先选好,提交任务时先传课件、拿到文件名再建任务
+let slidesFile = null;
+function setSlides(f) {
+  slidesFile = f; $("#slides").value = "";
+  const chip = $("#slides-chip");
+  chip.hidden = !f; if (f) chip.querySelector(".nm").textContent = f.name;
+}
+function drawSlidesBtn() { const on = template === "course"; $("#slides-btn").hidden = !on; if (!on) setSlides(null); }
+$("#slides").addEventListener("change", () => { const f = $("#slides").files[0]; if (f) setSlides(f); });
+$("#slides-chip .x").onclick = () => setSlides(null);
+async function sendSlides() {
+  if (!slidesFile || template !== "course") return "";
+  const fd = new FormData(); fd.append("file", slidesFile);
+  formMsg(t("uploading", { n: slidesFile.name }));
+  return (await api("/api/slides", { method: "POST", body: fd })).slides;
+}
+
 async function upload(f) {
-  const fd = new FormData();
-  fd.append("file", f); fd.append("lang", $("#lang").value); fd.append("out_lang", $("#out_lang").value); fd.append("template", tplId());
-  formMsg(t("uploading", { n: f.name }));
+  if (/\.pdf$/i.test(f.name)) { if (template === "course") { setSlides(f); formMsg(""); } else formMsg(t("slides_course_only"), true); return; }
   try {
-    const t = await api("/api/upload", { method: "POST", body: fd });
-    formMsg(""); $("#file").value = "";
-    await refresh(); location.hash = `#/t/${t.id}`;
+    const slides = await sendSlides();
+    const fd = new FormData();
+    fd.append("file", f); fd.append("lang", $("#lang").value); fd.append("out_lang", $("#out_lang").value); fd.append("template", tplId()); fd.append("slides", slides);
+    formMsg(t("uploading", { n: f.name }));
+    const task = await api("/api/upload", { method: "POST", body: fd });
+    formMsg(""); $("#file").value = ""; setSlides(null);
+    await refresh(); location.hash = `#/t/${task.id}`;
   } catch (err) { formMsg(trServer(err.message), true); }
 }
 // 拖文件进新建页
@@ -289,7 +310,7 @@ async function drawSettings() {
     try { cfg = await api("/api/config/key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: "" }) }); toast(t("key_cleared")); drawSettings(); }
     catch (err) { toast(trServer(err.message)); }
   };
-  const NEED = { "yt-dlp": "tool_ytdlp", ffmpeg: "tool_ffmpeg", ffprobe: "tool_ffprobe", "whisper-cli": "tool_whisper" };
+  const NEED = { "yt-dlp": "tool_ytdlp", ffmpeg: "tool_ffmpeg", ffprobe: "tool_ffprobe", "whisper-cli": "tool_whisper", tesseract: "tool_tess" };
   $("#set-tools").innerHTML = s.tools.map((x) => `<li><span class="ck ${x.path ? "ok" : "no"}">${x.path ? ok : no}</span>
     <span>${esc(x.name.replace("whisper 模型", "whisper model"))}</span><span class="sub">${t(NEED[x.name] || "tool_model")}${x.path ? " · " + esc(x.path) : " · " + t("not_found")}</span></li>`).join("");
   const n = s.counts, total = Object.values(n).reduce((a, b) => a + b, 0);
@@ -325,7 +346,9 @@ function drawDetail(t) {
   $("#d-retry").disabled = $("#d-del").disabled = t.status === "running";
 
   const tr = window.t;
-  $("#steps").innerHTML = STAGES.map((k, i) => {
+  const stages = stagesOf(t.template);
+  $("#steps").style.gridTemplateColumns = innerWidth > 980 ? `repeat(${stages.length}, 1fr)` : "";
+  $("#steps").innerHTML = stages.map((k, i) => {
     const ok = t.timings[k] != null && !(t.status !== "done" && t.stage === k);
     const now = t.status === "running" && t.stage === k;
     const bad = t.status === "failed" && t.stage === k;
@@ -344,6 +367,7 @@ function drawDetail(t) {
   const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
   if (pre.textContent !== t.log) { pre.textContent = t.log || ""; if (atBottom) pre.scrollTop = pre.scrollHeight; }
   drawNames(t);
+  drawReview(t);
   const ck = $("#d-check");
   ck.className = "callout " + (t.check_report ? (t.check_ok ? "ok" : "bad") : "");
   ck.textContent = t.check_report || "";
@@ -777,6 +801,15 @@ function drawNames(task) {
   el.className = "names-box" + (unsure ? " warn" : "");
   el.querySelector("summary").textContent = parts.length ? parts.join(" · ") : t("names_ok");
   el.querySelector("pre").textContent = n.report || "";
+}
+function drawReview(task) {
+  const el = $("#d-review"), r = task.status === "done" && task.meta && task.meta.review;
+  el.hidden = !r;
+  if (!r) return;
+  el.className = "names-box" + (r.passed ? "" : " warn");
+  el.querySelector("summary").textContent = r.passed ? t("review_pass", { n: r.rounds, who: r.reviewer || "", how: t(r.cross ? "review_cross" : "review_self") })
+    : r.remaining ? t("review_left", { n: r.remaining }) : r.marked ? t("review_marked", { n: r.rounds, m: r.marked, f: r.fixed || 0 }) : t("review_none");
+  el.querySelector("pre").textContent = r.report || "";
 }
 function drawTip(task) {
   const el = $("#d-tip");

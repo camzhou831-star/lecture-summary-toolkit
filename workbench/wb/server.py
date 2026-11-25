@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, db, llm, pipeline, sources, templates, worker
+from . import config, db, llm, materials, pipeline, sources, templates, worker
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 LANGS = {"auto", "zh", "en", "ja", "ko", "fr", "de", "es"}
@@ -34,6 +34,44 @@ class NewTask(BaseModel):
     lang: str = "auto"
     out_lang: str = "zh"
     template: str = "course"
+    slides: str = ""          # /api/slides 返回的课件文件名(可选,只用于课程总结)
+
+
+def _slides_up():
+    return os.path.join(config.DATA, "uploads", "slides")
+
+
+def _slides_file(name):
+    """/api/slides 存下的课件:只认 uploads/slides/ 里的 pdf 文件名,不接受路径"""
+    if not name:
+        return None
+    if os.path.basename(name) != name or not name.lower().endswith(".pdf"):
+        raise HTTPException(400, "课件文件名不对")
+    p = os.path.join(_slides_up(), name)
+    if not os.path.isfile(p):
+        raise HTTPException(400, "找不到上传的课件,重新选一次")
+    return p
+
+
+def _add_slides(tid, sp):
+    if sp:
+        d = materials.slides_dir(pipeline.task_root(tid))
+        os.makedirs(d, exist_ok=True)
+        shutil.copyfile(sp, os.path.join(d, os.path.basename(sp)))
+
+
+def _save_upload(file, dest_dir):
+    name = os.path.basename(file.filename or "upload")
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, name)
+    i = 1
+    while os.path.exists(dest):
+        stem, e = os.path.splitext(name)
+        dest = os.path.join(dest_dir, f"{stem}-{i}{e}")
+        i += 1
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f, 1 << 20)
+    return dest
 
 
 def _check_template(t):
@@ -137,7 +175,8 @@ def get_status():
     import deps
     model = os.path.join(deps.MODEL_DIR, "ggml-" + os.environ.get("WHISPER_MODEL", "large-v3-turbo") + ".bin")
     tools = [{"name": n, "path": deps.find(n), "need": need} for n, need in
-             (("yt-dlp", "B 站 / YouTube 链接"), ("ffmpeg", "转写前抽音频"), ("ffprobe", "读视频时长"), ("whisper-cli", "本地转写"))]
+             (("yt-dlp", "B 站 / YouTube 链接"), ("ffmpeg", "转写前抽音频"), ("ffprobe", "读视频时长"), ("whisper-cli", "本地转写"),
+                                                   ("tesseract", "读本地视频的画面文字,课程总结对课件页码(可选)"))]
     tools.append({"name": "whisper 模型 " + os.path.basename(model), "path": model if os.path.isfile(model) else None, "need": "本地转写(第一次用时自动下载)"})
     counts = {}
     for t in db.list_all(limit=100000):
@@ -155,31 +194,35 @@ def create_task(body: NewTask):
         kind, vid, source = sources.parse_source(body.source)
     except sources.SourceError as e:
         raise HTTPException(400, str(e))
+    sp = _slides_file(body.slides)
     tid = db.create(kind, source, vid, lang=body.lang, out_lang=body.out_lang, template=body.template)
+    _add_slides(tid, sp)
     worker.kick()
     return _public(db.get(tid))
 
 
+@app.post("/api/slides")
+def upload_slides(file: UploadFile = File(...)):
+    """课件 PDF 先传上来,建任务时带上返回的文件名"""
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "课件只支持 PDF(PowerPoint 先另存为 PDF)")
+    dest = _save_upload(file, _slides_up())
+    return {"slides": os.path.basename(dest)}
+
+
 @app.post("/api/upload")
-def upload(file: UploadFile = File(...), lang: str = Form("auto"), out_lang: str = Form("zh"), template: str = Form("course")):
+def upload(file: UploadFile = File(...), lang: str = Form("auto"), out_lang: str = Form("zh"), template: str = Form("course"),
+           slides: str = Form("")):
     _check_langs(lang, out_lang)
     _check_template(template)
-    name = os.path.basename(file.filename or "upload")
-    ext = os.path.splitext(name)[1].lower()
+    ext = os.path.splitext(os.path.basename(file.filename or "upload"))[1].lower()
     if ext not in sources.VIDEO_EXTS + sources.SUB_EXTS:
-        raise HTTPException(400, f"不支持的文件类型 {ext}(支持视频、音频、.srt、.vtt)")
-    up = os.path.join(config.DATA, "uploads")
-    os.makedirs(up, exist_ok=True)
-    dest = os.path.join(up, name)
-    i = 1
-    while os.path.exists(dest):
-        stem, e = os.path.splitext(name)
-        dest = os.path.join(up, f"{stem}-{i}{e}")
-        i += 1
-    with open(dest, "wb") as f:
-        shutil.copyfileobj(file.file, f, 1 << 20)
+        raise HTTPException(400, f"不支持的文件类型 {ext}(支持视频、音频、.srt、.vtt;课件 PDF 用「课件」按钮)")
+    sp = _slides_file(slides)
+    dest = _save_upload(file, os.path.join(config.DATA, "uploads"))
     kind, vid, source = sources.parse_source(dest)
     tid = db.create(kind, source, vid, lang=lang, out_lang=out_lang, template=template)
+    _add_slides(tid, sp)
     worker.kick()
     return _public(db.get(tid))
 
@@ -240,6 +283,7 @@ def retry(tid: int):
 class DeriveBody(BaseModel):
     template: str
     out_lang: str = "zh"
+    slides: str = ""          # 换用途时顺便补课件(可选);不给就沿用原任务的课件
 
 
 @app.post("/api/tasks/{tid}/derive")
@@ -252,6 +296,7 @@ def derive(tid: int, body: DeriveBody):
     srt = os.path.join(src_root, "课程视频", t["vid"] + ".srt")
     if not os.path.isfile(srt) or os.path.getsize(srt) == 0:
         raise HTTPException(400, "这个任务还没拿到文字稿,等它拿完再换用途")
+    sp = _slides_file(body.slides)
     timings = {"fetch": t["timings"]["fetch"]} if t["timings"].get("fetch") is not None else {}
     nid = db.create(t["kind"], t["source"], t["vid"], lang=t["lang"], out_lang=body.out_lang, template=body.template, title=t["title"])
     dst_root = pipeline.task_root(nid)
@@ -260,11 +305,19 @@ def derive(tid: int, body: DeriveBody):
         p = os.path.join(src_root, "课程视频", name)
         if os.path.isfile(p):
             shutil.copyfile(p, os.path.join(dst_root, "课程视频", name))
+    if sp:
+        _add_slides(nid, sp)
+    elif os.path.isdir(materials.slides_dir(src_root)):                       # 沿用原任务的课件
+        shutil.copytree(materials.slides_dir(src_root), materials.slides_dir(dst_root))
+    frames = materials.frames_dir(src_root, t["vid"])
+    if os.path.isfile(os.path.join(frames, "ocr.json")):                       # 画面(抽帧 + OCR)也沿用,不用重抽
+        shutil.copytree(frames, materials.frames_dir(dst_root, t["vid"]))
     for name in ("meta.json", "来源.txt"):
         p = os.path.join(src_root, name)
         if os.path.isfile(p):
             shutil.copyfile(p, os.path.join(dst_root, name))
-    meta = dict(t["meta"] or {}, derived_from=tid)
+    meta = {k: v for k, v in (t["meta"] or {}).items() if k not in ("names", "review", "materials")}   # 上一份的核对结果不带过去
+    meta["derived_from"] = tid
     with open(os.path.join(dst_root, "meta.json"), "w", encoding="utf-8") as f:   # 跑的时候 pipeline 从这里读视频信息
         json.dump(meta, f, ensure_ascii=False, indent=1)
     db.update(nid, meta=meta, timings=timings, message="排队中(沿用任务 %d 的文字稿)" % tid)

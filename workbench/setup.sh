@@ -43,7 +43,7 @@ if [ "$OS" = "Darwin" ]; then
       exit 1
     fi
   fi
-  for pkg in uv yt-dlp ffmpeg whisper-cpp; do
+  for pkg in uv yt-dlp ffmpeg whisper-cpp tesseract poppler; do    # tesseract / poppler:读视频画面文字、读课件 PDF(课程总结用)
     if brew list --formula "$pkg" >/dev/null 2>&1; then say "   ✓ $pkg 已安装" "   ✓ $pkg installed"
     else say "   … 安装 $pkg" "   … installing $pkg"; brew install "$pkg"; fi
   done

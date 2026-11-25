@@ -53,10 +53,11 @@ def resolve(provider=None):
     raise LLMError("没有能用的模型:装好并登录 Claude Code 或 Codex,或者在「设置」里填 API Key(见 README)")
 
 
-def chat(messages, on_progress=None, max_tokens=8000, temperature=0.3, timeout=1200):
-    p = resolve()
+def chat(messages, on_progress=None, max_tokens=8000, temperature=0.3, timeout=1200, provider=None, model=None):
+    """provider 不给就按设置选(见 resolve);审核时传另一家(见 review.reviewer)。model 只对 API 有效(审核用推理模型)"""
+    p = provider if provider in PROVIDERS else resolve()
     if p == "api":
-        return _api(messages, on_progress, max_tokens, temperature, timeout)
+        return _api(messages, on_progress, max_tokens, temperature, timeout, model)
     if on_progress:
         on_progress(0)
     return (_claude if p == "claude" else _codex)(messages, timeout)
@@ -120,7 +121,7 @@ def _codex(messages, timeout):
         last = os.path.join(tmp, "last.md")
         _run(["codex", "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "--color", "never",
               "-C", tmp, "-o", last, "-"],
-             f"{system}\n\n---\n\n{prompt}\n\n(直接输出总结的 Markdown 全文,不要运行任何命令、不要读写文件。)", timeout, tmp)
+             f"{system}\n\n---\n\n{prompt}\n\n(直接输出回答全文,不要运行任何命令、不要读写文件。)", timeout, tmp)
         text = open(last, encoding="utf-8").read().strip() if os.path.exists(last) else ""
     if not text:
         raise LLMError("Codex 没有返回内容")
@@ -128,11 +129,12 @@ def _codex(messages, timeout):
 
 
 # ---------- OpenAI 兼容接口 ----------
-def _api(messages, on_progress, max_tokens, temperature, timeout):
+def _api(messages, on_progress, max_tokens, temperature, timeout, model=None):
     cfg = llm_config()
+    model = model or cfg.model
     if not cfg.api_key:
         raise LLMError("没有配置模型 Key:设环境变量 DEEPSEEK_API_KEY,或写 ~/.config/lecture-workbench/config.json(见 README)")
-    body = {"model": cfg.model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature, "stream": True}
+    body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature, "stream": True}
     headers = {"Authorization": f"Bearer {cfg.api_key}", "Content-Type": "application/json"}
     parts, usage, finish = [], None, None
     try:
@@ -162,4 +164,4 @@ def _api(messages, on_progress, max_tokens, temperature, timeout):
     text = "".join(parts).strip()
     if not text:
         raise LLMError("模型没有返回内容")
-    return text, {"model": cfg.model, "usage": usage, "finish_reason": finish}
+    return text, {"model": model, "usage": usage, "finish_reason": finish}

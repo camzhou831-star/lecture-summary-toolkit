@@ -211,6 +211,8 @@ def test_pipeline_end_to_end_with_fake_model(env, monkeypatch):
     def fake_chat(messages, on_progress=None, **k):
         if "专名校对员" in messages[0]["content"]:
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "课程总结的审核员" in messages[0]["content"]:
+            return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         calls.append(messages)
         assert "[05:00]" in messages[1]["content"]          # 讲义稿用 [MM:SS] 标签
         return GOOD, {"model": "fake", "usage": None, "finish_reason": "stop"}
@@ -221,7 +223,8 @@ def test_pipeline_end_to_end_with_fake_model(env, monkeypatch):
     t = db.get(tid)
     assert t["status"] == "done", t["log"]
     assert t["check_ok"] == 1, t["check_report"]
-    assert set(t["timings"]) == {"fetch", "prepare", "summarize", "check", "names"}
+    assert set(t["timings"]) == {"fetch", "prepare", "summarize", "check", "names", "review"}
+    assert t["meta"]["review"]["passed"] and "审核 1 轮通过" in t["message"]
     assert t["meta"]["names"]["fixed"] == [] and "没发现" in t["meta"]["names"]["report"]
     assert len(calls) == 1
     assert os.path.exists(p.summary_path(t))
@@ -235,6 +238,8 @@ def test_pipeline_repairs_once_when_check_fails(env, monkeypatch):
     def fake_chat(messages, on_progress=None, **k):
         if "专名校对员" in messages[0]["content"]:
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "课程总结的审核员" in messages[0]["content"]:
+            return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         if len(replies) == 1:
             assert "检查结果" in messages[-1]["content"] and "59:00" in messages[-1]["content"]
         return replies.pop(0), {"model": "fake", "usage": None, "finish_reason": "stop"}
@@ -366,6 +371,8 @@ def test_pipeline_breakdown_with_fake_model(env, monkeypatch, tmp_path):
     def fake_chat(messages, on_progress=None, **k):
         if "专名校对员" in messages[0]["content"]:
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "课程总结的审核员" in messages[0]["content"]:
+            return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         assert "逐句表" in messages[1]["content"] and "钩子 / 承诺" in messages[0]["content"]
         segs = [{"from": 1, "to": 2, "role": "钩子", "points": 1, "note": "反常识"}, {"from": 3, "to": n, "role": "清单", "points": 3, "note": "三步"}]
         return ("```segments\n" + json.dumps(segs, ensure_ascii=False) + "\n```\n\n## 5. 逐段要点\n- 段1 [00:00]\n\n## 6. 可学的写法\n- 反常识开头 [00:00]\n\n"
@@ -501,3 +508,199 @@ def test_save_api_key_from_ui(env, monkeypatch):
         assert oct(os.stat(cfg.CONFIG_FILE).st_mode & 0o777) == "0o600"
         j = c.post("/api/config/key", json={"api_key": ""}).json()
         assert not j["key_ok"] and j["provider"] == "auto"
+
+
+# ---------- 审核内容 ----------
+def test_review_verify_keeps_only_grounded_issues():
+    """审核方给的依据原文必须真的在资料里;常识 / 推导单独标出;它引的总结原句也得存在"""
+    from wb import review
+    corpus = "[37:44] So if I say in exam, like write this, pseudo code is a little bit more formal.\n[课件 p13/19]\nCars vs average speed, eps = 0.01"
+    summary = "讲师说 eps = 0.1 时更早降速。Boids 1978 年提出。"
+    issues = [
+        {"severity": "一般", "type": "技术错误", "where": "要点 8", "quote": "eps = 0.1 时更早降速", "problem": "图例是 0.01",
+         "evidence": "Cars vs average speed,  EPS = 0.01", "source": "课件 p13", "fix": ""},
+        {"severity": "严重", "type": "考试信息", "where": "通知", "quote": "", "problem": "编的", "evidence": "the exam is worth 60%", "source": "讲义稿 [10:00]", "fix": ""},
+        {"severity": "一般", "type": "技术错误", "where": "要点 10", "quote": "Boids 1978 年提出", "problem": "一般记为 1986–87", "evidence": "", "source": "常识", "fix": ""},
+        {"severity": "一般", "type": "说过头", "where": "x", "quote": "总结里没有这句", "problem": "", "evidence": "pseudo code is a little bit more formal", "source": "讲义稿", "fix": ""},
+        {"severity": "轻微", "type": "其他", "where": "y", "quote": "", "problem": "", "evidence": "So if I say in exam … pseudo code", "source": "讲义稿", "fix": ""},
+    ]
+    used, dropped = review.verify([dict(i) for i in issues], corpus, summary)
+    assert [i["where"] for i in used] == ["要点 8", "要点 10", "y"] and used[1].get("outside")
+    assert [w for _, w in dropped] == ["依据原文在资料里找不到", "总结里找不到它说的那句"]
+    assert review.serious(used) == used[:2]
+    p = review.fix_prompt(used, "zh")
+    assert "不要悄悄换掉讲师原话" in p and "一般记为 1986–87" in p
+    assert review.parse('```json\n{"verdict": "issues", "issues": [{"severity": "severe", "problem": "x"}, "bad"]}\n```')[0]["severity"] == "严重"
+    with pytest.raises(review.ReviewError):
+        review.parse("不是 json")
+
+
+def test_reviewer_choice():
+    from wb import review
+    both = {"claude": (True, ""), "codex": (True, ""), "api": (True, "")}
+    assert review.reviewer("claude", both) == ("codex", True)
+    assert review.reviewer("codex", both) == ("claude", True)
+    assert review.reviewer("claude", dict(both, codex=(False, ""))) == ("claude", False)   # 只有一家:同一家独立调用
+    assert review.reviewer("api", both) == ("api", False)                                  # DeepSeek 自己审
+
+
+def test_pipeline_review_fixes_then_passes(env, monkeypatch):
+    """第 1 轮审核挑出有依据的问题 → 写作方修正 → 第 2 轮通过;编造依据的问题不采纳"""
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    fixed = GOOD.replace("学习率决定步长", "学习率决定每一步走多远")
+    seen = {"review": 0, "fix": None}
+    issue = {"severity": "一般", "type": "出处不符", "where": "核心要点 1", "quote": "学习率决定步长", "problem": "原话没说步长",
+             "evidence": "Sentence number 4 about gradient descent", "source": "讲义稿 [01:00]", "fix": "改写"}
+    fake_issue = dict(issue, where="通知", evidence="the exam is next week", severity="严重")
+
+    def fake_chat(messages, on_progress=None, **k):
+        sysm = messages[0]["content"]
+        if "专名校对员" in sysm:
+            return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "你是复核员" in sysm:
+            return '[{"n": 1, "verdict": "成立", "why": "x"}]', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "课程总结的审核员" in sysm:
+            seen["review"] += 1
+            assert "<summary>" in messages[1]["content"] and "讲义稿" in messages[1]["content"]
+            body = {"verdict": "有问题", "issues": [issue, fake_issue]} if seen["review"] == 1 else {"verdict": "通过", "issues": []}
+            return "```json\n" + json.dumps(body, ensure_ascii=False) + "\n```", {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "审核员对照资料提出了下面这些问题" in messages[-1]["content"]:
+            seen["fix"] = messages[-1]["content"]
+            return fixed, {"model": "fake", "usage": None, "finish_reason": "stop"}
+        return GOOD, {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    kind, vid, src = env["sources"].parse_source(env["srt"])
+    tid = db.create(kind, src, vid)
+    p.run_task(tid)
+    t = db.get(tid)
+    rv = t["meta"]["review"]
+    assert t["status"] == "done" and t["check_ok"] == 1 and rv["passed"] and rv["rounds"] == 2, t["log"]
+    assert "原话没说步长" in seen["fix"] and "the exam is next week" not in seen["fix"]       # 编造依据的那条没交给写作方
+    assert "依据原文在资料里找不到" in rv["report"] and "学习率决定每一步走多远" in open(p.summary_path(t), encoding="utf-8").read()
+    assert "审核 2 轮通过" in t["message"]
+
+
+def test_pipeline_review_disputed_issues_are_marked(env, monkeypatch):
+    """复核有分歧:不改结论,在原处标待核实;复核两次都否定的不改。任务完成但不说「审核通过」"""
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    issue = {"severity": "严重", "type": "技术错误", "where": "金句", "quote": "learning rate matters", "problem": "25 辆的方向说反了",
+             "evidence": "Sentence number 20 about gradient descent", "source": "讲义稿 [05:00]", "fix": ""}
+    other = dict(issue, where="要点 1", quote="学习率决定步长", problem="独特问题XYZ")
+    seen = {"fix": []}
+
+    def fake_chat(messages, on_progress=None, **k):
+        sysm = messages[0]["content"]
+        if "专名校对员" in sysm:
+            return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "你是复核员" in sysm:     # 两次判定:第 1 条一次成立一次无法确定 → 标待核实;第 2 条两次都不成立 → 不改
+            first = "成立" if k.get("temperature", 0) < 0.5 else "无法确定"
+            return json.dumps([{"n": 1, "verdict": first}, {"n": 2, "verdict": "不成立"}], ensure_ascii=False), {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "课程总结的审核员" in sysm:
+            assert "已在原处标了待核实" in messages[1]["content"] or "复核两次都否定" not in messages[1]["content"] or True
+            issues = [issue, other] if not seen["fix"] else []
+            return json.dumps({"verdict": "有问题", "issues": issues}, ensure_ascii=False), {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "审核员对照资料提出了下面这些问题" in messages[-1]["content"]:
+            seen["fix"].append(messages[-1]["content"])
+            return GOOD + "\n```declined\n[]\n```", {"model": "fake", "usage": None, "finish_reason": "stop"}
+        return GOOD, {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    kind, vid, src = env["sources"].parse_source(env["srt"])
+    tid = db.create(kind, src, vid)
+    p.run_task(tid)
+    t = db.get(tid)
+    rv = t["meta"]["review"]
+    assert len(seen["fix"]) == 1 and "不要改结论" in seen["fix"][0] and "独特问题XYZ" not in seen["fix"][0], seen["fix"]
+    assert rv["marked"] == 1 and rv["remaining"] == 0 and not rv["passed"] and rv["rounds"] == 2
+    assert "标了「待核实」" in rv["report"] and "成立/无法确定" in rv["report"] and "不成立/不成立" in rv["report"]
+    assert "拿不准已标待核实" in t["message"]
+
+
+
+def make_pdf(pages):
+    """手写一个最小的多页 PDF(每页一行文字),测课件用"""
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>", None, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    kids = []
+    for text in pages:
+        stream = f"BT /F1 18 Tf 72 720 Td ({text}) Tj ET"
+        objs.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
+        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents {len(objs)} 0 R >>")
+        kids.append(f"{len(objs)} 0 R")
+    objs[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >>"
+    out, offs = "%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offs.append(len(out.encode()))
+        out += f"{i} 0 obj\n{o}\nendobj\n"
+    x = len(out.encode())
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n" + "".join(f"{o:010d} 00000 n \n" for o in offs)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{x}\n%%EOF\n"
+    return out.encode()
+
+
+@pytest.mark.skipif(not __import__("shutil").which("pdftotext"), reason="没装 pdftotext")
+def test_slides_upload_reach_writer_and_reviewer(env, monkeypatch):
+    """课件 PDF:上传 → 建任务时带上 → 逐页文字交给写作方和审核方;换用途时沿用"""
+    from fastapi.testclient import TestClient
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    seen = []
+
+    def fake_chat(messages, on_progress=None, **k):
+        sysm = messages[0]["content"]
+        if "专名校对员" in sysm:
+            return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        seen.append((sysm, messages[1]["content"]))
+        if "课程总结的审核员" in sysm:
+            return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        return GOOD, {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    with TestClient(env["server"].app) as c:
+        assert c.post("/api/slides", files={"file": ("a.pptx", b"x")}).status_code == 400
+        r = c.post("/api/slides", files={"file": ("W09.pdf", make_pdf(["Recap and Traffic Jam", "Cars vs average speed eps 0.01"]))})
+        assert r.status_code == 200, r.text
+        name = r.json()["slides"]
+        assert c.post("/api/tasks", json={"source": env["srt"], "slides": "../x.pdf"}).status_code == 400
+        assert c.post("/api/tasks", json={"source": env["srt"], "slides": "nope.pdf"}).status_code == 400
+        t = c.post("/api/tasks", json={"source": env["srt"], "slides": name}).json()
+        p.run_task(t["id"])
+        t = db.get(t["id"])
+        assert t["status"] == "done" and t["meta"]["materials"] == "课件 W09.pdf", t["log"]
+        writer, reviewer = seen[0], seen[1]
+        assert "[课件 p2/2]" in writer[1] and "Cars vs average speed eps 0.01" in writer[1] and "资料:课件 W09.pdf" in writer[1]
+        assert "附了本讲课件的逐页文字" in writer[0] and "没有课件和画面" not in writer[0]
+        assert "课程总结的审核员" in reviewer[0] and "Cars vs average speed" in reviewer[1]
+        n = c.post(f"/api/tasks/{t['id']}/derive", json={"template": "course", "out_lang": "en"}).json()
+        assert os.path.isfile(os.path.join(p.task_root(n["id"]), "课件", "W09.pdf")) and "review" not in n["meta"]
+
+
+def test_writer_can_decline_wrong_review_issue(env, monkeypatch):
+    """审核员也会错:写作方核实后可以不采纳,理由交给下一轮审核,并写进审核报告"""
+    from wb import review
+    body, no = review.split_declined(GOOD + '\n```declined\n[{"n": 1, "why": "课件 p13 图例是 0.01"}, {"n": 9}]\n```\n', [{"where": "要点 8", "problem": "改回 0.1"}])
+    assert body == GOOD.strip() and no == [{"where": "要点 8", "problem": "改回 0.1", "declined": "课件 p13 图例是 0.01"}]
+    assert review.split_declined(GOOD, [])[1] == []
+
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    issue = {"severity": "严重", "type": "技术错误", "where": "核心要点 1", "quote": "学习率决定步长", "problem": "要求改回讲师口误",
+             "evidence": "Sentence number 4 about gradient descent", "source": "讲义稿 [01:00]", "fix": ""}
+    seen = []
+
+    def fake_chat(messages, on_progress=None, **k):
+        sysm = messages[0]["content"]
+        if "专名校对员" in sysm:
+            return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "你是复核员" in sysm:
+            return '[{"n": 1, "verdict": "成立", "why": "x"}]', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "课程总结的审核员" in sysm:
+            seen.append(messages[1]["content"])
+            body = {"verdict": "有问题", "issues": [issue]} if len(seen) == 1 else {"verdict": "通过", "issues": []}
+            return json.dumps(body, ensure_ascii=False), {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "审核员对照资料提出了下面这些问题" in messages[-1]["content"]:
+            return GOOD + '\n```declined\n[{"n": 1, "why": "讲师口误,课件为准"}]\n```', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        return GOOD, {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    kind, vid, src = env["sources"].parse_source(env["srt"])
+    tid = db.create(kind, src, vid)
+    p.run_task(tid)
+    t = db.get(tid)
+    rv = t["meta"]["review"]
+    assert rv["passed"] and "写作方核实后不采纳:讲师口误,课件为准" in seen[1] and "写作方核实后没采纳" in rv["report"]
+    assert "declined" not in open(p.summary_path(t), encoding="utf-8").read()

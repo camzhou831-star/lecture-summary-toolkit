@@ -175,6 +175,10 @@ code, kbd, pre { font-family: var(--mono); }
 .composer-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .composer-bar .btn-ghost { height: 34px; font-size: 13px; padding: 0 12px; }
 .composer-bar .btn-ghost svg { width: 16px; height: 16px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 10px; border-radius: 999px; background: var(--subtle); font-size: 12px; max-width: 220px; }
+.chip .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip .x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 50%; }
+.chip .x:hover { background: var(--surface); color: var(--text); }
 .formmsg { min-height: 20px; font-size: 13px; margin: 10px 2px 0; color: var(--muted); }
 .formmsg.bad { color: var(--bad); }
 .section-label { font-size: 13px; font-weight: 500; color: var(--muted); margin: 26px 2px 10px; }

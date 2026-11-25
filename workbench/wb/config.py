@@ -54,6 +54,15 @@ def llm_config() -> LLMConfig:
     return LLMConfig(key, base.rstrip("/"), model, source, provider)
 
 
+def review_model():
+    """审核 / 复核用的模型(只对 API 有效)。DeepSeek 默认用推理更强的 deepseek-v4-pro;别的接口默认和写总结同一个"""
+    fc = _file_config()
+    m = os.environ.get("LLM_REVIEW_MODEL") or fc.get("review_model")
+    if m:
+        return m
+    return "deepseek-v4-pro" if "deepseek.com" in llm_config().base_url else None
+
+
 BROWSERS = ("chrome", "safari", "firefox", "edge", "brave", "arc")
 
 

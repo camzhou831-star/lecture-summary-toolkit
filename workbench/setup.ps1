@@ -30,6 +30,11 @@ foreach ($p in $pkgs) {
   Refresh-Path
   if (-not (Have $p[0])) { Say "   ! $($p[0]) 装完还找不到;关掉这个窗口,再双击一次 启动工作台.bat" "   ! $($p[0]) still not found; close this window and double-click 启动工作台.bat again"; exit 1 }
 }
+# 可选:读视频画面文字(课程总结对课件页码用)。装不上不影响别的功能;课件 PDF 用 Python 包 pypdf 读,不用另装
+if (-not (Have "tesseract") -and -not (Test-Path "$env:ProgramFiles\Tesseract-OCR\tesseract.exe")) {
+  Say "   … 安装 tesseract(读视频画面文字,可选)" "   … installing tesseract (reads on-screen text; optional)"
+  winget install -e --id UB-Mannheim.TesseractOCR --accept-package-agreements --accept-source-agreements --silent | Out-Host
+}
 
 Say "== Python 依赖" "== Python dependencies"
 uv sync --quiet

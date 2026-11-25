@@ -293,8 +293,15 @@ def fetch(task, root, log):
             shutil.copyfile(source, srt)
             how = "本地 .srt 字幕"
         else:
-            transcribe(source, base, lang, log)
-            how = "本地文件 + whisper large-v3-turbo 转写,时间精度约 ±0.5 秒,同音错字未校"
+            stem = os.path.splitext(source)[0]
+            side = next((stem + e for e in (".srt", ".vtt") if os.path.isfile(stem + e) and os.path.getsize(stem + e) > 0), None)
+            if side:      # 视频旁边有同名字幕(学校录播常一起给,或之前转写过):直接用,不再转写
+                (shutil.copyfile if side.endswith(".srt") else vtt_to_srt)(side, srt)
+                how = f"视频旁边的同名字幕 {os.path.basename(side)}"
+                log(f"== 用视频旁边的同名字幕 {os.path.basename(side)},不再转写")
+            else:
+                transcribe(source, base, lang, log)
+                how = "本地文件 + whisper large-v3-turbo 转写,时间精度约 ±0.5 秒,同音错字未校"
             meta["duration"] = media_duration(source)
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=1)
