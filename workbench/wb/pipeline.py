@@ -10,12 +10,12 @@ import subprocess
 import sys
 import time
 
-from . import breakdown, config, db, llm, sources, templates
+from . import breakdown, config, db, llm, names, sources, templates
 
 sys.path.insert(0, config.TOOLS)
 import headings as H  # noqa: E402  录播课工具的小节标题约定
 
-STAGES = {"fetch": "拿文字稿", "prepare": "整理讲义稿", "summarize": "写总结", "check": "核对时间戳"}
+STAGES = {"fetch": "拿文字稿", "prepare": "整理讲义稿", "summarize": "写总结", "check": "核对时间戳", "names": "核对专名"}
 
 
 def task_root(task_id):
@@ -243,6 +243,37 @@ def run_task(task_id):
             return ok, report
 
         ok, report = timed("check", finish)
+
+        def check_names():
+            """专名核对(见 names.py):有把握的直接改并注明原转写,拿不准的列成待核实;出错只记日志"""
+            nonlocal ok, report
+            md = open(out, encoding="utf-8").read()
+            try:
+                text, _ = llm.chat(names.messages(md, lang), max_tokens=3000, temperature=0)
+                fixes, unsure = names.parse(text)
+            except (llm.LLMError, names.NamesError) as e:
+                log(f"⚠️ 专名核对没做成(总结不受影响): {e}")
+                return None
+            new, used, skipped = names.apply(md, fixes)
+            if used:
+                open(out, "w", encoding="utf-8").write(new)
+                ok2, report2 = verify(new)
+                if ok and not ok2:      # 改完反而核对不过:整份退回
+                    open(out, "w", encoding="utf-8").write(md)
+                    log("⚠️ 专名改完后核对不过,已退回改之前:\n" + report2)
+                    skipped += [(f, "改完核对不过,已退回") for f in used]
+                    used = []
+                else:
+                    ok, report = ok2, report2
+            rep = names.report(used, skipped, unsure, lang)
+            log("== 专名核对:\n" + rep)
+            return {"fixed": [{k: f.get(k) for k in ("old", "new", "name", "why")} for f in used],
+                    "unsure": len(names.pending(skipped, unsure)), "report": rep}
+
+        res = timed("names", check_names)
+        if res is not None:
+            meta = dict(meta, names=res)
+            db.update(task_id, meta=meta)
         db.update(task_id, status="done", stage="check", check_ok=int(ok), check_report=report,
                   message="完成,格式与时间戳校验通过" if ok else "完成,但核对还有问题(见核对报告)")
     except (sources.SourceError, llm.LLMError, RuntimeError, OSError) as e:

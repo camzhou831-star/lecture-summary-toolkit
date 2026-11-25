@@ -209,6 +209,8 @@ def test_pipeline_end_to_end_with_fake_model(env, monkeypatch):
     calls = []
 
     def fake_chat(messages, on_progress=None, **k):
+        if "专名校对员" in messages[0]["content"]:
+            return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         calls.append(messages)
         assert "[05:00]" in messages[1]["content"]          # 讲义稿用 [MM:SS] 标签
         return GOOD, {"model": "fake", "usage": None, "finish_reason": "stop"}
@@ -219,7 +221,8 @@ def test_pipeline_end_to_end_with_fake_model(env, monkeypatch):
     t = db.get(tid)
     assert t["status"] == "done", t["log"]
     assert t["check_ok"] == 1, t["check_report"]
-    assert set(t["timings"]) == {"fetch", "prepare", "summarize", "check"}
+    assert set(t["timings"]) == {"fetch", "prepare", "summarize", "check", "names"}
+    assert t["meta"]["names"]["fixed"] == [] and "没发现" in t["meta"]["names"]["report"]
     assert len(calls) == 1
     assert os.path.exists(p.summary_path(t))
 
@@ -230,6 +233,8 @@ def test_pipeline_repairs_once_when_check_fails(env, monkeypatch):
     replies = [bad, GOOD]
 
     def fake_chat(messages, on_progress=None, **k):
+        if "专名校对员" in messages[0]["content"]:
+            return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         if len(replies) == 1:
             assert "检查结果" in messages[-1]["content"] and "59:00" in messages[-1]["content"]
         return replies.pop(0), {"model": "fake", "usage": None, "finish_reason": "stop"}
@@ -359,6 +364,8 @@ def test_pipeline_breakdown_with_fake_model(env, monkeypatch, tmp_path):
     n = len(b.sentences(srt))
 
     def fake_chat(messages, on_progress=None, **k):
+        if "专名校对员" in messages[0]["content"]:
+            return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         assert "逐句表" in messages[1]["content"] and "钩子 / 承诺" in messages[0]["content"]
         segs = [{"from": 1, "to": 2, "role": "钩子", "points": 1, "note": "反常识"}, {"from": 3, "to": n, "role": "清单", "points": 3, "note": "三步"}]
         return ("```segments\n" + json.dumps(segs, ensure_ascii=False) + "\n```\n\n## 5. 逐段要点\n- 段1 [00:00]\n\n## 6. 可学的写法\n- 反常识开头 [00:00]\n\n"
@@ -406,3 +413,56 @@ def test_derive_reuses_transcript(env, monkeypatch):
     t = db.get(n["id"])
     assert t["status"] == "done" and "已有文字稿,跳过拿稿" in t["log"], t["log"]
     assert db.get(tid)["template"] == "meeting.project_sync" and os.path.exists(p.summary_path(db.get(tid)))
+
+
+def test_names_check_fixes_only_confident_and_safe(env, monkeypatch):
+    """专名核对:只采纳 high、原文找得到、不动时间戳的条目;其余列待核实;改的结果写进总结和 meta"""
+    from wb import names
+    md = "- [02:24] 黄云勋辞去 CEO,英伟达宣布 [02:30]\n- Cloud(转写疑似:Slack)把表格做进聊天框\n- 某人 C Dream 5.5\n- Cloud 表格、Cloudflare、相当于 Cloud 400 元档"
+    fixes = [{"old": "黄云勋", "new": '黄仁勋(转写为"黄云勋")', "name": "黄仁勋", "confidence": "high", "why": "英伟达 CEO"},
+             {"old": "Cloud(转写疑似:Slack)", "new": 'Claude(转写为"Cloud")', "heard": "Cloud", "name": "Claude", "confidence": "high"},
+             {"old": "C Dream 5.5", "new": "Seedream 5.5", "name": "Seedream", "confidence": "low"},
+             {"old": "[02:30]", "new": "[02:31]", "confidence": "high"},
+             {"old": "不存在的", "new": "x", "confidence": "high"}]
+    out, used, skipped = names.apply(md, fixes)
+    assert '黄仁勋(转写为"黄云勋")' in out and 'Claude(转写为"Cloud")' in out and "C Dream 5.5" in out and "[02:30]" in out
+    assert "- Claude 表格、Cloudflare、相当于 Claude 400 元档" in out and used[1]["more"] == 2      # 整词才换
+    assert len(used) == 2 and [w for _, w in skipped] == ["把握不够", "会动到时间戳", "总结里找不到这段原文"]
+    rep = names.report(used, skipped, [{"text": "Garner", "guess": "Gartner", "why": "只有读音像"}, {"text": "Garner(转写疑似)", "why": "重复"}])
+    assert "已校正 2 处" in rep and "待核实 4 处" in rep and "Gartner" in rep
+    assert names.parse('前言\n```json\n{"fixes": [], "unsure": []}\n```') == ([], [])
+    with pytest.raises(names.NamesError):
+        names.parse("不是 json")
+
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    good = GOOD.replace("梯度下降沿负梯度", "提读下降沿负梯度")
+
+    def fake_chat(messages, on_progress=None, **k):
+        if "专名校对员" in messages[0]["content"]:
+            assert "提读下降" in messages[1]["content"]
+            return json.dumps({"fixes": [{"old": "提读下降", "new": '梯度下降(转写为"提读下降")', "name": "梯度下降", "confidence": "high"}], "unsure": []},
+                              ensure_ascii=False), {"model": "fake", "usage": None, "finish_reason": "stop"}
+        return good, {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    kind, vid, src = env["sources"].parse_source(env["srt"])
+    tid = db.create(kind, src, vid)
+    p.run_task(tid)
+    t = db.get(tid)
+    assert t["status"] == "done" and t["check_ok"] == 1, t["log"]
+    assert '梯度下降(转写为"提读下降")' in open(p.summary_path(t), encoding="utf-8").read()
+    assert t["meta"]["names"]["fixed"][0]["name"] == "梯度下降" and "专名核对" in t["log"]
+
+
+def test_names_check_failure_does_not_fail_task(env, monkeypatch):
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+
+    def fake_chat(messages, on_progress=None, **k):
+        if "专名校对员" in messages[0]["content"]:
+            raise llm.LLMError("超时")
+        return GOOD, {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    kind, vid, src = env["sources"].parse_source(env["srt"])
+    tid = db.create(kind, src, vid)
+    p.run_task(tid)
+    t = db.get(tid)
+    assert t["status"] == "done" and t["check_ok"] == 1 and "专名核对没做成" in t["log"] and "names" not in (t["meta"] or {})

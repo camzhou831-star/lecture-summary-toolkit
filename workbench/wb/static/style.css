@@ -254,7 +254,7 @@ code, kbd, pre { font-family: var(--mono); }
 .detail-head h2 { font-size: 24px; line-height: 1.3; margin: 0; letter-spacing: -.01em; font-weight: 700; }
 .head-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
-.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 20px 0 10px; }
+.steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 20px 0 10px; }
 .step { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; display: flex; gap: 12px; align-items: center; background: var(--surface);
   box-shadow: var(--shadow-xs); min-width: 0; transition: border-color var(--dur-normal) var(--ease), background-color var(--dur-normal) var(--ease); }
 .step .ic { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--subtle); color: var(--muted); flex: none; font-size: 13px; font-weight: 600;
@@ -666,3 +666,16 @@ a.ts:active { transform: scale(.95); }
 .pop-opt input { accent-color: var(--brand); }
 .pop-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
 #d-time a { color: var(--brand); text-decoration: none; }
+
+/* 专名核对结果 */
+.names-box { margin: 0 0 14px; border-radius: var(--radius-md); background: var(--ok-soft); color: var(--ok-on-soft); font-size: 13px; }
+.names-box.warn { background: var(--warn-soft); color: var(--warn-on-soft); }
+.names-box summary { cursor: pointer; padding: 10px 14px; font-weight: 500; }
+.names-box pre { margin: 0; padding: 0 14px 12px; white-space: pre-wrap; font: inherit; line-height: 1.7; }
+.step .nm { white-space: nowrap; }
+@media (max-width: 1280px) {
+  .steps { gap: 8px; }
+  .step { padding: 10px; gap: 8px; }
+  .step .ic { width: 24px; height: 24px; }
+  .step .nm { font-size: 13px; }
+}

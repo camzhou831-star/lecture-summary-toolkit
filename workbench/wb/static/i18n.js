@@ -26,7 +26,7 @@ const I18N = {
     set_tools: "本机程序", set_data: "数据",
     d_open: "原视频", d_open_t: "在原站打开", d_copy: "复制", d_copy_t: "复制 Markdown", d_dl: "下载", d_dl_t: "下载 .md", d_retry: "重跑", d_del_t: "删除",
     tab_sum: "总结", tab_tr: "文字稿", tab_log: "日志", player_empty: "点任意时间戳,在这里播放", chapters: "章节", chapters_hint: "点一下跳到这一段",
-    st_fetch: "拿文字稿", st_prepare: "整理讲义稿", st_summarize: "写总结", st_check: "核对时间戳",
+    st_fetch: "拿文字稿", st_prepare: "整理讲义稿", st_summarize: "写总结", st_check: "核对时间戳", st_names: "核对专名", names_fixed: "校正了 {n} 处听错的人名 / 专名", names_unsure: "{n} 处专名待核实", names_ok: "专名核对:没发现听错的人名",
     kind_youtube: "YouTube", kind_bilibili: "B 站", kind_local: "本地文件", kind_web: "网页",
     status_queued: "排队中", status_running: "进行中", status_done: "完成", status_failed: "失败", done_warn: "完成(核对有问题)",
     step_failed: "失败", step_now: "进行中…", step_queued: "排队中", step_wait: "等待",
@@ -109,7 +109,7 @@ const I18N = {
     set_tools: "Local tools", set_data: "Data",
     d_open: "Source", d_open_t: "Open on the original site", d_copy: "Copy", d_copy_t: "Copy Markdown", d_dl: "Download", d_dl_t: "Download .md", d_retry: "Re-run", d_del_t: "Delete",
     tab_sum: "Summary", tab_tr: "Transcript", tab_log: "Log", player_empty: "Click any timestamp to play from there", chapters: "Chapters", chapters_hint: "Click to jump",
-    st_fetch: "Get transcript", st_prepare: "Prepare", st_summarize: "Write summary", st_check: "Check timestamps",
+    st_fetch: "Get transcript", st_prepare: "Prepare", st_summarize: "Write summary", st_check: "Check timestamps", st_names: "Check names", names_fixed: "Fixed {n} misheard name(s)", names_unsure: "{n} name(s) to double-check", names_ok: "Name check: no misheard names found",
     kind_youtube: "YouTube", kind_bilibili: "Bilibili", kind_local: "Local file", kind_web: "Web",
     status_queued: "Queued", status_running: "Running", status_done: "Done", status_failed: "Failed", done_warn: "Done (check found issues)",
     step_failed: "Failed", step_now: "Working…", step_queued: "Queued", step_wait: "Waiting",
@@ -195,7 +195,7 @@ function applyI18n(root = document) {
 // 后端的中文进度 / 报错 → 英文(按开头匹配;对不上的原样返回)
 const SERVER_EN = [
   [/^排队中$/, "Queued"], [/^排队中\(沿用任务 (\d+) 的文字稿\)$/, "Queued (reusing the transcript of #$1)"], [/^这个任务还没拿到文字稿/, "The transcript isn't ready yet; try again once it is"], [/^重新排队$/, "Queued again"], [/^上次未完成,重新排队$/, "Interrupted last time, queued again"],
-  [/^拿文字稿…$/, "Getting the transcript…"], [/^整理讲义稿…$/, "Preparing the transcript…"], [/^写总结…$/, "Writing the summary…"], [/^核对时间戳…$/, "Checking timestamps…"],
+  [/^拿文字稿…$/, "Getting the transcript…"], [/^整理讲义稿…$/, "Preparing the transcript…"], [/^写总结…$/, "Writing the summary…"], [/^核对时间戳…$/, "Checking timestamps…"], [/^核对专名…$/, "Checking names…"],
   [/^写总结… 已生成 (\d+) 字$/, "Writing the summary… $1 characters so far"],
   [/^核对没过,让模型按检查结果改一轮…$/, "The check found issues; asking the AI to fix them…"],
   [/^完成,格式与时间戳校验通过$/, "Done — format and timestamps checked"], [/^完成,但核对还有问题/, "Done, but the check still found issues (see Log)"],

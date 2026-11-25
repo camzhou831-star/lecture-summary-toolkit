@@ -6,7 +6,7 @@ const ICON = {
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   dot: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
 };
-const STAGES = ["fetch", "prepare", "summarize", "check"];
+const STAGES = ["fetch", "prepare", "summarize", "check", "names"];
 const kindName = (k) => t("kind_" + k);
 const statusName = (s) => t("status_" + s);
 
@@ -337,6 +337,7 @@ function drawDetail(t) {
   const pre = $("#d-log");
   const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
   if (pre.textContent !== t.log) { pre.textContent = t.log || ""; if (atBottom) pre.scrollTop = pre.scrollHeight; }
+  drawNames(t);
   const ck = $("#d-check");
   ck.className = "callout " + (t.check_report ? (t.check_ok ? "ok" : "bad") : "");
   ck.textContent = t.check_report || "";
@@ -737,6 +738,17 @@ function drawSrcHint() {
 $("#source").addEventListener("input", drawSrcHint);
 
 // ---------- 详情页的进度提示 + 浏览器标签标题 ----------
+// 专名核对结果:校正了哪些、哪些待核实(点开看清单)
+function drawNames(task) {
+  const el = $("#d-names"), n = task.status === "done" && task.meta && task.meta.names;
+  el.hidden = !n;
+  if (!n) return;
+  const fixed = (n.fixed || []).length, unsure = n.unsure || 0;
+  const parts = [fixed ? t("names_fixed", { n: fixed }) : "", unsure ? t("names_unsure", { n: unsure }) : ""].filter(Boolean);
+  el.className = "names-box" + (unsure ? " warn" : "");
+  el.querySelector("summary").textContent = parts.length ? parts.join(" · ") : t("names_ok");
+  el.querySelector("pre").textContent = n.report || "";
+}
 function drawTip(task) {
   const el = $("#d-tip");
   let msg = "";
