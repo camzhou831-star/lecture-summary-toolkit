@@ -43,6 +43,15 @@ It comes in two parts:
 
 Keep that Terminal window open while you use the workbench; close it to stop. Next time, just double-click the same file again.
 
+### Windows: download and double-click (new, not yet tested on many machines)
+
+1. Download **`lecture-workbench-windows.zip`** from the [latest release](https://github.com/camzhou831-star/lecture-summary-toolkit/releases/latest), right-click → **Extract All**.
+2. In the extracted folder, double-click **`启动工作台.bat`** ("Start Workbench"). If Windows shows "Windows protected your PC", click **More info → Run anyway**.
+3. A window installs uv, yt-dlp and ffmpeg with winget (built into Windows 10/11), then the GPU build of whisper.cpp (Vulkan, works with NVIDIA, AMD and Intel graphics, with a CPU fallback) and the speech model (about 1.6 GB, once). Then the workbench opens in your browser.
+4. Keep that window open while you use the workbench; close it to stop. Next time, double-click the same file.
+
+For the AI on Windows: install Node.js (`winget install OpenJS.NodeJS.LTS`), then `npm i -g @anthropic-ai/claude-code` or `npm i -g @openai/codex` and run it once to sign in — or use an API key.
+
 ### First time? Five steps (macOS, with Terminal)
 
 1. **Open Terminal.** Press ⌘ Space, type `Terminal`, press Return.

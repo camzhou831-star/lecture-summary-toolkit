@@ -554,14 +554,16 @@ async function drawOnboard(recheck) {
   let rows = "";
   if (mac && !status.brew && !(dl && tr)) rows += item(false, t("ob_brew"), t("ob_brew_d"), cmdBox(brewCmd));
   const osNote = win ? `<div class="ob-note">${t("ob_win")}</div>` : !mac ? `<div class="ob-note">${t("ob_linux")}</div>` : "";
-  rows += item(dl, t("ob_dl"), t("ob_dl_d"), mac ? cmdBox("brew install yt-dlp") : osNote);
-  rows += item(tr, t("ob_tr"), t("ob_tr_d") + (status.model_ready ? "" : `<div class="ob-note">${t("ob_model")}</div>`), mac ? cmdBox("brew install ffmpeg whisper-cpp") : osNote);
+  rows += item(dl, t("ob_dl"), t("ob_dl_d"), mac ? cmdBox("brew install yt-dlp") : win ? cmdBox("winget install -e --id yt-dlp.yt-dlp") : osNote);
+  rows += item(tr, t("ob_tr"), t("ob_tr_d") + (status.model_ready ? "" : `<div class="ob-note">${t("ob_model")}</div>`),
+    mac ? cmdBox("brew install ffmpeg whisper-cpp") : win ? cmdBox("winget install -e --id Gyan.FFmpeg") + osNote : osNote);
   rows += item(ai, t("ob_ai"), ai ? t("ob_ai_ok", { n: PNAME[cfg.active] }) : t("ob_ai_d"),
     `<div class="ob-note">${t("ob_ai_claude")}</div>${cmdBox("npm i -g @anthropic-ai/claude-code && claude")}
      <div class="ob-note">${t("ob_ai_codex")}</div>${cmdBox("npm i -g @openai/codex && codex")}
-     ${status.npm ? "" : `<div class="ob-note">${t("ob_ai_node")}</div>${cmdBox(mac ? "brew install node" : "https://nodejs.org")}`}
+     ${status.npm ? "" : `<div class="ob-note">${t("ob_ai_node")}</div>${cmdBox(mac ? "brew install node" : win ? "winget install OpenJS.NodeJS.LTS" : "https://nodejs.org")}`}
      <div class="ob-note"><a href="#/settings">${t("ob_ai_api")}</a></div>`);
-  const oneclick = !win ? `<div class="ob-or" style="grid-column:auto;margin-top:12px">${t("ob_oneclick")}</div>${cmdBox(`bash "${status.workbench_dir}/setup.sh"`).replace('class="cmd"', 'class="cmd" style="grid-column:auto"')}` : "";
+  const oneclick = win ? `<div class="ob-or" style="grid-column:auto;margin-top:12px">${t("ob_oneclick_win")}</div>`
+    : `<div class="ob-or" style="grid-column:auto;margin-top:12px">${t("ob_oneclick")}</div>${cmdBox(`bash "${status.workbench_dir}/setup.sh"`).replace('class="cmd"', 'class="cmd" style="grid-column:auto"')}`;
   box.innerHTML = `<div class="ob-head"><b>${t("ob_title")}</b></div><p class="ob-sub">${t("ob_sub")}</p><ul class="ob-list">${rows}</ul>${oneclick}
     <div class="ob-actions"><button type="button" class="btn btn-primary btn-sm" id="ob-recheck">${t("ob_recheck")}</button><button type="button" class="btn btn-ghost btn-sm" id="ob-hide">${t("ob_hide")}</button></div>`;
   $("#ob-recheck").onclick = () => drawOnboard(true);

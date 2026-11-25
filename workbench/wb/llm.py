@@ -74,17 +74,21 @@ def _flatten(messages):
 
 
 def _run(cmd, stdin_text, timeout, cwd):
+    exe = shutil.which(cmd[0])      # Windows 上 npm 装的是 claude.cmd / codex.cmd,直接用名字 subprocess 找不到
+    if exe:
+        cmd = [exe, *cmd[1:]]
     try:
         r = subprocess.run(cmd, input=stdin_text, capture_output=True, text=True, encoding="utf-8", errors="replace",
                            timeout=timeout, cwd=cwd, env=dict(os.environ, NO_COLOR="1"))
     except FileNotFoundError as e:
-        raise LLMError(f"找不到命令 {cmd[0]}") from e
+        raise LLMError(f"找不到命令 {os.path.basename(cmd[0])}") from e
     except subprocess.TimeoutExpired as e:
-        raise LLMError(f"{cmd[0]} 超过 {timeout // 60} 分钟没写完") from e
+        raise LLMError(f"{os.path.splitext(os.path.basename(cmd[0]))[0]} 超过 {timeout // 60} 分钟没写完") from e
     if r.returncode != 0:
         tail = (r.stderr or r.stdout).strip()[-400:]
-        hint = "(没登录的话先在终端运行一次 " + cmd[0] + " 登录)" if any(w in tail.lower() for w in ("login", "auth", "log in", "credential")) else ""
-        raise LLMError(f"{cmd[0]} 出错{hint}: {tail}")
+        name = os.path.splitext(os.path.basename(cmd[0]))[0]
+        hint = "(没登录的话先在终端运行一次 " + name + " 登录)" if any(w in tail.lower() for w in ("login", "auth", "log in", "credential")) else ""
+        raise LLMError(f"{name} 出错{hint}: {tail}")
     return r.stdout
 
 

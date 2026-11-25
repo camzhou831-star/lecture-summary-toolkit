@@ -43,6 +43,15 @@
 
 用工作台的时候，这个终端窗口要一直开着；关掉窗口就停了。下次再用，双击同一个文件就行。
 
+### Windows：下载后双击（新做的，还没在很多电脑上测过）
+
+1. 在 [最新版本](https://github.com/camzhou831-star/lecture-summary-toolkit/releases/latest) 下载 **`lecture-workbench-windows.zip`**，右键 →「全部解压缩」。
+2. 在解压出来的文件夹里，双击 **`启动工作台.bat`**。如果弹出「Windows 已保护你的电脑」，点「更多信息」→「仍要运行」。
+3. 会弹出一个窗口，用 winget（Windows 10/11 自带）装好 uv、yt-dlp、ffmpeg，再装 GPU 版 whisper.cpp（Vulkan，NVIDIA、AMD、Intel 显卡通用，另带 CPU 备用版）和语音模型（约 1.6 GB，只下一次），然后在浏览器打开工作台。
+4. 用的时候这个窗口别关，关掉工作台就停了。下次再用，双击同一个文件。
+
+Windows 上写总结的 AI：先装 Node.js（`winget install OpenJS.NodeJS.LTS`），再 `npm i -g @anthropic-ai/claude-code` 或 `npm i -g @openai/codex`，运行一次登录；或者用 API Key。
+
 ### 第一次用？五步（macOS，用终端）
 
 1. **打开「终端」。** 按 ⌘ 空格，输入「终端」或 `Terminal`，回车。
