@@ -81,7 +81,7 @@ function drawTemplates() {
     `<option value="${m.id}" ${m.id === meetingVariant ? "selected" : ""}>${esc(LANG === "zh" ? m.name_zh : m.name_en)} — ${esc(LANG === "zh" ? m.desc_zh : m.desc_en)}</option>`).join("")}</select>
     <span class="small muted">${(meetings.find((m) => m.id === meetingVariant) || {})[LANG === "zh" ? "sections_zh" : "sections_en"]?.join(" · ") || ""}</span>`;
   const sel = $("#meet-type"); if (sel) sel.onchange = () => { meetingVariant = sel.value; drawTemplates(); };
-  drawReady();
+  drawHero(); drawReady();
 }
 api("/api/templates").then((x) => { meetings = x.meetings || []; drawTemplates(); }).catch(() => {});
 drawTemplates();
@@ -722,6 +722,14 @@ document.addEventListener("submit", async (e) => {
 function aiName(c) {
   if (c.active !== "api") return PNAME[c.active];
   return /deepseek\.com/.test(c.base_url || "") ? `DeepSeek${LANG === "zh" ? "" : " "}(${c.model})` : `API · ${c.model}`;
+}
+// 首页大标题、说明、输入框提示和开始按钮跟着所选模板换(课程总结 / 对标拆稿 / 会议纪要)
+function drawHero() {
+  const k = { breakdown: "_bench", meeting: "_meet" }[template] || "";
+  $("#hero-h1").dataset.i18n = "home_h1" + k; $("#hero-p").dataset.i18n = "home_p" + k;
+  $("#source").dataset.i18nPh = "source_ph" + k; $("#start-label").dataset.i18n = "start" + k;
+  $("#hero-h1").textContent = t("home_h1" + k); $("#hero-p").textContent = t("home_p" + k);
+  $("#source").placeholder = t("source_ph" + k); $("#start-label").textContent = t("start" + k);
 }
 function drawReady() {
   const box = $("#onboard");
