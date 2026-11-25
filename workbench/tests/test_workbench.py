@@ -380,3 +380,29 @@ def test_api_rejects_unknown_template(env):
         r = c.post("/api/tasks", json={"source": "https://youtu.be/aircAruvnKk", "template": "meeting.project_sync"})
         assert r.status_code == 200 and r.json()["template"] == "meeting.project_sync"
         assert len(c.get("/api/templates").json()["meetings"]) == 5
+
+
+def test_derive_reuses_transcript(env, monkeypatch):
+    """换个用途:沿用原任务的文字稿,换模板出一份新任务,不重新拿稿;原任务保留"""
+    from fastapi.testclient import TestClient
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    monkeypatch.setattr(llm, "chat", lambda messages, on_progress=None, **k: (GOOD, {"model": "fake", "usage": None, "finish_reason": "stop"}))
+    kind, vid, src = env["sources"].parse_source(env["srt"])
+    tid = db.create(kind, src, vid, template="meeting.project_sync")
+    with TestClient(env["server"].app) as c:
+        r = c.post(f"/api/tasks/{tid}/derive", json={"template": "course"})
+        assert r.status_code == 400 and "文字稿" in r.json()["detail"]          # 还没拿到文字稿
+        p.run_task(tid)
+        assert c.post(f"/api/tasks/{tid}/derive", json={"template": "nope"}).status_code == 400
+        assert c.post("/api/tasks/9999/derive", json={"template": "course"}).status_code == 404
+        r = c.post(f"/api/tasks/{tid}/derive", json={"template": "course", "out_lang": "en"})
+        assert r.status_code == 200, r.text
+        n = r.json()
+        assert n["id"] != tid and n["template"] == "course" and n["out_lang"] == "en" and n["meta"]["derived_from"] == tid
+        assert "沿用任务" in n["message"] and n["timings"].get("fetch") is not None
+    assert os.path.isfile(os.path.join(p.task_root(n["id"]), "课程视频", vid + ".srt"))
+    monkeypatch.setattr(env["sources"], "fetch", env["sources"].fetch)
+    p.run_task(n["id"])
+    t = db.get(n["id"])
+    assert t["status"] == "done" and "已有文字稿,跳过拿稿" in t["log"], t["log"]
+    assert db.get(tid)["template"] == "meeting.project_sync" and os.path.exists(p.summary_path(db.get(tid)))

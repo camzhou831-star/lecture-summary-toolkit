@@ -1,4 +1,5 @@
 """FastAPI 后端。启动: cd workbench && uv run python -m wb   然后打开 http://127.0.0.1:8770"""
+import json
 import os
 import shutil
 from contextlib import asynccontextmanager
@@ -203,6 +204,41 @@ def retry(tid: int):
     db.update(tid, status="queued", message="重新排队", check_ok=None, check_report=None)
     worker.kick()
     return _public(db.get(tid))
+
+
+class DeriveBody(BaseModel):
+    template: str
+    out_lang: str = "zh"
+
+
+@app.post("/api/tasks/{tid}/derive")
+def derive(tid: int, body: DeriveBody):
+    """换个用途:用这个任务已经拿到的文字稿,换一个模板 / 语言再出一份(新任务,原来那份保留),不用重新下载和转写"""
+    t = _task(tid)
+    _check_template(body.template)
+    _check_langs(t["lang"], body.out_lang)
+    src_root = pipeline.task_root(tid)
+    srt = os.path.join(src_root, "课程视频", t["vid"] + ".srt")
+    if not os.path.isfile(srt) or os.path.getsize(srt) == 0:
+        raise HTTPException(400, "这个任务还没拿到文字稿,等它拿完再换用途")
+    timings = {"fetch": t["timings"]["fetch"]} if t["timings"].get("fetch") is not None else {}
+    nid = db.create(t["kind"], t["source"], t["vid"], lang=t["lang"], out_lang=body.out_lang, template=body.template, title=t["title"])
+    dst_root = pipeline.task_root(nid)
+    os.makedirs(os.path.join(dst_root, "课程视频"), exist_ok=True)
+    for name in (t["vid"] + ".srt", t["vid"] + ".txt"):           # 只复制原始文字稿;讲义稿等按新模板重新整理
+        p = os.path.join(src_root, "课程视频", name)
+        if os.path.isfile(p):
+            shutil.copyfile(p, os.path.join(dst_root, "课程视频", name))
+    for name in ("meta.json", "来源.txt"):
+        p = os.path.join(src_root, name)
+        if os.path.isfile(p):
+            shutil.copyfile(p, os.path.join(dst_root, name))
+    meta = dict(t["meta"] or {}, derived_from=tid)
+    with open(os.path.join(dst_root, "meta.json"), "w", encoding="utf-8") as f:   # 跑的时候 pipeline 从这里读视频信息
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+    db.update(nid, meta=meta, timings=timings, message="排队中(沿用任务 %d 的文字稿)" % tid)
+    worker.kick()
+    return _public(db.get(nid))
 
 
 @app.delete("/api/tasks/{tid}")

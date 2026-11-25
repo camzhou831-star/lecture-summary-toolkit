@@ -311,7 +311,8 @@ async function openTask(id) {
 function drawDetail(t) {
   $("#d-title").textContent = t.title || t.vid;
   $("#d-kind").textContent = siteName(t);
-  $("#d-time").textContent = tplName(t.template) + " · " + window.t("sum_lang", { l: window.t(t.out_lang === "en" ? "l_en" : "l_zh"), ago: ago(t.created_at) });
+  $("#d-time").innerHTML = esc(tplName(t.template) + " · " + window.t("sum_lang", { l: window.t(t.out_lang === "en" ? "l_en" : "l_zh"), ago: ago(t.created_at) }))
+    + (t.meta && t.meta.derived_from ? ` · <a href="#/t/${+t.meta.derived_from}">${esc(window.t("derived_from", { n: t.meta.derived_from }))}</a>` : "");
   $("#d-open").hidden = t.kind === "local"; if (t.kind !== "local") $("#d-open").href = t.source;
   const done = t.status === "done";
   $("#d-copy").disabled = $("#d-download").disabled = !done;
@@ -609,6 +610,35 @@ $("#d-download").onclick = () => {
   a.href = URL.createObjectURL(new Blob([rendered.md || ""], { type: "text/markdown" }));
   a.download = `${(current.title || current.vid).replace(/[\\/:*?"<>|]+/g, "_")}.md`; a.click();
 };
+// 换个用途:用已有文字稿换模板 / 语言再出一份(新任务)
+function drawDerivePop() {
+  const cur = current.template || "course";
+  const opts = [{ id: "course", name: t("tpl_course") }, { id: "breakdown", name: t("tpl_bench") },
+    ...meetings.map((m) => ({ id: m.id, name: t("tpl_meet") + " · " + (LANG === "zh" ? m.name_zh : m.name_en) }))];
+  const pick = opts.find((o) => o.id !== cur) || opts[0];
+  $("#derive-pop").innerHTML = `<div class="pop-title">${t("derive_title")}</div><p class="pop-hint">${t("derive_hint")}</p>
+    <div class="pop-list">${opts.map((o) => `<label class="pop-opt"><input type="radio" name="derive-tpl" value="${o.id}" ${o.id === pick.id ? "checked" : ""}>
+      <span>${esc(o.name)}</span>${o.id === cur ? `<em>${t("derive_cur")}</em>` : ""}</label>`).join("")}</div>
+    <div class="pop-foot"><label>${t("derive_lang")} <select id="derive-lang" class="select"><option value="zh" ${current.out_lang === "zh" ? "selected" : ""}>中文</option><option value="en" ${current.out_lang === "en" ? "selected" : ""}>English</option></select></label>
+      <button type="button" id="derive-go" class="btn btn-primary btn-sm">${t("derive_go")}</button></div>`;
+  $("#derive-go").onclick = async () => {
+    const tpl = (document.querySelector("input[name=derive-tpl]:checked") || {}).value;
+    try {
+      const nt = await api(`/api/tasks/${current.id}/derive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ template: tpl, out_lang: $("#derive-lang").value }) });
+      $("#derive-pop").hidden = true; await refresh(); location.hash = `#/t/${nt.id}`;
+    } catch (err) { toast(trServer(err.message)); }
+  };
+}
+$("#d-derive").onclick = (e) => {
+  e.stopPropagation();
+  const pop = $("#derive-pop");
+  if (!pop.hidden) { pop.hidden = true; return; }
+  if (!current.timings || current.timings.fetch == null) return toast(t("derive_wait"));
+  drawDerivePop(); pop.hidden = false;
+};
+document.addEventListener("click", (e) => { if (!e.target.closest(".derive-wrap")) $("#derive-pop").hidden = true; });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#derive-pop").hidden = true; });
+
 $("#d-retry").onclick = async () => {
   await api(`/api/tasks/${current.id}/retry`, { method: "POST" }); rendered = {}; toast(t("requeued")); refresh(); openTask(current.id);
 };

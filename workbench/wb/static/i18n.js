@@ -80,6 +80,8 @@ const I18N = {
     meet_type: "会议类型", tpl_tag: "模板:{n}", hint_bench: "对标拆稿适合几分钟内的短视频口播。长视频(比如整节课)会拆得很慢,建议用课程总结。",
     hint_meet: "会议纪要:可以贴会议录像链接,也可以选本地录音文件(mp3、m4a、wav)。", meet_from: "会议模板取自开源项目 Meetily(MIT)。",
     seg_chapters: "分段", no_chapters_tpl: "这个模板没有章节;点正文里的时间戳就能跳转。",
+    derive: "换个用途", derive_title: "用这份文字稿换个模板再出一份", derive_hint: "直接用已经拿到的文字稿,换个模板或语言再出一份,不用重新下载和转写。原来这份会保留。",
+    derive_go: "开始", derive_cur: "当前", derive_lang: "总结语言", derived_from: "沿用任务 #{n} 的文字稿", derive_wait: "还没拿到文字稿,等拿完再换用途",
     title_detail: "总结",
   },
   en: {
@@ -161,6 +163,8 @@ const I18N = {
     meet_type: "Meeting type", tpl_tag: "Template: {n}", hint_bench: "Script breakdown is meant for short videos of a few minutes. Long videos (a whole lecture) take a long time; use Lecture summary instead.",
     hint_meet: "Meeting notes: paste a link to the recording, or choose a local audio file (mp3, m4a, wav).", meet_from: "Meeting templates adapted from the open-source Meetily (MIT).",
     seg_chapters: "Segments", no_chapters_tpl: "This template has no chapters; click any timestamp in the text to jump.",
+    derive: "Reuse as…", derive_title: "Make another summary from this transcript", derive_hint: "Uses the transcript you already have — pick another template or language, no re-download or re-transcription. This one is kept.",
+    derive_go: "Start", derive_cur: "current", derive_lang: "Summary language", derived_from: "reuses the transcript of #{n}", derive_wait: "The transcript isn't ready yet; try again once it is",
     title_detail: "Summary",
   },
 };
@@ -190,7 +194,7 @@ function applyI18n(root = document) {
 
 // 后端的中文进度 / 报错 → 英文(按开头匹配;对不上的原样返回)
 const SERVER_EN = [
-  [/^排队中$/, "Queued"], [/^重新排队$/, "Queued again"], [/^上次未完成,重新排队$/, "Interrupted last time, queued again"],
+  [/^排队中$/, "Queued"], [/^排队中\(沿用任务 (\d+) 的文字稿\)$/, "Queued (reusing the transcript of #$1)"], [/^这个任务还没拿到文字稿/, "The transcript isn't ready yet; try again once it is"], [/^重新排队$/, "Queued again"], [/^上次未完成,重新排队$/, "Interrupted last time, queued again"],
   [/^拿文字稿…$/, "Getting the transcript…"], [/^整理讲义稿…$/, "Preparing the transcript…"], [/^写总结…$/, "Writing the summary…"], [/^核对时间戳…$/, "Checking timestamps…"],
   [/^写总结… 已生成 (\d+) 字$/, "Writing the summary… $1 characters so far"],
   [/^核对没过,让模型按检查结果改一轮…$/, "The check found issues; asking the AI to fix them…"],
