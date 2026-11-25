@@ -376,7 +376,117 @@ async function loadSummary(t) {
     else { a.target = "_blank"; a.rel = "noopener"; }
   });
   linkify(box);
+  enhance(box, md, t.template || "course");
   drawChapters(md, t.template);
+}
+
+// ---------- 总结排版增强(只改网页显示,导出的 Markdown 不变) ----------
+// 参考脚本 / 视频结构分析工具的通行做法:分色时间轴 + 分段卡片 + 指标数字块,原句单独做引用
+const ROLE_COLOR = {
+  "钩子": "#d9a03f", "Hook": "#d9a03f", "承诺": "#9a7fd0", "Promise": "#9a7fd0", "背景": "#98a49e", "Context": "#98a49e",
+  "转折": "#d47a8c", "Turn": "#d47a8c", "举例": "#4c9a88", "Example": "#4c9a88", "论证": "#5a86c2", "Argument": "#5a86c2",
+  "清单": "#69a35e", "Takeaway list": "#69a35e", "结尾": "#7a8794", "Ending": "#7a8794", "广告": "#e07b4a", "Sponsor": "#e07b4a",
+  "其他": "#c4cbc6", "Other": "#c4cbc6",
+};
+const roleColor = (r) => ROLE_COLOR[r] || ROLE_COLOR[Object.keys(ROLE_COLOR).find((k) => r.startsWith(k))] || "#b5bdb8";
+function mdSection(md, re) {   // 某个 ## 小节的全部行(到下一个 ## 为止)
+  const lines = md.split("\n"), i = lines.findIndex((l) => re.test(l));
+  if (i < 0) return [];
+  const out = [];
+  for (const l of lines.slice(i + 1)) { if (l.startsWith("## ")) break; out.push(l); }
+  return out;
+}
+const mdRows = (lines) => lines.filter((l) => /^\|/.test(l.trim()) && !/^\|\s*-{2,}/.test(l.trim()))
+  .map((l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
+const secOf = (s) => { const m = String(s).match(/(\d{1,3}):(\d{2})/); return m ? +m[1] * 60 + +m[2] : null; };
+const tsLink = (sec) => `<a class="ts" href="#" data-t="${sec}">${mmss(sec)}</a>`;
+function sectionNodes(box, re) {   // 某个 h2 后面、下一个 h2 之前的所有元素
+  const h = [...box.querySelectorAll("h2")].find((x) => re.test(x.textContent.trim()));
+  if (!h) return null;
+  const nodes = [];
+  for (let n = h.nextElementSibling; n && n.tagName !== "H2"; n = n.nextElementSibling) nodes.push(n);
+  return { h, nodes };
+}
+
+function enhance(box, md, tpl) {
+  // 1. 所有表格:包一层可横向滚动的框,短的数字 / 时间格不换行
+  box.querySelectorAll("table").forEach((tb) => {
+    if (!tb.parentElement.classList.contains("md-table")) { const w = document.createElement("div"); w.className = "md-table"; tb.replaceWith(w); w.appendChild(tb); }
+    tb.querySelectorAll("td, th").forEach((c) => { const x = c.textContent.trim(); if (x.length <= 18 && /^[\s\d.,:%\[\]–~\-+秒分sxXhm/]*$/.test(x)) c.classList.add("num"); });
+  });
+  // 2. 列表项以加粗开头(如章节时间线 "**[00:12] 开场** — 摘要"):加粗部分单独成一行,去掉后面的破折号 / 冒号
+  box.querySelectorAll("li").forEach((li) => {
+    const f = li.firstElementChild;
+    if (!f || f.tagName !== "STRONG" || li.firstChild !== f && !(li.firstChild.nodeType === 3 && !li.firstChild.nodeValue.trim())) return;
+    const nx = f.nextSibling;
+    if (nx && nx.nodeType === 3) nx.nodeValue = nx.nodeValue.replace(/^\s*[—–\-:：]\s*/, "");
+    li.classList.add("lead-li");
+  });
+  // 3. 单独一行、以冒号结尾的短段落("收藏点:""借鉴边界:")当小标题
+  box.querySelectorAll("p").forEach((p) => { const x = p.textContent.trim(); if (x.length <= 16 && /[：:]$/.test(x)) { p.classList.add("sub-h"); p.textContent = x.replace(/[：:]$/, ""); } });
+  if (tpl === "breakdown") enhanceBreakdown(box, md);
+}
+
+function enhanceBreakdown(box, md) {
+  // 分段表 → 分色时间轴 + 分段卡片
+  const seg = sectionNodes(box, /^(3\.|3 )/), rows = mdRows(mdSection(md, /^## 3\./)).slice(1);
+  if (seg && rows.length) {
+    const items = rows.map((r) => {
+      const [k, role, time, secs, share, words, wpm, points, ...note] = r;
+      const [a, b] = (time.match(/\d{1,3}:\d{2}/g) || []).map(secOf);
+      return { k, role, a, b, secs: parseFloat(secs) || 0, share, words, wpm, points, note: note.join("|") };
+    });
+    const roles = [...new Set(items.map((x) => x.role))];
+    const unit = LANG === "zh" ? { s: "秒", w: "字/分", p: "个信息点" } : { s: "s", w: "wpm", p: "points" };
+    const html = `<div class="seg-viz">
+      <div class="seg-bar">${items.map((x) => `<button type="button" class="seg-piece" data-seek="${x.a ?? 0}" style="flex:${Math.max(x.secs, 0.5)};--c:${roleColor(x.role)}"
+        title="${esc(`${x.k}. ${x.role} ${x.a != null ? mmss(x.a) : ""}–${x.b != null ? mmss(x.b) : ""} · ${x.share}`)}"></button>`).join("")}</div>
+      <div class="seg-legend">${roles.map((r) => `<span><i style="--c:${roleColor(r)}"></i>${esc(r)}</span>`).join("")}</div>
+      <ol class="seg-cards">${items.map((x) => `<li class="seg-card" style="--c:${roleColor(x.role)}">
+        <div class="seg-top"><span class="seg-no">${esc(x.k)}</span><span class="role-chip">${esc(x.role)}</span>
+          <span class="seg-time">${x.a != null ? tsLink(x.a) : ""}<span class="dash">–</span>${x.b != null ? tsLink(x.b) : ""}</span>
+          <span class="seg-stats"><b>${esc(String(x.secs))}</b>${unit.s}<em>·</em><b>${esc(x.share)}</b><em>·</em><b>${esc(x.wpm)}</b> ${unit.w}<em>·</em><b>${esc(x.points)}</b> ${unit.p}</span></div>
+        ${x.note ? `<p class="seg-note">${esc(x.note)}</p>` : ""}</li>`).join("")}</ol></div>`;
+    const target = seg.nodes.find((n) => n.classList.contains("md-table") || n.tagName === "TABLE");
+    if (target) { target.insertAdjacentHTML("beforebegin", html); target.remove(); }
+  }
+  // 全片指标 → 数字块
+  const met = sectionNodes(box, /^(4\.|4 )/), mr = mdRows(mdSection(md, /^## 4\./));
+  if (met && mr.length >= 2) {
+    const [head, vals] = mr;
+    const tiles = head.map((h, i) => {
+      const v = (vals[i] || "").replace(/\[(\d{1,3}:\d{2})\]/, "$1");
+      const sec = /^\d{1,3}:\d{2}$/.test(v) ? secOf(v) : null;
+      return `<div class="kpi"><span class="kpi-k">${esc(h)}</span><span class="kpi-v">${sec != null ? tsLink(sec) : esc(v)}</span></div>`;
+    }).join("");
+    const target = met.nodes.find((n) => n.classList.contains("md-table") || n.tagName === "TABLE");
+    if (target) { target.insertAdjacentHTML("beforebegin", `<div class="kpis">${tiles}</div>`); target.remove(); }
+  }
+  // 逐段要点 / 可学的写法 / 收藏点:每条拆成「标题 · 说明 · 原句引用」
+  for (const re of [/^(5\.|5 )/, /^(6\.|6 )/, /^(7\.|7 )/]) {
+    const sec = sectionNodes(box, re);
+    if (!sec) continue;
+    sec.nodes.forEach((n) => n.querySelectorAll?.(":scope > li").forEach(splitPoint));
+  }
+}
+
+const QUOTE = /(?:关键原句|原句|如|例如|e\.g\.|Key quote|Quote)?\s*[:：]?\s*["“「]([^"”」]{2,260})["”」]\s*(<a class="ts"[^>]*>[^<]*<\/a>)/g;
+function splitPoint(li) {
+  let html = li.innerHTML.trim(), title = "", tag = "", range = "";
+  // 段号开头:"段1(1–18)标题:" 或 "**段1 · 标题**(第 1–18 句):"
+  let m = html.match(/^(?:<strong>)?\s*(段\s*\d+|Segment\s*\d+)\s*(?:[·.]\s*)?([^（(<：:]{0,40}?)\s*(?:<\/strong>)?\s*[（(]\s*(?:第|sentences?)?\s*([\d\s–\-~]+)\s*(?:句|sentences?)?\s*[)）]\s*([^：:<]{0,40}?)\s*[：:]\s*/i);
+  if (m) { tag = m[1].replace(/\s+/g, ""); title = (m[2] || m[4] || "").trim(); range = m[3].trim(); html = html.slice(m[0].length); }
+  else if ((m = html.match(/^<strong>([^<]{1,40})<\/strong>\s*[：:—–-]?\s*/))) { title = m[1].replace(/[：:]$/, ""); html = html.slice(m[0].length); }
+  else if ((m = html.match(/^([^<：:。]{2,26})[：:]\s*/))) { title = m[1]; html = html.slice(m[0].length); }
+  const quotes = [];
+  html = html.replace(QUOTE, (all, q, ts) => { quotes.push(`<blockquote class="pq"><span>“${q}”</span>${ts}</blockquote>`); return ""; });
+  // 新格式把原句放在列表项里的引用块中;原句取走后剩下的空引用块去掉
+  html = html.replace(/<blockquote>\s*(?:<p>)?\s*(?:关键原句|原句|Key quote|Quote)?\s*[：:]?\s*(?:<\/p>)?\s*<\/blockquote>/gi, "");
+  html = html.replace(/(?:关键原句|如|例如)?\s*[、,，。;；]*\s*$/, "").replace(/^[\s、,，。]+/, "").trim();
+  if (!title && !quotes.length) return;
+  li.classList.add("pt");
+  li.innerHTML = (title || tag ? `<div class="pt-head">${tag ? `<span class="pt-tag">${esc(tag)}</span>` : ""}${title ? `<b>${title}</b>` : ""}${range ? `<span class="pt-range">${LANG === "zh" ? "第 " + esc(range) + " 句" : "sentences " + esc(range)}</span>` : ""}</div>` : "")
+    + (html ? `<div class="pt-body">${html}</div>` : "") + quotes.join("");
 }
 function linkify(box) {   // 正文里其余的时间戳也变成可点的
   const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), nodes = [];
