@@ -268,7 +268,7 @@ def run_task(task_id):
             rep = names.report(used, skipped, unsure, lang)
             log("== 专名核对:\n" + rep)
             return {"fixed": [{k: f.get(k) for k in ("old", "new", "name", "why")} for f in used],
-                    "unsure": len(names.pending(skipped, unsure)), "report": rep}
+                    "unsure": len(names.pending(skipped, unsure, used)), "report": rep}
 
         res = timed("names", check_names)
         if res is not None:

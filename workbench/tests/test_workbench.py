@@ -430,6 +430,17 @@ def test_names_check_fixes_only_confident_and_safe(env, monkeypatch):
     assert len(used) == 2 and [w for _, w in skipped] == ["把握不够", "会动到时间戳", "总结里找不到这段原文"]
     rep = names.report(used, skipped, [{"text": "Garner", "guess": "Gartner", "why": "只有读音像"}, {"text": "Garner(转写疑似)", "why": "重复"}])
     assert "已校正 2 处" in rep and "待核实 4 处" in rep and "Gartner" in rep
+    # 同一个听错的词:第一条改完把别处也一并改了,后面几条找不到原文,不该再列成待核实;猜的和原文一样的也不列
+    md2 = "回顾 Shelling 隔离模型。以 Shelling 为例。Shelling 模型从混合社区出发。Downey 画了图。"
+    f2 = [{"old": "Shelling 隔离模型", "new": "Schelling 隔离模型", "heard": "Shelling", "name": "Schelling", "confidence": "high"},
+          {"old": "Shelling 为例", "new": "Schelling 为例", "heard": "Shelling", "name": "Schelling", "confidence": "high"},
+          {"old": "Shelling 模型从混合社区出发", "new": "Schelling 模型从混合社区出发", "heard": "Shelling", "name": "Schelling", "confidence": "high"}]
+    out2, used2, skipped2 = names.apply(md2, f2)
+    assert "Shelling" not in out2 and len(used2) == 1 and used2[0]["more"] == 2 and len(skipped2) == 2
+    u2 = [{"text": "Downey", "guess": "Downey", "why": "把握不够"}, {"text": "Shelling", "guess": "", "why": "?"}, {"text": "Voids", "guess": "Boids", "why": "只有读音像"}]
+    assert [u["text"] for u in names.pending(skipped2, u2, used2)] == ["Voids"]
+    rep2 = names.report(used2, skipped2, u2)
+    assert "待核实 1 处" in rep2 and "Downey" not in rep2
     assert names.parse('前言\n```json\n{"fixes": [], "unsure": []}\n```') == ([], [])
     with pytest.raises(names.NamesError):
         names.parse("不是 json")

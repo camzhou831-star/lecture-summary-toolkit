@@ -117,14 +117,23 @@ def _rest(md, heard, name, new):
     return "".join(parts), n
 
 
-def pending(skipped, unsure):
-    """待核实清单:没采纳的 + 模型自己拿不准的,同一个词只列一次"""
+def pending(skipped, unsure, used=()):
+    """待核实清单:没采纳的 + 模型自己拿不准的,同一个词只列一次。
+    去掉两种不用核实的:已经被采纳的那条一并改好的(含同一个听错的词、猜的也是同一个写法),
+    以及猜的和原文一样的(「Downey → 可能是 Downey」)"""
+    heards = [str(f.get("heard") or "") for f in used if len(str(f.get("heard") or "")) >= 3]
+    done = {str(f.get("name") or "").strip() for f in used}
     rest, seen = [], set()
     for u in [{"text": f.get("old", ""), "guess": f.get("name", ""), "why": w} for f, w in skipped] + unsure:
-        key = re.sub(r"[((].*", "", str(u.get("text", ""))).strip(" \"“”")
-        if key and key not in seen:
-            seen.add(key)
-            rest.append(u)
+        text = str(u.get("text", ""))
+        key = re.sub(r"[((].*", "", text).strip(" \"“”")
+        guess = str(u.get("guess") or "").strip()
+        if not key or key in seen or guess == key:
+            continue
+        if (not guess or guess in done) and any(h in text for h in heards):
+            continue
+        seen.add(key)
+        rest.append(u)
     return rest
 
 
@@ -135,7 +144,7 @@ def report(used, skipped, unsure, lang="zh"):
     if used:
         lines.append(("已校正 %d 处专名:" if zh else "Corrected %d name(s):") % len(used))
         lines += [f"  · {f['old']} → {f.get('name') or f['new']}" + ((f"(另有 {f['more']} 处一并改了)" if zh else f" (+{f['more']} more)") if f.get("more") else "") + (f"({f['why']})" if f.get("why") and zh else f" ({f['why']})" if f.get("why") else "") for f in used]
-    rest = pending(skipped, unsure)
+    rest = pending(skipped, unsure, used)
     if rest:
         lines.append(("待核实 %d 处(没改,请自己核对):" if zh else "To check %d item(s) (left as is):") % len(rest))
         for u in rest:
