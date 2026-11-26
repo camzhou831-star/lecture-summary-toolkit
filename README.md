@@ -26,7 +26,7 @@ It comes in two parts:
 - **No API key needed if you already pay for ChatGPT or Claude.** The summary is written by an AI you already have:
   - **Claude Code**, signed in with your Claude Pro / Max plan
   - **Codex CLI**, signed in with your ChatGPT Plus / Pro plan
-  - or **any OpenAI-compatible API** (DeepSeek by default) if you prefer pay-as-you-go
+  - or **any OpenAI-compatible API** (DeepSeek by default) if you prefer pay-as-you-go. You can paste the key in the app; `如何接入DeepSeek.html` in the download is a step-by-step guide (in Chinese) to getting a DeepSeek key
 - **Three templates.** *Lecture summary* (fixed seven-part notes with review cards); *Script breakdown* for short videos (sentence-by-sentence segments by role, with seconds, word counts and pace computed by code, not the AI); *Meeting notes* in five types (standard, daily standup, project sync, retrospective, client call), adapted from [Meetily](https://github.com/Zackriya-Solutions/meetily).
 - **Checked, not just generated.** Every timestamp is checked against the transcript. If something is out of range or lands in silence, the AI is asked to fix it once.
 - **Click a timestamp, jump to that second.** YouTube and Bilibili play inside the page. Twitch and Vimeo open at the right time. Local files play in the built-in player.

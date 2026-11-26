@@ -151,7 +151,12 @@ def _api(messages, on_progress, max_tokens, temperature, timeout, model=None):
         with httpx.stream("POST", f"{cfg.base_url}/chat/completions", json=body, headers=headers,
                           timeout=httpx.Timeout(timeout, connect=20)) as r:
             if r.status_code != 200:
-                raise LLMError(f"模型接口返回 {r.status_code}: {r.read().decode('utf-8', 'replace')[:300]}")
+                body = r.read().decode("utf-8", "replace")[:300]
+                if r.status_code == 402:
+                    raise LLMError("API 账户余额不足:到 DeepSeek 开放平台(platform.deepseek.com)充值后,回来点「重跑」")
+                if r.status_code in (401, 403):
+                    raise LLMError("API Key 不对或已删除:到「设置 → 写总结的 AI」重新粘贴(怎么拿 Key 见首页的图文说明)")
+                raise LLMError(f"模型接口返回 {r.status_code}: {body}")
             n = 0
             for line in r.iter_lines():
                 if not line.startswith("data:"):

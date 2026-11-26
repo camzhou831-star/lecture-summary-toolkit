@@ -737,3 +737,11 @@ def test_claude_writer_can_open_screenshots(env, monkeypatch):
     rev = [k for s, k in calls if s.startswith("你是课程总结的审核员")][0]
     assert writer.get("images_dir") == fdir
     assert rev["provider"] == "codex" and rev["images"] == [os.path.join(fdir, "t00060s.jpg")] and t["meta"]["review"]["cross"]
+
+
+def test_deepseek_guide_is_served(env):
+    """新手说明随安装包放在仓库根目录,工作台 /guide/deepseek 能打开"""
+    from fastapi.testclient import TestClient
+    with TestClient(env["server"].app) as c:
+        r = c.get("/guide/deepseek")
+        assert r.status_code == 200 and "platform.deepseek.com" in r.text and "API Key" in r.text

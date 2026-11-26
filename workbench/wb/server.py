@@ -335,6 +335,17 @@ def delete_task(tid: int):
     return {"ok": True}
 
 
+GUIDE_DS = os.path.join(os.path.dirname(config.WB_DIR), "如何接入DeepSeek.html")   # 仓库根目录,随安装包一起下载
+
+
+@app.get("/guide/deepseek")
+def guide_deepseek():
+    """新手说明:怎么在 DeepSeek 开放平台拿 API Key、粘到工作台"""
+    if not os.path.isfile(GUIDE_DS):
+        raise HTTPException(404, "说明文件不在")
+    return FileResponse(GUIDE_DS, media_type="text/html; charset=utf-8")
+
+
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-cache"})   # 改了前端刷新就生效

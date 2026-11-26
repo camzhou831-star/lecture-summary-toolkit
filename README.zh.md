@@ -26,7 +26,7 @@
 - **有 ChatGPT 或 Claude 会员，就不用 API Key。** 总结由你已有的 AI 来写，三选一：
   - **Claude Code**：登录 Claude Pro / Max 订阅
   - **Codex CLI**：登录 ChatGPT Plus / Pro 账号
-  - **任意 OpenAI 兼容 API**：默认 DeepSeek，按量付费
+  - **任意 OpenAI 兼容 API**：默认 DeepSeek，按量付费。第一次用 DeepSeek 的话，打开安装包里的 **「如何接入DeepSeek.html」**，五步拿到 API Key 并粘到工作台（工作台首页也有入口）
 - **三种模板。** **课程总结**（七节固定结构加复习卡）；**对标拆稿**，给短视频口播逐句拆：按作用分段，秒数、字数、语速由程序算，不让 AI 估；**会议纪要**，有标准会议、每日站会、项目同步、复盘会、客户沟通 5 种，模板取自开源项目 [Meetily](https://github.com/Zackriya-Solutions/meetily)。
 - **写完会核对。** 每个时间戳都和文字稿对一遍；超出视频时长或落在静音段的，让 AI 改一轮。
 - **点时间戳，跳到那一秒。** YouTube、B 站在页面里直接播；Twitch、Vimeo 在原站打开到对应时间；本地文件用页面里的播放器。

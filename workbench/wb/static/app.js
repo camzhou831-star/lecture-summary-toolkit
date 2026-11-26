@@ -306,7 +306,7 @@ async function drawSettings() {
   drawProviders(c);
   $("#cfg-path").textContent = s.config_file;
   $("#set-key").innerHTML = `<div class="keyline"><span>${c.key_ok ? t("key_have", { s: esc(c.key_source) }) : t("key_empty")}</span>
-    ${c.key_ok ? `<button type="button" class="btn btn-ghost btn-sm" id="key-clear">${t("key_clear")}</button>` : `<a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">${t("ob_ds_link")} ↗</a>`}</div>${keyForm("set")}`;
+    ${c.key_ok ? `<button type="button" class="btn btn-ghost btn-sm" id="key-clear">${t("key_clear")}</button>` : `<a href="/guide/deepseek" target="_blank" rel="noopener">${t("ob_ds_guide")}</a> · <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">${t("ob_ds_link")} ↗</a>`}</div>${keyForm("set")}`;
   if (c.key_ok) $("#key-clear").onclick = async () => {
     try { cfg = await api("/api/config/key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: "" }) }); toast(t("key_cleared")); drawSettings(); }
     catch (err) { toast(trServer(err.message)); }
@@ -786,7 +786,7 @@ async function drawOnboard(recheck) {
     mac ? cmdBox("brew install ffmpeg whisper-cpp") : win ? cmdBox("winget install -e --id Gyan.FFmpeg") + osNote : osNote);
   // 写总结的 AI:按时区排推荐顺序(UTC+8 → DeepSeek 在前;其他 → 先用已有的 ChatGPT / Claude 会员)
   const cn = inUTC8(), rec = `<span class="rec-tag">${t("ob_rec")}</span>`;
-  const ds = `<div class="ob-note">${cn ? rec : ""}${t("ob_ds")} · <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">${t("ob_ds_link")} ↗</a></div>${keyForm("ob")}`;
+  const ds = `<div class="ob-note">${cn ? rec : ""}${t("ob_ds")} · <a href="/guide/deepseek" target="_blank" rel="noopener"><b>${t("ob_ds_guide")}</b></a> · <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">${t("ob_ds_link")} ↗</a></div>${keyForm("ob")}`;
   const subs = `<div class="ob-note">${cn ? "" : rec}${t("ob_ai_claude")}</div>${cmdBox("npm i -g @anthropic-ai/claude-code && claude")}
      <div class="ob-note">${cn ? "" : rec}${t("ob_ai_codex")}</div>${cmdBox("npm i -g @openai/codex && codex")}
      ${status.npm ? "" : `<div class="ob-note">${t("ob_ai_node")}</div>${cmdBox(mac ? "brew install node" : win ? "winget install OpenJS.NodeJS.LTS" : "https://nodejs.org")}`}`;

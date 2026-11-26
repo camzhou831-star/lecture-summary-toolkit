@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>如何接入 DeepSeek</title>
+<style>
+  :root { --bg: #f6f7f4; --card: #fff; --text: #1f2a24; --muted: #5d6b62; --accent: #4f7f6a; --soft: #e8f0eb; --warn: #8a5a12; --warn-bg: #fbf1df; --border: #dfe5e0; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151a17; --card: #1d2420; --text: #e4ebe6; --muted: #9aa8a0; --accent: #8cc2a8; --soft: #24302a; --warn: #f0c27a; --warn-bg: #2d2617; --border: #2f3a34; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.75 -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 28px; line-height: 1.3; margin: 0 0 8px; }
+  h2 { font-size: 20px; margin: 36px 0 12px; }
+  p, li { color: var(--text); }
+  .muted { color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; margin: 14px 0; }
+  ol.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+  ol.steps > li { counter-increment: s; position: relative; padding: 18px 20px 18px 64px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; margin: 12px 0; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 18px; top: 18px; width: 32px; height: 32px; border-radius: 50%; background: var(--soft); color: var(--accent); font-weight: 700; display: grid; place-items: center; }
+  ol.steps b.t { display: block; font-size: 17px; margin-bottom: 4px; }
+  a { color: var(--accent); }
+  code { background: var(--soft); padding: 1px 6px; border-radius: 6px; font-size: 14px; }
+  .warn { background: var(--warn-bg); color: var(--warn); border-radius: 12px; padding: 12px 16px; margin: 14px 0; }
+  dl { margin: 0; }
+  dt { font-weight: 600; margin-top: 16px; }
+  dd { margin: 4px 0 0; color: var(--muted); }
+  .key { display: inline-block; font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--soft); padding: 2px 8px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>用 DeepSeek 写总结:5 分钟接好</h1>
+  <p class="muted">总结工作台负责下载视频、转文字、核对时间戳;"写总结"这一步要借一个 AI。国内最省事的是 DeepSeek。这份说明从零开始,一步一步带你接好。</p>
+
+  <div class="card">
+    <b>先弄清楚一件事</b>
+    <p style="margin:6px 0 0">DeepSeek(深度求索)是国内的 AI,和 ChatGPT 差不多,在国内直接能用。手机上的 DeepSeek App 是免费聊天用的,<b>工作台用的是它的「开放平台」</b>:要单独充一点钱,拿一把叫 <b>API Key</b> 的"钥匙",按用量扣费。</p>
+  </div>
+
+  <h2>准备好这三样</h2>
+  <ul>
+    <li>一个手机号(登录用)</li>
+    <li>支付宝或微信(充值用)</li>
+    <li>工作台已经打开(双击「启动工作台」后,浏览器里的那个页面)</li>
+  </ul>
+
+  <h2>五步接好</h2>
+  <ol class="steps">
+    <li><b class="t">打开 DeepSeek 开放平台,登录</b>
+      在浏览器里打开 <a href="https://platform.deepseek.com/" target="_blank" rel="noopener">platform.deepseek.com</a>,用手机号登录。没有账号的话,第一次登录就会自动注册。</li>
+    <li><b class="t">充一小笔钱</b>
+      在左边菜单找「充值」,用支付宝或微信充一点,第一次可以先充 10 元左右试试。价格以官网的<a href="https://api-docs.deepseek.com/zh-cn/quick_start/pricing" target="_blank" rel="noopener">价格页面</a>为准。</li>
+    <li><b class="t">创建 API Key,复制下来</b>
+      在左边菜单找「API keys」,点「创建 API key」,名字随便写(比如"总结工作台"),确认。页面会出现一串 <span class="key">sk-</span> 开头的字符,这就是 Key。
+      <div class="warn">这串字符<b>只显示这一次</b>,关掉就看不到了。马上点旁边的复制按钮。万一没复制到,删掉它再创建一个就行。</div></li>
+    <li><b class="t">粘贴到工作台</b>
+      回到工作台首页,在顶部「开始前检查」里找到 DeepSeek 那一项,把 Key 粘进输入框,点「保存」。工作台会先试一下这把 Key 能不能用,对了才保存。<br>
+      <span class="muted">也可以在左边「设置 → 写总结的 AI」里粘贴。</span></li>
+    <li><b class="t">看到「准备就绪」就好了</b>
+      首页顶部出现「准备就绪:DeepSeek … 写课程总结」,就可以贴链接或选文件开始了。</li>
+  </ol>
+
+  <h2>常见问题</h2>
+  <div class="card"><dl>
+    <dt>提示「Key 不对」</dt>
+    <dd>多半是复制时少了几个字符。回到开放平台,删掉这把 Key,重新创建一把再粘贴。</dd>
+    <dt>提示「余额不足」</dt>
+    <dd>开放平台里的钱用完了。去「充值」充一点,回到工作台点「重跑」。</dd>
+    <dt>大概花多少钱?</dt>
+    <dd>按处理的字数扣费,课越长越贵。为了不把错的内容写进总结,课程总结写完还会审核、复核几轮,这部分会比写总结本身多花一些。开放平台的「用量信息」里能看到每天花了多少。</dd>
+    <dt>Key 安全吗?</dt>
+    <dd>Key 只存在你自己电脑上(工作台的配置文件里),工作台不会把它发到别处。不要把 Key 发给别人;万一泄露了,到开放平台把它删掉,再建一把新的。</dd>
+    <dt>不想单独付钱</dt>
+    <dd>如果你有 ChatGPT Plus 或 Claude Pro 会员,可以改用 Codex 或 Claude Code 写总结,不需要 API Key(安装方法见首页「开始前检查」)。</dd>
+    <dt>页面和这份说明对不上</dt>
+    <dd>开放平台可能改过版。按意思找「充值」和「API keys」这两个地方就行。</dd>
+  </dl></div>
+
+  <p class="muted" style="margin-top:28px">这份说明随工作台一起下载,在工作台首页 DeepSeek 那一项旁边也能打开。</p>
+</main>
+</body>
+</html>
