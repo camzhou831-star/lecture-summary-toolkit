@@ -11,7 +11,7 @@ It runs on your own computer. On Mac and Windows you download it and double-clic
 ## What it's for
 
 - **You missed a 90-minute lecture and don't want to watch all of it.** Read the summary first, and click the timestamp for the part you didn't get.
-- **Revising for an exam.** Anything the lecturer flagged ("this will be on the exam", "pay attention here") is pulled out, course notices (assignments, deadlines, how marks are split) are collected, and there's a set of review cards you can drop straight into Obsidian.
+- **When you revise.** Anything the lecturer flagged ("this will be on the exam", "pay attention here") is pulled out, course notices (assignments, deadlines, how marks are split) are collected, and there's a set of review cards you can drop straight into Obsidian.
 - **Learning how good short videos are written.** Paste a short video and it breaks the script down sentence by sentence: how it hooks you, what each part does, how fast it talks.
 - **Writing up a meeting.** Drop in the recording and get the decisions, who owns what, and a timestamp for each.
 
