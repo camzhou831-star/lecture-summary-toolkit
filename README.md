@@ -1,140 +1,116 @@
-# Lecture Summary Toolkit
+# Lecture Summary Workbench
 
 **English** | [中文](README.zh.md)
 
-Turn a lecture video into a study summary you can actually revise from: a timeline you can click back into the video, key points with timestamps, exam signals, and review cards. Transcription runs on your own computer.
+**Paste a link to an online lecture or class recording, and a few minutes later you get a summary you can revise from.** Every section has a timestamp; click it and the video jumps to that second.
 
-It comes in two parts:
+It runs on your own computer. On Mac and Windows you download it and double-click to start.
 
-| | What it is | For |
+![A finished summary: the summary in the middle, the video and clickable chapters on the right](workbench/docs/screenshot.png)
+
+## What it's for
+
+- **You missed a 90-minute lecture and don't want to watch all of it.** Read the summary first, and click the timestamp for the part you didn't get.
+- **Revising for an exam.** Anything the lecturer flagged ("this will be on the exam", "pay attention here") is pulled out, course notices (assignments, deadlines, how marks are split) are collected, and there's a set of review cards you can drop straight into Obsidian.
+- **Learning how good short videos are written.** Paste a short video and it breaks the script down sentence by sentence: how it hooks you, what each part does, how fast it talks.
+- **Writing up a meeting.** Drop in the recording and get the decisions, who owns what, and a timestamp for each.
+
+## How is this different from pasting into ChatGPT?
+
+- **No hunting for subtitles or transcripts.** Paste the link. If the site has subtitles it uses them; if not, it transcribes the audio on your computer.
+- **The timestamps are checked.** Each one is checked against the transcript, so clicking it really lands on that second. The AI didn't just make it up.
+- **It doesn't copy the lecturer's mistakes.** After the summary is written, a second AI checks it against the transcript and slides. Each problem it finds is checked twice more, independently, and only fixed if both agree. Anything still uncertain is marked "to check" in place, with both readings, rather than written as fact.
+- **It can read the slides and the screen.** Attach the lecture's slides as a PDF and the summary cites page numbers. For local videos it also reads the text on screen, such as a marking rubric the lecturer put up.
+
+## Get started in three steps
+
+1. **Download.** From the [latest release](https://github.com/camzhou831-star/lecture-summary-toolkit/releases/latest): `lecture-workbench-mac.zip` for Mac, `lecture-workbench-windows.zip` for Windows. Unzip it.
+2. **Double-click to start.** On Mac, double-click `启动工作台.command` ("Start Workbench"); on Windows, `启动工作台.bat`. The first run installs what it needs, then opens the workbench in your browser.
+   - Mac says it "cannot be verified" the first time: Control-click the file and choose Open. On newer macOS without that button, go to System Settings → Privacy & Security and click Open Anyway.
+   - Windows shows "Windows protected your PC": click More info → Run anyway.
+   - Keep the window that pops up open while you use it; closing it stops the workbench.
+3. **Pick an AI to write the summaries.** The "Before you start" checklist on the home page tells you what's missing. Use whichever you already have:
+
+| You have | What to do | Extra cost |
 |---|---|---|
-| **Workbench** (`workbench/`) | A local web app. Paste a link or drop a file, get a summary. | Most people |
-| **Skill** (`skills/video-summary/`) | Instructions plus scripts for Claude Code / Codex. Summarise lecture recordings from a chat, with slide OCR, frame capture and an exam-signal bank. | People who already work in Claude Code or Codex |
+| Claude Pro / Max | Install Claude Code and sign in once | None, it's part of your plan |
+| ChatGPT Plus / Pro | Install Codex and sign in once | None, it's part of your plan |
+| A DeepSeek account | Install the [DeepSeek Harness](https://www.deepseek.com/en/harness/) desktop app and sign in once | Billed to your DeepSeek account |
+| None of these | Paste an API key (DeepSeek by default, or any OpenAI-compatible service). `如何接入DeepSeek.html` in the download is a step-by-step guide (in Chinese) | Pay as you go; with DeepSeek, a 1.5-hour lecture costs a few cents including review |
 
-## Workbench
+Then paste a lecture link and click Summarize. The first transcription downloads a speech model of about 1.6 GB, once.
 
-![A finished summary: sidebar with features, summary in the middle, player and clickable chapters on the right](workbench/docs/screenshot.png)
+## FAQ
 
-<details><summary>New-summary page</summary>
+**Which sites work?** YouTube, Twitch, Vimeo, TED, Bilibili, and university lecture capture such as Panopto and Kaltura. Under the hood it's [yt-dlp](https://github.com/yt-dlp/yt-dlp), which supports over a thousand sites. You can also drag in local video, audio or subtitle files (`.srt` / `.vtt`).
 
-![Paste a link, pick a template](workbench/docs/home.png)
+**My university recordings need a login.** In Settings → Site login, pick a browser you're already signed in with, and the workbench borrows its login to download (only on your computer). If that still fails, download the video yourself and drag it in.
 
-</details>
+**Does my video get uploaded anywhere?** No. Downloading and transcription happen on your computer. Only the transcribed text goes to the AI you picked, to write the summary. Everything is saved in the workbench's own `workbench/data/` folder.
 
-- **Paste almost any lecture link.** YouTube, Twitch, Vimeo, TED, SoundCloud, Bilibili, and university lecture-capture pages such as Panopto and Kaltura. Under the hood this is [yt-dlp](https://github.com/yt-dlp/yt-dlp), which supports more than a thousand sites. Local video, audio, `.srt` and `.vtt` files work too.
-- **Subtitles first, transcription second.** If the site has subtitles, they are used as-is. Otherwise the audio is downloaded and transcribed locally with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (large-v3-turbo, with voice-activity detection).
-- **No API key needed if you already pay for ChatGPT or Claude.** The summary is written by an AI you already have:
-  - **Claude Code**, signed in with your Claude Pro / Max plan
-  - **Codex CLI**, signed in with your ChatGPT Plus / Pro plan
-  - or **any OpenAI-compatible API** (DeepSeek by default) if you prefer pay-as-you-go. You can paste the key in the app; `如何接入DeepSeek.html` in the download is a step-by-step guide (in Chinese) to getting a DeepSeek key
-- **Three templates.** *Lecture summary* (fixed seven-part notes with review cards); *Script breakdown* for short videos (sentence-by-sentence segments by role, with seconds, word counts and pace computed by code, not the AI); *Meeting notes* in five types (standard, daily standup, project sync, retrospective, client call), adapted from [Meetily](https://github.com/Zackriya-Solutions/meetily).
-- **Checked, not just generated.** Every timestamp is checked against the transcript. If something is out of range or lands in silence, the AI is asked to fix it once.
-- **Click a timestamp, jump to that second.** YouTube and Bilibili play inside the page. Twitch and Vimeo open at the right time. Local files play in the built-in player.
-- **English and Chinese.** Switch the interface with the button in the top bar (it follows your browser language the first time, or open `?lang=en`). Each summary can be written in English or Chinese.
-- **Calm by design.** Low-saturation colour themes (sage, lavender dusk, morning mist), light and dark, because revision is stressful enough.
+**Can summaries be in Chinese?** Yes. Each summary can be English or Chinese, and the interface comes in both.
 
-### Easiest: download and double-click (macOS)
+**How long does it take?** For a one-hour lecture that already has subtitles, the first draft takes a minute or two; transcribing on your computer adds a few minutes. Lecture summaries are then reviewed for a few rounds, which takes around 10 minutes with DeepSeek for a 1.5-hour lecture. Slower, but nothing wrong goes in.
 
-1. Download **`lecture-workbench-mac.zip`** from the [latest release](https://github.com/camzhou831-star/lecture-summary-toolkit/releases/latest) and double-click it to unzip.
-2. In the unzipped folder, double-click **`启动工作台.command`** ("Start Workbench").
-   - The first time, macOS will say it can't check the file. **Control-click it → Open → Open.** On newer macOS, if there is no Open button, go to **System Settings → Privacy & Security** and click **Open Anyway** next to the message.
-3. A Terminal window opens and installs whatever is missing (it asks before installing Homebrew, and you type your Mac password yourself). Then the workbench opens in your browser.
-4. Follow the **Before you start** card on the page, paste a link, done.
+**Does Windows work?** It installs, but the full flow has only been tested on a Mac so far. Please open an issue if something breaks.
 
-Keep that Terminal window open while you use the workbench; close it to stop. Next time, just double-click the same file again.
+Only download videos you're allowed to use for your own study, and don't redistribute them.
 
-### Windows: download and double-click (new, not yet tested on many machines)
+<details><summary>Comfortable with a terminal? Install from source / by hand</summary>
 
-1. Download **`lecture-workbench-windows.zip`** from the [latest release](https://github.com/camzhou831-star/lecture-summary-toolkit/releases/latest), right-click → **Extract All**.
-2. In the extracted folder, double-click **`启动工作台.bat`** ("Start Workbench"). If Windows shows "Windows protected your PC", click **More info → Run anyway**.
-3. A window installs uv, yt-dlp and ffmpeg with winget (built into Windows 10/11), then the GPU build of whisper.cpp (Vulkan, works with NVIDIA, AMD and Intel graphics, with a CPU fallback) and the speech model (about 1.6 GB, once). Then the workbench opens in your browser.
-4. Keep that window open while you use the workbench; close it to stop. Next time, double-click the same file.
-
-For the AI on Windows: install Node.js (`winget install OpenJS.NodeJS.LTS`), then `npm i -g @anthropic-ai/claude-code` or `npm i -g @openai/codex` and run it once to sign in — or use an API key.
-
-### First time? Five steps (macOS, with Terminal)
-
-1. **Open Terminal.** Press ⌘ Space, type `Terminal`, press Return.
-2. **Get the code.** Paste this and press Return (if your Mac asks to install developer tools, click Install and run it again):
-
-   ```bash
-   git clone https://github.com/camzhou831-star/lecture-summary-toolkit.git
-   ```
-
-   No git? Click **Code → Download ZIP** on GitHub and unzip it instead.
-3. **Run the setup script.** It installs whatever is missing (skipping what you already have), then starts the workbench and opens it in your browser:
-
-   ```bash
-   bash lecture-summary-toolkit/workbench/setup.sh
-   ```
-
-   If it says Homebrew is missing, it prints the one line to install it. Run that, then run the script again.
-4. **Follow the "Before you start" card** at the top of the page. It checks what's installed and gives you a command to copy for anything that's missing. The main thing is the AI that writes summaries: if you pay for Claude or ChatGPT, install Claude Code or Codex and sign in once. No API key needed.
-5. **Paste a lecture link and click Summarize.** The first transcription also downloads a speech model (about 1.6 GB, once only). Long videos take a few minutes; the browser tab shows ✓ when it's done.
-
-**Next time:** run `bash lecture-summary-toolkit/workbench/setup.sh` again. It skips the installs and just starts the workbench.
-
-<details><summary>Manual setup (if you'd rather do it yourself)</summary>
-
-**1. Install the tools**
-
-```bash
-brew install uv yt-dlp ffmpeg whisper-cpp
-```
-
-The whisper model (about 1.6 GB) downloads automatically the first time something is transcribed.
-
-**2. Pick the AI that writes the summary.** You only need one of these:
-
-| You have | Do this once |
-|---|---|
-| Claude Pro / Max | `npm i -g @anthropic-ai/claude-code`, then run `claude` and sign in |
-| ChatGPT Plus / Pro | `npm i -g @openai/codex` (or `brew install codex`), then run `codex` and sign in |
-| An API key | Put it in `~/.config/lecture-workbench/config.json` as `{"api_key": "sk-..."}`. The default endpoint is DeepSeek; set `base_url` and `model` for any OpenAI-compatible API. |
-
-On **Auto** (the default), the workbench uses an API key if there is one, otherwise Claude Code, otherwise Codex. You can change this under **Settings**.
-
-**3. Start it**
+**One command to install and start (macOS):**
 
 ```bash
 git clone https://github.com/camzhou831-star/lecture-summary-toolkit.git
+bash lecture-summary-toolkit/workbench/setup.sh
+```
+
+It installs whatever is missing and skips what you have; if Homebrew is missing it prints the install command. Run the same script again next time.
+
+**Fully by hand:**
+
+```bash
+brew install uv yt-dlp ffmpeg whisper-cpp tesseract poppler
 cd lecture-summary-toolkit/workbench
 uv run python -m wb
 ```
 
-Open <http://127.0.0.1:8770>. If the port is taken, run `PORT=8771 uv run python -m wb`.
+Open <http://127.0.0.1:8770>. If the port is taken, use `PORT=8771 uv run python -m wb`.
+
+You can also set the API key without the interface: put `{"api_key": "sk-..."}` in `~/.config/lecture-workbench/config.json`. The default endpoint is DeepSeek; for another OpenAI-compatible API, change `base_url` and `model`.
 
 </details>
 
-### Lectures behind a login
+<details><summary>How it works (technical details)</summary>
 
-University recordings (Panopto, Echo360, Kaltura, YuJa) and course sites (Coursera, Udemy) usually need you to be signed in. In **Settings → Site login**, choose a browser you are already signed in with. yt-dlp then borrows that browser's cookies when downloading, on your machine only. This is off by default. If a site still refuses, download the video yourself and drop the file in.
+- Getting the text: site subtitles first; otherwise the audio is downloaded and transcribed locally with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (large-v3-turbo, with voice activity detection).
+- Reading the screen: for local videos, one frame every 12 seconds, de-duplicated, read with tesseract and matched to the slide PDF's pages.
+- Writing: three templates. Lecture summary (a fixed seven-part structure plus review cards), script breakdown (seconds, word counts and pace computed by code), and meeting notes (five meeting types, templates from [Meetily](https://github.com/Zackriya-Solutions/meetily)).
+- Checking: code checks every timestamp; a pass fixes misheard names of people and companies; lecture summaries then get several rounds of independent review.
+- Backend FastAPI + SQLite; the frontend is plain HTML with no build step.
 
-### What gets sent where
+More detail, measured timings and known limits: [`workbench/README.md`](workbench/README.md) (in Chinese).
 
-- Downloading and transcription happen on your computer.
-- The transcript, and only the transcript, is sent to the AI you chose (Claude, ChatGPT or your API provider) to write the summary.
-- Each task's files (transcript, summary `.md`) are saved in `workbench/data/`, which git ignores.
-- Only download videos you are allowed to use for your own study. Do not redistribute them.
+</details>
 
-More detail (architecture, test results, limits): [`workbench/README.md`](workbench/README.md).
+<details><summary>Already use Claude Code or Codex? There's also a Skill version</summary>
 
-## Skill for Claude Code / Codex
-
-For full lecture recordings with slides. It captures frames, runs OCR and matches slides, writes a timestamped summary with a fixed seven-section structure, then checks it.
+No web page: just say "summarise <video or subtitle file>" in Claude Code or Codex. It suits full lecture recordings with slides: frame capture, OCR, slide page matching, automatic checks, and a weekly exam-signal bank.
 
 ```bash
-bash install.sh          # macOS / Linux: dependencies + links the skill into Claude Code and Codex
-bash lsk doctor --video  # check what is installed
+bash install.sh          # macOS / Linux: install dependencies and link the skill into Claude Code and Codex
+bash lsk doctor --video  # check the setup
 ```
 
-On Windows, double-click `install.cmd`. After installing, say *"summarize &lt;video or subtitle file&gt;"* in Claude Code or Codex. The workflow is in [`skills/video-summary/SKILL.md`](skills/video-summary/SKILL.md), and the writing rules, which the workbench also uses, are in [`policy.md`](skills/video-summary/policy.md).
+On Windows, double-click `install.cmd`. The flow is in [`skills/video-summary/SKILL.md`](skills/video-summary/SKILL.md) and the writing rules in [`policy.md`](skills/video-summary/policy.md), which the workbench uses too.
+
+</details>
 
 ## Credits
 
-- UI design tokens and layout adapted from [TreeUI](https://github.com/Viserion77/treeui) (MIT)
-- Meeting-notes templates and prompt rules adapted from [Meetily](https://github.com/Zackriya-Solutions/meetily) (MIT); see `workbench/templates/meeting/`
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp), [whisper.cpp](https://github.com/ggml-org/whisper.cpp), [FFmpeg](https://ffmpeg.org/)
+- Interface colours and layout based on [TreeUI](https://github.com/Viserion77/treeui) (MIT)
+- Meeting-note templates adapted from [Meetily](https://github.com/Zackriya-Solutions/meetily) (MIT)
+- Downloading, transcription and media handling by [yt-dlp](https://github.com/yt-dlp/yt-dlp), [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and [FFmpeg](https://ffmpeg.org/)
 
 ## License
 
