@@ -12,10 +12,11 @@
 
 需要:[uv](https://docs.astral.sh/uv/)、`yt-dlp`、`ffmpeg`、`whisper-cli`(macOS:`brew install uv yt-dlp ffmpeg whisper-cpp`)。whisper 模型第一次转写时自动下载(约 1.6 GB,和录播课工具共用 `~/.local/share/whisper-models/`)。
 
-1. 选写总结的 AI(在「设置」里也能改;默认"自动":有 API Key 用 API,否则本机 Claude Code,再否则 Codex):
+1. 选写总结的 AI(在「设置」里也能改;默认"自动":有 API Key 用 API,否则本机 Claude Code,再否则 Codex,再否则 DeepSeek Harness):
 
    - **Claude Code**:装好 `claude` 并登录 Claude Pro / Max,不用 Key。工作台在空的临时目录里跑 `claude -p`,禁用改文件和联网的工具
    - **Codex**:装好 `codex` 并登录 ChatGPT Plus / Pro,不用 Key。跑 `codex exec --sandbox read-only`
+   - **DeepSeek Harness**:装好 DeepSeek 官方桌面版并用 DeepSeek 账号登录,不用 Key。跑 Harness 自带的 `dsh headless --permission-mode read-only`,写总结用 `deepseek-flash`(能看截图),审核用 `deepseek-v4-pro`。Harness 的无界面模式默认只认 API Key,工作台用一个覆盖配置打开它的账号登录插件(`wb/llm.py` 的 `HARNESS_PATCH`);这是文档没写的用法,Harness 升级后可能失效,失效时会提示改用 API Key。Windows 上 `dsh` 的位置还没实测。
    - **API**:环境变量 `DEEPSEEK_API_KEY`,或写配置文件 `~/.config/lecture-workbench/config.json`:
 
      ```json

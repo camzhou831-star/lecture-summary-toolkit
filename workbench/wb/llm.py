@@ -3,7 +3,8 @@
   claude  本机的 Claude Code(`claude -p`),用你已登录的 Claude Pro / Max 订阅,不用 API Key
   codex   本机的 Codex CLI(`codex exec`),用你已登录的 ChatGPT Plus / Pro 账号,不用 API Key
   api     任意 OpenAI 兼容接口(默认 DeepSeek deepseek-chat),要填 API Key
-  auto    默认:填了 Key 用 api;否则有 claude 用 claude;再否则有 codex 用 codex
+  harness 本机的 DeepSeek Harness 桌面版(`dsh headless`),用你在 Harness 里登录的 DeepSeek 账号,不用 API Key
+  auto    默认:填了 Key 用 api;否则依次 claude、codex、harness
 
 命令行两种都在一个空的临时目录里跑,只读、不让它动文件;讲义稿从标准输入传进去。
 """
@@ -21,7 +22,70 @@ PROVIDERS = {
     "claude": {"name": "Claude Code(Claude Pro / Max 订阅)", "cmd": "claude"},
     "codex": {"name": "Codex(ChatGPT Plus / Pro 账号)", "cmd": "codex"},
     "api": {"name": "API Key(DeepSeek 或任意 OpenAI 兼容接口)", "cmd": None},
+    "harness": {"name": "DeepSeek Harness(已登录的 DeepSeek 账号)", "cmd": None},
 }
+
+# ---------- DeepSeek Harness ----------
+# Harness 的无界面模式(dsh headless)默认只认 API Key,还把账号登录用的三个插件关了。
+# 这里用一个覆盖配置把它们打开、模型来源改成「已登录的 DeepSeek 账号」,不用 API Key。
+# 这是 Harness 文档里没写的用法(2026-11 实测 Harness 0.2 预览版可用),升级后可能失效:失效时报错里说清楚,改用 API Key。
+HARNESS_PATCH = """- id: credentials
+  name: "@deepseek-ai/dsh-credentials-local"
+  disabled: false
+- id: authorization
+  name: "@deepseek-ai/dsh-authorization"
+  disabled: false
+- id: deepseek-account
+  name: "@deepseek-ai/dsh-deepseek-account"
+  disabled: false
+  config:
+    desktopPlatform: {platform}
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: deepseek-account
+    model: {model}
+"""
+HARNESS_MODEL = "deepseek-flash"          # 写总结:能看图
+HARNESS_REVIEW_MODEL = "deepseek-v4-pro"  # 审核 / 复核:推理更强(不看图)
+
+
+def _dsh_home():
+    return os.environ.get("DSH_HOME") or os.path.join(os.path.expanduser("~"), ".dsh")
+
+
+def find_dsh():
+    """Harness 自带的 dsh 命令:桌面版不把它放进 PATH,按安装位置找"""
+    cands = [os.environ.get("WORKBENCH_DSH")]
+    if os.name == "nt":
+        la, pf = os.environ.get("LOCALAPPDATA", ""), os.environ.get("ProgramFiles", "")
+        cands += [os.path.join(d, "DeepSeek Harness", "resources", "runtime", "cli", "bin", "dsh.cmd") for d in
+                  (os.path.join(la, "Programs"), pf) if d]           # Windows 位置未实测
+    else:
+        cands += [os.path.join(d, "DeepSeek Harness.app", "Contents", "Resources", "runtime", "cli", "bin", "dsh")
+                  for d in ("/Applications", os.path.expanduser("~/Applications"))]
+    cands.append(shutil.which("dsh"))
+    return next((c for c in cands if c and os.path.isfile(c)), None)
+
+
+def harness_signed_in():
+    """Harness 里登录过 DeepSeek 账号:凭证文件里有账号令牌这一条(只看有没有,不读内容)"""
+    p = os.path.join(_dsh_home(), ".credentials.yaml")
+    try:
+        text = open(p, encoding="utf-8").read()
+    except OSError:
+        return False
+    i = text.find("deepseek-account-platform/default:")
+    return i >= 0 and "token:" in text[i:i + 400]
+
+
+def harness_status():
+    dsh = find_dsh()
+    if not dsh:
+        return False, "没找到 DeepSeek Harness 桌面版"
+    if not harness_signed_in():
+        return False, "装了 DeepSeek Harness,但还没登录 DeepSeek 账号:打开 Harness 登录一次"
+    return True, dsh
 
 
 class LLMError(Exception):
@@ -33,7 +97,9 @@ def available():
     cfg = llm_config()
     out = {}
     for p, info in PROVIDERS.items():
-        if info["cmd"]:
+        if p == "harness":
+            out[p] = harness_status()
+        elif info["cmd"]:
             path = shutil.which(info["cmd"])
             out[p] = (bool(path), path or f"没找到 {info['cmd']} 命令")
         else:
@@ -47,10 +113,10 @@ def resolve(provider=None):
     if p in PROVIDERS:
         return p
     av = available()
-    for cand in ("api", "claude", "codex"):
+    for cand in ("api", "claude", "codex", "harness"):
         if av[cand][0]:
             return cand
-    raise LLMError("没有能用的模型:装好并登录 Claude Code 或 Codex,或者在「设置」里填 API Key(见 README)")
+    raise LLMError("没有能用的模型:装好并登录 Claude Code 或 Codex,或者装 DeepSeek Harness 并登录 DeepSeek 账号,或者在「设置」里填 API Key(见 README)")
 
 
 def chat(messages, on_progress=None, max_tokens=8000, temperature=0.3, timeout=1200, provider=None, model=None,
@@ -64,11 +130,13 @@ def chat(messages, on_progress=None, max_tokens=8000, temperature=0.3, timeout=1
         on_progress(0)
     if p == "claude":
         return _claude(messages, timeout, images_dir)
+    if p == "harness":
+        return _harness(messages, timeout, model or HARNESS_MODEL)
     return _codex(messages, timeout, images)
 
 
 def can_see_images(provider):
-    return provider in ("claude", "codex")
+    return provider in ("claude", "codex", "harness")
 
 
 # ---------- 本机命令行 ----------
@@ -136,6 +204,34 @@ def _codex(messages, timeout, images=()):
     if not text:
         raise LLMError("Codex 没有返回内容")
     return text, {"model": "codex", "usage": None, "finish_reason": "stop"}
+
+
+def _harness(messages, timeout, model):
+    """dsh headless:只读权限、在空的临时目录里跑,提示从标准输入进去,只取最后的回答。
+    截图目录不用另外授权:只读模式下 Harness 能读本机文件(只是不能改),提示里写了路径它会自己打开"""
+    dsh = find_dsh()
+    if not dsh:
+        raise LLMError("没找到 DeepSeek Harness:到 deepseek.com 下载桌面版装好,或者在「设置」里换一种写总结的方式")
+    system, prompt = _flatten(messages)
+    with tempfile.TemporaryDirectory(prefix="wb-dsh-") as tmp:
+        patch = os.path.join(tmp, "account.yml")
+        plat = "win32" if os.name == "nt" else "darwin"
+        open(patch, "w", encoding="utf-8").write(HARNESS_PATCH.format(platform=plat, model=model))
+        try:
+            out = _run([dsh, "headless", "--patch", patch, "--permission-mode", "read-only", "-"],
+                       f"{system}\n\n---\n\n{prompt}\n\n(直接输出回答全文,不要修改任何文件。)", timeout, tmp)
+        except LLMError as e:
+            msg = str(e)
+            if "ACCOUNT_SIGN_IN_REQUIRED" in msg:
+                raise LLMError("DeepSeek Harness 没登录账号:打开 Harness 用 DeepSeek 账号登录一次,再点「重跑」") from e
+            if "did not activate" in msg or "MISSING_CREDENTIAL" in msg:
+                raise LLMError("DeepSeek Harness 的账号登录方式用不了了(可能是 Harness 升级后改了):先在「设置」里改用 API Key,"
+                               "并把这条报错发给工作台作者: " + msg[-200:]) from e
+            raise
+    text = out.strip()
+    if not text:
+        raise LLMError("DeepSeek Harness 没有返回内容")
+    return text, {"model": f"harness · {model}", "usage": None, "finish_reason": "stop"}
 
 
 # ---------- OpenAI 兼容接口 ----------

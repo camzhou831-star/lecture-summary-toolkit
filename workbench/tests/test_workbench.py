@@ -125,9 +125,11 @@ def test_cli_provider_flatten_and_auto(env, monkeypatch):
                               {"role": "assistant", "content": "A"}, {"role": "user", "content": "FIX"}])
     assert "你上一次的回答" in prompt and prompt.index("A") < prompt.index("FIX")
     monkeypatch.setenv("WORKBENCH_PROVIDER", "auto")
-    monkeypatch.setattr(llm, "available", lambda: {"api": (False, ""), "claude": (False, ""), "codex": (True, "/x/codex")})
+    monkeypatch.setattr(llm, "available", lambda: {"api": (False, ""), "claude": (False, ""), "codex": (True, "/x/codex"), "harness": (True, "/x/dsh")})
     assert llm.resolve() == "codex"
-    monkeypatch.setattr(llm, "available", lambda: {"api": (False, ""), "claude": (False, ""), "codex": (False, "")})
+    monkeypatch.setattr(llm, "available", lambda: {"api": (False, ""), "claude": (False, ""), "codex": (False, ""), "harness": (True, "/x/dsh")})
+    assert llm.resolve() == "harness"
+    monkeypatch.setattr(llm, "available", lambda: {"api": (False, ""), "claude": (False, ""), "codex": (False, ""), "harness": (False, "")})
     with pytest.raises(llm.LLMError, match="Claude Code 或 Codex"):
         llm.resolve()
 
@@ -266,7 +268,7 @@ def test_api(env):
     from fastapi.testclient import TestClient
     with TestClient(env["server"].app) as c:
         cj = c.get("/api/config").json()
-        assert cj["key_ok"] is False and {p["id"] for p in cj["providers"]} == {"claude", "codex", "api"}
+        assert cj["key_ok"] is False and {p["id"] for p in cj["providers"]} == {"claude", "codex", "api", "harness"}
         assert c.post("/api/config/provider", json={"provider": "nope"}).status_code == 400
         assert c.post("/api/config/provider", json={"provider": "codex"}).status_code == 200
         from wb import config as cfg
@@ -725,7 +727,7 @@ def test_claude_writer_can_open_screenshots(env, monkeypatch):
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         if "课程总结的审核员" in sysm:
             return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
-        assert "Read 工具打开" in sysm and fdir in sysm
+        assert "看图的工具打开" in sysm and fdir in sysm
         return cited, {"model": "fake", "usage": None, "finish_reason": "stop"}
     monkeypatch.setattr(llm, "chat", fake_chat)
     monkeypatch.setattr(llm, "resolve", lambda provider=None: "claude")
@@ -745,3 +747,36 @@ def test_deepseek_guide_is_served(env):
     with TestClient(env["server"].app) as c:
         r = c.get("/guide/deepseek")
         assert r.status_code == 200 and "platform.deepseek.com" in r.text and "API Key" in r.text
+
+
+def test_harness_provider(env, monkeypatch, tmp_path):
+    """DeepSeek Harness:按安装位置找 dsh、看有没有登录账号(不读令牌);调用时只读、走账号、提示从标准输入进"""
+    llm = env["llm"]
+    dsh = tmp_path / "dsh"
+    dsh.write_text("#!/bin/sh\n")
+    home = tmp_path / ".dsh"
+    home.mkdir()
+    monkeypatch.setenv("WORKBENCH_DSH", str(dsh))
+    monkeypatch.setenv("DSH_HOME", str(home))
+    assert llm.harness_status() == (False, "装了 DeepSeek Harness,但还没登录 DeepSeek 账号:打开 Harness 登录一次")
+    (home / ".credentials.yaml").write_text("records:\n  deepseek-account-platform/default:\n    kind: x\n    payload:\n      token: SECRET\n")
+    ok, note = llm.harness_status()
+    assert ok and note == str(dsh) and "SECRET" not in note
+    seen = {}
+
+    def fake_run(cmd, stdin_text, timeout, cwd):
+        seen.update(cmd=cmd, stdin=stdin_text, patch=open(cmd[cmd.index("--patch") + 1], encoding="utf-8").read())
+        return "  总结正文\n"
+    monkeypatch.setattr(llm, "_run", fake_run)
+    text, info = llm.chat([{"role": "system", "content": "S"}, {"role": "user", "content": "U"}], provider="harness")
+    assert text == "总结正文" and info["model"] == "harness · deepseek-flash"
+    assert seen["cmd"][0] == str(dsh) and seen["cmd"][1] == "headless" and "read-only" in seen["cmd"] and seen["cmd"][-1] == "-"
+    assert "provider: deepseek-account" in seen["patch"] and "model: deepseek-flash" in seen["patch"] and seen["stdin"].startswith("S")
+    llm.chat([{"role": "user", "content": "U"}], provider="harness", model="deepseek-v4-pro")
+    assert "model: deepseek-v4-pro" in seen["patch"]
+
+    def signed_out(cmd, stdin_text, timeout, cwd):
+        raise llm.LLMError("dsh 出错: dsh: ACCOUNT_SIGN_IN_REQUIRED: Sign in to DeepSeek")
+    monkeypatch.setattr(llm, "_run", signed_out)
+    with pytest.raises(llm.LLMError, match="没登录账号"):
+        llm.chat([{"role": "user", "content": "U"}], provider="harness")

@@ -100,7 +100,7 @@ RULES = {
 }
 
 
-SEE = ("**你可以看截图**:用 Read 工具打开 `{dir}/<文件名>`(讲义稿里 📄 行写的文件名,文件名即秒数)。"
+SEE = ("**你可以看截图**:用读文件 / 看图的工具打开 `{dir}/<文件名>`(讲义稿里 📄 行写的文件名,文件名即秒数)。"
        "这几类一定要打开看,把图上的文字、数值、表格写进总结:讲义稿标了「⚠️文字少,建议看图」的;OCR 明显是乱码的;"
        "投屏的文档(评分细则、作业要求、课程通知、Unit Outline)、表格、图表、代码。其余不用逐张看,总共不超过 40 张。"
        "图上看到的内容照常标来源 `[课件 t01234s.jpg]` / `[课件 pN]`。")
@@ -249,10 +249,10 @@ def run_task(task_id):
         except llm.LLMError:
             writer = None
         fdir = materials.frames_dir(root, task["vid"]) if has_frames else None
-        see_dir = fdir if fdir and writer == "claude" else None       # 写作方能看图:本机 Claude Code(只读这个目录)
+        see_dir = fdir if fdir and writer in ("claude", "harness") else None   # 写作方能看图:Claude Code / DeepSeek Harness(只读)
         wkw = {"images_dir": see_dir} if see_dir else {}
         if see_dir:
-            log("== 写总结的 Claude Code 可以打开截图看图")
+            log(f"== 写总结的 {llm.PROVIDERS[writer]['name']} 可以打开截图看图")
         rule = materials_rule(bool(slides), has_frames, see_dir) if is_course else None
         messages = [{"role": "system", "content": system_prompt(task["out_lang"], task["template"], rule)},
                     {"role": "user", "content": user_prompt(task, meta, transcript, slides)}]
@@ -359,6 +359,8 @@ def run_task(task_id):
                 """审核方的额外参数:DeepSeek 换推理模型;Claude 给截图目录;Codex 附上总结引用的截图"""
                 if prov == "api":
                     return {"model": rmodel, "max_tokens": 20000} if rmodel else {}
+                if prov == "harness":
+                    return {"model": llm.HARNESS_REVIEW_MODEL}          # 审核 / 复核用推理更强的模型
                 if prov == "claude" and fdir:
                     return {"images_dir": fdir}
                 if prov == "codex" and fdir:

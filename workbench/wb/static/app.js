@@ -92,7 +92,7 @@ api("/api/config").then((c) => {
   drawModelCard(c);
 });
 
-const PNAME = { claude: "Claude Code", codex: "Codex", api: "API" };
+const PNAME = { claude: "Claude Code", codex: "Codex", api: "API", harness: "DeepSeek Harness" };
 function drawModelCard(c) {
   $("#model").innerHTML = c.ready
     ? `<span class="ok">${PNAME[c.active]}${c.active === "api" ? " · " + esc(c.model) : t("model_local")}${c.provider === "auto" ? t("model_auto") : ""}</span>`
@@ -278,6 +278,7 @@ function drawLibrary() {
 // ---------- 设置 ----------
 function providerNote(p) {   // 后端给的"不可用原因"是中文,这里按情况重写
   if (p.ok) return "";
+  if (p.id === "harness") return t(/没登录/.test(p.note || "") ? "p_harness_login" : "p_harness_missing");
   return p.id === "api" ? t("p_no_key") : t("p_not_found", { c: p.id });
 }
 function drawProviders(c) {
@@ -742,10 +743,11 @@ function drawReady() {
     const m = meetings.find((x) => x.id === meetingVariant);
     parts.push(t("rd_meet", { n, m: m ? (LANG === "zh" ? m.name_zh : m.name_en) : "" }));
   } else {
-    parts.push(t("rd_course", { n }) + (cfg.active === "claude" ? t("rd_see") : ""));
+    parts.push(t("rd_course", { n }) + (["claude", "harness"].includes(cfg.active) ? t("rd_see") : ""));
     const other = { claude: "codex", codex: "claude" }[cfg.active];
     if (other && ok(other)) parts.push(t("rd_cross", { r: PNAME[other] }));
     else if (cfg.active === "api") parts.push(t("rd_api_rev", { m: cfg.review_model || cfg.model }) + t("rd_noimg"));
+    else if (cfg.active === "harness") parts.push(t("rd_self", { r: PNAME.harness }) + t("rd_hs_rev"));
     else parts.push(t("rd_self", { r: PNAME[cfg.active] }));
     parts.push(slidesFile ? t("rd_slides", { f: esc(slidesFile.name) }) : t("rd_noslides"));
     const v = $("#source").value.trim();
@@ -787,11 +789,15 @@ async function drawOnboard(recheck) {
   // 写总结的 AI:按时区排推荐顺序(UTC+8 → DeepSeek 在前;其他 → 先用已有的 ChatGPT / Claude 会员)
   const cn = inUTC8(), rec = `<span class="rec-tag">${t("ob_rec")}</span>`;
   const ds = `<div class="ob-note">${cn ? rec : ""}${t("ob_ds")} · <a href="/guide/deepseek" target="_blank" rel="noopener"><b>${t("ob_ds_guide")}</b></a> · <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">${t("ob_ds_link")} ↗</a></div>${keyForm("ob")}`;
+  const hsp = (cfg.providers || []).find((p) => p.id === "harness") || {};
+  const hs = (mac || win) ? `<div class="ob-note">${cn ? rec : ""}${t("ob_hs")} · <a href="https://www.deepseek.com/en/harness/" target="_blank" rel="noopener">${t("ob_hs_link")} ↗</a></div>`
+    + (/没登录/.test(hsp.note || "") ? `<div class="ob-note">${t("ob_hs_login")}</div>` : "") : "";
   const subs = `<div class="ob-note">${cn ? "" : rec}${t("ob_ai_claude")}</div>${cmdBox("npm i -g @anthropic-ai/claude-code && claude")}
      <div class="ob-note">${cn ? "" : rec}${t("ob_ai_codex")}</div>${cmdBox("npm i -g @openai/codex && codex")}
      ${status.npm ? "" : `<div class="ob-note">${t("ob_ai_node")}</div>${cmdBox(mac ? "brew install node" : win ? "winget install OpenJS.NodeJS.LTS" : "https://nodejs.org")}`}`;
   rows += item(ai, t("ob_ai"), ai ? t("ob_ai_ok", { n: PNAME[cfg.active] }) : t(cn ? "ob_tz_cn" : "ob_tz_intl"),
-    cn ? `${ds}<div class="ob-note ob-sep">${t("ob_alt")}</div>${subs}` : `${subs}<div class="ob-note ob-sep">${t("ob_alt_api")}</div>${ds}`);
+    cn ? `${hs}${hs ? `<div class="ob-note ob-sep">${t("ob_or_key")}</div>` : ""}${ds}<div class="ob-note ob-sep">${t("ob_alt")}</div>${subs}`
+       : `${subs}<div class="ob-note ob-sep">${t("ob_alt_api")}</div>${hs}${ds}`);
   const oneclick = win ? `<div class="ob-or" style="grid-column:auto;margin-top:12px">${t("ob_oneclick_win")}</div>`
     : `<div class="ob-or" style="grid-column:auto;margin-top:12px">${t("ob_oneclick")}</div>${cmdBox(`bash "${status.workbench_dir}/setup.sh"`).replace('class="cmd"', 'class="cmd" style="grid-column:auto"')}`;
   box.innerHTML = `<div class="ob-head"><b>${t("ob_title")}</b></div><p class="ob-sub">${t("ob_sub")}</p><ul class="ob-list">${rows}</ul>${oneclick}
