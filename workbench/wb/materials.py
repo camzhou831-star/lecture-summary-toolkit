@@ -170,3 +170,108 @@ def frames(task, root, media, tool, log):
             return False
     log(f"== 画面 {len(glob.glob(os.path.join(glob.escape(out), '*.jpg')))} 张")
     return True
+
+
+# ---------- 课件里以图为主的页:截成图片,给能看图的模型写「图示解读」 ----------
+PAGE_DIR = "页面"            # 课件/页面/p04.png
+MAX_PAGE_IMAGES = 24
+LOW_TEXT = 150               # 少于这么多字的页算「以图为主」
+
+
+def page_images_dir(root):
+    return os.path.join(slides_dir(root), PAGE_DIR)
+
+
+def _pdf_content_pages(path):
+    """PDF 里有「内容图」的页:pdfimages -list 列出每页的图,去掉每页都出现的背景 / 页眉图(同一对象出现在三成以上的页上)"""
+    if not deps.find("pdfimages"):
+        return set()
+    r = subprocess.run([deps.exe("pdfimages"), "-list", path], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    rows = []
+    for line in r.stdout.splitlines()[2:]:
+        f = line.split()
+        if len(f) >= 11 and f[2] == "image" and f[0].isdigit():
+            rows.append((int(f[0]), f[10], int(f[3]) * int(f[4])))
+    if not rows:
+        return set()
+    pages_of = {}
+    for page, obj, _ in rows:
+        pages_of.setdefault(obj, set()).add(page)
+    total = max(p for p, _, _ in rows)
+    return {page for page, obj, area in rows if area >= 120 * 120 and len(pages_of[obj]) <= max(2, total * 0.3)}
+
+
+def page_images(root, log):
+    """把以图为主的页存成图片(PDF 用 pdftoppm 渲染整页;.pptx 取该页里的图片),返回 [(页码, 图片路径)]。
+    已经截过就直接用。没有 pdftoppm 时 PDF 跳过(只用文字)"""
+    out_dir = page_images_dir(root)
+    os.makedirs(out_dir, exist_ok=True)
+    picked = []
+    for f in slide_files(root):
+        try:
+            texts = read_pages(f)
+        except RuntimeError:
+            continue
+        if f.lower().endswith(".pdf"):
+            content = _pdf_content_pages(f)
+            pages = [n for n in range(1, len(texts) + 1) if n in content or len(texts[n - 1].strip()) < LOW_TEXT]
+            pages = sorted(pages, key=lambda n: (n not in content, len(texts[n - 1])))[:MAX_PAGE_IMAGES - len(picked)]
+            if pages and not deps.find("pdftoppm"):
+                log("⚠️ 没装 pdftoppm(poppler),课件里的图看不了,只用文字")
+                continue
+            for n in sorted(pages):
+                dest = os.path.join(out_dir, f"p{n:02d}.png")
+                if not os.path.isfile(dest):
+                    subprocess.run([deps.exe("pdftoppm"), "-png", "-singlefile", "-scale-to", "1100", "-f", str(n), "-l", str(n), f, dest[:-4]],
+                                   capture_output=True)
+                if os.path.isfile(dest):
+                    picked.append((n, dest))
+        else:
+            for n, path in _pptx_images(f, texts, out_dir)[:MAX_PAGE_IMAGES - len(picked)]:
+                picked.append((n, path))
+    if picked:
+        log(f"== 课件里以图为主的页:{', '.join(dict.fromkeys('p%d' % n for n, _ in picked))}(已截成图,能看图的模型会看)")
+    return picked
+
+
+def _pptx_images(path, texts, out_dir):
+    """.pptx:每页引用的图片(png / jpg / gif),只取「以图为主」或有图的页;同一张图出现在三成以上的页上(背景 / 页眉)不算"""
+    import zipfile
+    from xml.etree import ElementTree as ET
+    PR = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+    z = zipfile.ZipFile(path)
+    names = set(z.namelist())
+    pres_rels = {r.get("Id"): r.get("Target") for r in ET.fromstring(z.read("ppt/_rels/presentation.xml.rels")).iter(PR + "Relationship")}
+    pres = ET.fromstring(z.read("ppt/presentation.xml"))
+    R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    slides = []
+    for sid in pres.iter("{http://schemas.openxmlformats.org/presentationml/2006/main}sldId"):
+        name = "ppt/" + pres_rels.get(sid.get(R + "id"), "").lstrip("/").removeprefix("ppt/")
+        if name in names:
+            slides.append(name)
+    media_of = []
+    for name in slides:
+        rels = "ppt/slides/_rels/" + os.path.basename(name) + ".rels"
+        imgs = []
+        if rels in names:
+            for r in ET.fromstring(z.read(rels)).iter(PR + "Relationship"):
+                if r.get("Type", "").endswith("/image"):
+                    m = "ppt/media/" + os.path.basename(r.get("Target", ""))
+                    if m in names and m.lower().endswith((".png", ".jpg", ".jpeg", ".gif")) and z.getinfo(m).file_size > 8000:
+                        imgs.append(m)
+        media_of.append(imgs)
+    count = {}
+    for imgs in media_of:
+        for m in set(imgs):
+            count[m] = count.get(m, 0) + 1
+    out = []
+    for n, imgs in enumerate(media_of, 1):
+        imgs = [m for m in dict.fromkeys(imgs) if count[m] <= max(2, len(slides) * 0.3)]
+        if not imgs or (n <= len(texts) and len(texts[n - 1].strip()) >= 600):   # 字很多的页,图多半是配图,不看
+            continue
+        for k, m in enumerate(imgs[:2], 1):
+            dest = os.path.join(out_dir, f"p{n:02d}-{k}{os.path.splitext(m)[1].lower()}")
+            if not os.path.isfile(dest):
+                open(dest, "wb").write(z.read(m))
+            out.append((n, dest))
+    return out

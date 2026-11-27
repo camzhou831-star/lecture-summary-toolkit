@@ -1,5 +1,6 @@
 """FastAPI 后端。启动: cd workbench && uv run python -m wb   然后打开 http://127.0.0.1:8770"""
 import json
+import re
 import os
 import shutil
 
@@ -217,6 +218,11 @@ def upload_slides(file: UploadFile = File(...)):
     if not low.endswith(materials.SLIDE_EXTS):
         raise HTTPException(400, "课件只支持 PDF 和 PowerPoint(.pptx)")
     dest = _save_upload(file, _slides_up())
+    base, ext = os.path.splitext(dest)
+    first = re.sub(r"-\d+$", "", base) + ext           # 同一份课件传第二次:内容一样就用原来那份,不出现「W09-1」这种名字
+    if first != dest and os.path.isfile(first) and open(first, "rb").read() == open(dest, "rb").read():
+        os.remove(dest)
+        dest = first
     if dest.lower().endswith(".pptx"):          # 先试读一下,坏文件当场说,不等到任务跑起来才失败
         try:
             materials.read_pages(dest)

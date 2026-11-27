@@ -25,6 +25,20 @@ PAGE = re.compile(r"\[(?:课件|Slide)s? p(\d+)(?:\s*[–-]\s*p?(\d+))?(?:/\d+)?
 TS = re.compile(r"\[\d{1,3}:[0-5]\d\]")
 
 
+SEE_PAGES = ("**课件里以图为主的页已截成图片**({pages})。{how}看图后,在「逐页笔记」对应位置加一段引用块 "
+             "`> 图示解读(课件 pN):……`:图里画了什么、坐标轴和图例、能看出的趋势或结论、图上标注的数值。"
+             "只写图上看得到的;看不清就写看不清,不要推测;图里没有的结论不要写。有了图示解读,这一页就不用再写「以图为主,看原课件」。"
+             "封面、目录、只有一个链接的页,文字已经说清楚了,不用写图示解读。")
+HOW_OPEN = "用读文件 / 看图的工具打开 `{dir}/` 下的图片(PDF 页是 pNN.png,.pptx 的图是 pNN-1.jpeg 这样)。"
+HOW_ATTACHED = "图片附在用户消息后面,每张前面标了是第几页。"
+
+
+def data_uri(path):
+    import base64
+    mime = {".png": "image/png", ".gif": "image/gif"}.get(os.path.splitext(path)[1].lower(), "image/jpeg")
+    return f"data:{mime};base64," + base64.b64encode(open(path, "rb").read()).decode()
+
+
 def system_prompt(lang):
     tpl = open(os.path.join(config.TEMPLATES, "slides.md"), encoding="utf-8").read()
     title = "# <课件标题> — <主题>" if lang == "zh" else "# <Slide deck title> — <topic>"

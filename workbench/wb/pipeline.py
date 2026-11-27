@@ -249,6 +249,7 @@ def run_task(task_id):
 
         transcript, slides = timed("prepare", prep)
         pages = materials.page_count(root) if only_slides else 0
+        page_imgs = materials.page_images(root, log) if only_slides else []
         has_frames = is_course and os.path.isfile(os.path.join(materials.frames_dir(root, task["vid"]), "ocr.json"))
         if is_course:
             got = (["课件 " + "、".join(os.path.basename(x) for x in materials.slide_files(root))] if slides else []) + (["视频画面文字(OCR)"] if has_frames else [])
@@ -268,8 +269,27 @@ def run_task(task_id):
             log(f"== 写总结的 {llm.PROVIDERS[writer]['name']} 可以打开截图看图")
         rule = materials_rule(bool(slides), has_frames, see_dir) if is_course else None
         sysp = slidenotes.system_prompt(task["out_lang"]) if only_slides else system_prompt(task["out_lang"], task["template"], rule)
+        user_content = user_prompt(task, meta, transcript, slides)
+        if page_imgs:          # 课件里以图为主的页:能看图的写作方看图写「图示解读」
+            pdir = materials.page_images_dir(root)
+            plist = "、".join(dict.fromkeys(f"p{n}" for n, _ in page_imgs))
+            if writer in ("claude", "harness"):
+                wkw = {"images_dir": pdir}
+                sysp += "\n\n" + slidenotes.SEE_PAGES.format(pages=plist, how=slidenotes.HOW_OPEN.format(dir=pdir))
+            elif writer == "codex":
+                wkw = {"images": [p for _, p in page_imgs]}
+                sysp += "\n\n" + slidenotes.SEE_PAGES.format(pages=plist, how=slidenotes.HOW_ATTACHED)
+            elif writer == "api" and llm.api_sees_images():
+                user_content = [{"type": "text", "text": user_content}] + [x for n, p in page_imgs for x in (
+                    {"type": "text", "text": f"[课件 p{n} 的页面图片]"}, {"type": "image_url", "image_url": {"url": slidenotes.data_uri(p)}})]
+                sysp += "\n\n" + slidenotes.SEE_PAGES.format(pages=plist, how=slidenotes.HOW_ATTACHED)
+            else:
+                log("⚠️ 现在写笔记的模型看不了图,以图为主的页只能写「看原课件」")
+                page_imgs = []
+            if page_imgs:
+                log(f"== 写笔记的模型会看 {len(page_imgs)} 张课件图片")
         messages = [{"role": "system", "content": sysp},
-                    {"role": "user", "content": user_prompt(task, meta, transcript, slides)}]
+                    {"role": "user", "content": user_content}]
 
         def write():
             text, info = llm.chat(messages, on_progress=lambda n: db.update(task_id, message=f"写总结… 已生成 {n} 字"), **wkw)

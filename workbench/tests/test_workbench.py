@@ -868,3 +868,33 @@ def test_parse_bare_bv_id(env):
     assert s.parse_source("BV1hDsg6LETy?p=3") == ("bilibili", "BV1hDsg6LETy_p3", "https://www.bilibili.com/video/BV1hDsg6LETy?p=3")
     with pytest.raises(s.SourceError, match="找不到文件"):
         s.parse_source("BV123")
+
+
+@pytest.mark.skipif(not __import__("shutil").which("pdftoppm"), reason="没装 pdftoppm")
+def test_slides_only_attaches_page_images_for_deepseek(env, monkeypatch, tmp_path):
+    """只有课件:以图为主的页截成图片;写作方是 DeepSeek 接口(deepseek-chat 能读图)时,图片附在消息里,并要求写图示解读"""
+    from fastapi.testclient import TestClient
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    seen = {}
+
+    def fake_chat(messages, on_progress=None, **k):
+        sysm = messages[0]["content"]
+        if "专名校对员" in sysm:
+            return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "课程总结的审核员" in sysm:
+            return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        seen.setdefault("write", messages)
+        return "# x", {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    with TestClient(env["server"].app) as c:
+        name = c.post("/api/slides", files={"file": ("W02.pdf", make_pdf(["Figure 1", "Chart of speed vs cars"]))}).json()["slides"]
+        again = c.post("/api/slides", files={"file": ("W02.pdf", make_pdf(["Figure 1", "Chart of speed vs cars"]))}).json()["slides"]
+        assert again == name == "W02.pdf"                      # 同一份传两次,不出现 W02-1.pdf
+        t = c.post("/api/tasks", json={"source": "", "slides": name}).json()
+    p.run_task(t["id"])
+    msgs = seen["write"]
+    content = msgs[1]["content"]
+    assert isinstance(content, list) and content[0]["type"] == "text"
+    assert [x["text"] for x in content if x["type"] == "text"][1:] == ["[课件 p1 的页面图片]", "[课件 p2 的页面图片]"]
+    assert content[2]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert "图示解读(课件 pN)" in msgs[0]["content"] and "图片附在用户消息后面" in msgs[0]["content"]

@@ -138,6 +138,12 @@ def chat(messages, on_progress=None, max_tokens=8000, temperature=0.3, timeout=1
     return _codex(messages, timeout, images)
 
 
+def api_sees_images():
+    """接口能不能直接收图:实测 DeepSeek 的 deepseek-flash(deepseek-chat)能读图,deepseek-v4-pro 不能;别的接口不确定,不发图"""
+    cfg = llm_config()
+    return "deepseek.com" in cfg.base_url and cfg.model in ("deepseek-chat", "deepseek-flash")
+
+
 def can_see_images(provider):
     return provider in ("claude", "codex", "harness")
 
