@@ -192,6 +192,19 @@ def link_timeline(md, task):
     return "\n".join(out)
 
 
+def content_minutes(meta, srt, transcript):
+    """内容大约多少分钟:先看视频时长,再看字幕最后一个时间,都没有就按文字量估(约 250 字 / 分钟)"""
+    d = (meta or {}).get("duration")
+    if isinstance(d, (int, float)) and d > 0:
+        return d / 60
+    if srt and os.path.isfile(srt):
+        ts = re.findall(r"(\d+):(\d\d):(\d\d)[,.]\d+\s*-->", open(srt, encoding="utf-8", errors="replace").read())
+        if ts:
+            h, m, sec = map(int, ts[-1])
+            return (h * 3600 + m * 60 + sec) / 60
+    return len(transcript or "") / 250
+
+
 def bad_lines(report, md):
     """检查报告只给行号(如「行 34: 时间戳 1:30 …」),模型常找不到是哪一句;把那几行原文附上。
     像 1:30 这种不是时间戳的写法(比例、时刻)也会被当成时间戳,提示模型换个写法"""
@@ -453,12 +466,20 @@ def run_task(task_id):
             who, cross = review.reviewer(writer, llm.available())
             judges = [(writer, 0.2), (who, 0.2)] if cross else [(who, 0.2), (who, 0.8)]   # 交叉时两家各判一次;一家时同一家独立判两次
             rmodel = config.review_model()          # API(DeepSeek)审核和复核用推理更强的模型,写总结仍用默认模型
-            def rkw(prov, md=""):
-                """审核方的额外参数:DeepSeek 换推理模型;Claude 给截图目录;Codex 附上总结引用的截图"""
+            mins = content_minutes(meta, srt, transcript)
+            qmax = config.quick_review_minutes()
+            quick = bool(qmax) and mins <= qmax       # 短内容:快速审核
+            maxr = 1 if quick else REVIEW_ROUNDS
+            if quick:
+                log(f"== 内容约 {mins:.0f} 分钟(≤ {qmax:g} 分钟),用快速审核:快模型审一轮,挑出严重问题才用推理模型复核")
+
+            def rkw(prov, md="", strong=True):
+                """审核方的额外参数:DeepSeek 换推理模型;Claude 给截图目录;Codex 附上总结引用的截图。
+                strong=False(快速审核的第一遍):DeepSeek 接口和 Harness 用写总结同一个快模型"""
                 if prov == "api":
-                    return {"model": rmodel, "max_tokens": 20000} if rmodel else {}
+                    return {"model": rmodel, "max_tokens": 20000} if rmodel and strong else {}
                 if prov == "harness":
-                    return {"model": llm.HARNESS_REVIEW_MODEL}          # 审核 / 复核用推理更强的模型
+                    return {"model": llm.HARNESS_REVIEW_MODEL} if strong else {}   # 审核 / 复核用推理更强的模型
                 if prov == "claude" and fdir:
                     return {"images_dir": fdir}
                 if prov == "codex" and fdir:
@@ -505,14 +526,14 @@ def run_task(task_id):
                 db.update(task_id, message=f"审核内容第 {n} 轮({who})…")
                 try:
                     text = ask(review.messages(mats, md, lang, settled, see=fdir if who == "claude" else None, kind=rv_kind),
-                               **{"max_tokens": 6000, "temperature": 0, "provider": who, **rkw(who, md)})
+                               **{"max_tokens": 6000, "temperature": 0, "provider": who, **rkw(who, md, strong=not quick)})
                     issues = review.parse(text)
                 except (llm.LLMError, review.ReviewError) as e:
                     log(f"⚠️ 第 {n} 轮审核没做成: {e}")
                     rounds.append({"n": n, "error": str(e)[:300]})
                     break
                 used, dropped = review.verify(issues, corpus, md)
-                rep = review.round_report(n, who, cross, used, dropped)
+                rep = review.round_report(n, who, cross, used, dropped) + ("(快速审核)" if quick else "")
                 bad = review.serious(used)
                 todo, mark, drop = [], [], []
                 if bad:
@@ -537,7 +558,7 @@ def run_task(task_id):
                     passed, remaining = True, []
                     break
                 remaining = todo + mark
-                if n == REVIEW_ROUNDS:
+                if n == maxr and not quick:
                     break
                 db.update(task_id, message=f"按审核意见修正(第 {n} 轮,{len(todo) + len(mark)} 条)…")
                 done_ok, no = apply(todo + mark, f"第{n}轮修正")
@@ -552,6 +573,8 @@ def run_task(task_id):
                 fixed += [i for i in todo if id(i) not in ids]
                 settled += [dict(i, declined="已在原处标了待核实") for i in mark if id(i) not in ids]
                 remaining = []
+                if n == maxr:          # 快速审核:改完这一轮就收
+                    break
             if remaining:      # 轮数用完还有没处理的:不改结论,统一在原处标待核实,至少让读的人知道这里有疑问
                 db.update(task_id, message="把没解决的问题在原处标成待核实…")
                 left = [dict(i, action="标待核实") for i in remaining]
@@ -574,8 +597,8 @@ def run_task(task_id):
                 text += "\n\n写作方核实后没采纳的意见(建议自己看一眼):\n" + "\n".join(
                     f"  · {i['where']}:{i['problem'][:120]} —— {i['declined']}" for i in nos)
             if passed and not marked:
-                text += f"\n\n✅ 审核通过(共 {n_done} 轮)"
-            return {"reviewer": who, "cross": cross, "rounds": n_done, "passed": passed and not marked and not remaining,
+                text += f"\n\n✅ 审核通过(共 {n_done} 轮{',快速审核' if quick else ''})"
+            return {"reviewer": who, "cross": cross, "rounds": n_done, "quick": quick, "passed": passed and not marked and not remaining,
                     "marked": len(marked), "fixed": len(fixed), "remaining": len(remaining), "detail": rounds, "report": text.strip()}
 
         rv = None

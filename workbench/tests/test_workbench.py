@@ -57,6 +57,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKBENCH_CONFIG", str(tmp_path / "none.json"))
     monkeypatch.setenv("WORKBENCH_PROVIDER", "api")          # 测试不去调本机的 claude / codex
     monkeypatch.delenv("WORKBENCH_COOKIES_BROWSER", raising=False)
+    monkeypatch.setenv("WORKBENCH_QUICK_REVIEW_MIN", "0")    # 默认按严格审核测;快速审核单独测
     for k in ("DEEPSEEK_API_KEY", "LLM_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     import importlib
@@ -580,6 +581,50 @@ def test_pipeline_review_fixes_then_passes(env, monkeypatch):
     assert "原话没说步长" in seen["fix"] and "the exam is next week" not in seen["fix"]       # 编造依据的那条没交给写作方
     assert "依据原文在资料里找不到" in rv["report"] and "学习率决定每一步走多远" in open(p.summary_path(t), encoding="utf-8").read()
     assert "审核 2 轮通过" in t["message"]
+
+
+def test_quick_review_for_short_content(env, monkeypatch):
+    """短内容:第一遍审核用写总结的快模型、只审一轮;挑出严重问题才用推理模型复核,改完就收"""
+    monkeypatch.setenv("WORKBENCH_QUICK_REVIEW_MIN", "20")
+    monkeypatch.setenv("LLM_REVIEW_MODEL", "deepseek-v4-pro")
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    issue = {"severity": "严重", "type": "出处不符", "where": "核心要点 1", "quote": "学习率决定步长", "problem": "原话没说步长",
+             "evidence": "Sentence number 4 about gradient descent", "source": "讲义稿 [01:00]", "fix": "改写"}
+    calls = []
+
+    def fake_chat(messages, on_progress=None, **k):
+        sysm = messages[0]["content"]
+        meta = {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "专名校对员" in sysm:
+            return '{"fixes": [], "unsure": []}', meta
+        if "你是复核员" in sysm:
+            calls.append(("judge", k.get("model")))
+            return '[{"n": 1, "verdict": "成立", "why": "x"}]', meta
+        if "课程总结的审核员" in sysm:
+            calls.append(("review", k.get("model")))
+            return json.dumps({"verdict": "有问题", "issues": [issue]}, ensure_ascii=False), meta
+        if "审核员对照资料提出了下面这些问题" in messages[-1]["content"]:
+            calls.append(("fix", None))
+            return GOOD.replace("学习率决定步长", "学习率决定每一步走多远"), meta
+        return GOOD, meta
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    kind, vid, src = env["sources"].parse_source(env["srt"])
+    tid = db.create(kind, src, vid)
+    p.run_task(tid)
+    t = db.get(tid)
+    rv = t["meta"]["review"]
+    assert t["status"] == "done", t["log"]
+    assert rv["quick"] and rv["fixed"] == 1 and rv["rounds"] == 1
+    assert calls[0] == ("review", None)                                    # 第一遍:快模型
+    assert [c for c in calls if c[0] == "judge"] == [("judge", "deepseek-v4-pro")] * 2   # 复核:推理模型
+    assert [c[0] for c in calls].count("review") == 1 and "快速审核" in t["log"]
+
+
+def test_content_minutes(env):
+    p = env["pipeline"]
+    assert p.content_minutes({"duration": 600}, None, "") == 10
+    assert round(p.content_minutes({}, env["srt"], "")) >= 0
+    assert p.content_minutes({}, None, "字" * 2500) == 10
 
 
 def test_pipeline_review_disputed_issues_are_marked(env, monkeypatch):
