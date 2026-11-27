@@ -38,6 +38,10 @@ def parse_source(text):
     if not s:
         raise SourceError("没有填链接或文件路径")
     m = re.search(r"https?://\S+", s)          # 分享文案里夹着链接(B 站 / 抖音常见)
+    bv = None if m else re.fullmatch(r"(BV[0-9A-Za-z]{10})(?:\s*[?&]?\s*p\s*=\s*(\d+))?/?", s, re.I)
+    if bv:                                     # 只贴了 BV 号(可带 ?p=2 选分 P):当成 B 站视频
+        bvid = "BV" + bv.group(1)[2:]
+        return parse_source(f"https://www.bilibili.com/video/{bvid}" + (f"?p={bv.group(2)}" if bv.group(2) else ""))
     url = m.group(0) if m else s
     low = url.lower()
     if "douyin.com" in low or "iesdouyin.com" in low:

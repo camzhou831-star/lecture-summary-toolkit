@@ -278,7 +278,7 @@ function drawLibrary() {
 // ---------- 设置 ----------
 function providerNote(p) {   // 后端给的"不可用原因"是中文,这里按情况重写
   if (p.ok) return "";
-  if (p.id === "harness") return t(/没登录/.test(p.note || "") ? "p_harness_login" : "p_harness_missing");
+  if (p.id === "harness") return t(/没登录/.test(p.note || "") ? "p_harness_login" : /安装盘/.test(p.note || "") ? "p_harness_dmg" : "p_harness_missing");
   return p.id === "api" ? t("p_no_key") : t("p_not_found", { c: p.id });
 }
 function drawProviders(c) {
@@ -792,7 +792,7 @@ async function drawOnboard(recheck) {
   const ds = `<div class="ob-note">${cn ? rec : ""}${t("ob_ds")} · <a href="/guide/deepseek" target="_blank" rel="noopener"><b>${t("ob_ds_guide")}</b></a> · <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">${t("ob_ds_link")} ↗</a></div>${keyForm("ob")}`;
   const hsp = (cfg.providers || []).find((p) => p.id === "harness") || {};
   const hs = (mac || win) ? `<div class="ob-note">${cn ? rec : ""}${t("ob_hs")} · <a href="https://www.deepseek.com/en/harness/" target="_blank" rel="noopener">${t("ob_hs_link")} ↗</a></div>`
-    + (/没登录/.test(hsp.note || "") ? `<div class="ob-note">${t("ob_hs_login")}</div>` : "") : "";
+    + (/没登录/.test(hsp.note || "") ? `<div class="ob-note">${t("ob_hs_login")}</div>` : /安装盘/.test(hsp.note || "") ? `<div class="ob-note">${t("p_harness_dmg")}</div>` : "") : "";
   const subs = `<div class="ob-note">${cn ? "" : rec}${t("ob_ai_claude")}</div>${cmdBox("npm i -g @anthropic-ai/claude-code && claude")}
      <div class="ob-note">${cn ? "" : rec}${t("ob_ai_codex")}</div>${cmdBox("npm i -g @openai/codex && codex")}
      ${status.npm ? "" : `<div class="ob-note">${t("ob_ai_node")}</div>${cmdBox(mac ? "brew install node" : win ? "winget install OpenJS.NodeJS.LTS" : "https://nodejs.org")}`}`;

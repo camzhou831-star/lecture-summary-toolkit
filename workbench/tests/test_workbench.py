@@ -858,3 +858,13 @@ def test_slides_only_task(env, monkeypatch, tmp_path):
     w = [x for x in seen if x[0] == "write"][0]
     assert "只有课件的复习笔记" in w[1] and "[课件 p2/3]" in w[2] and "Learning rate controls step size" in w[2] and "视频信息" not in w[2]
     assert "课件笔记核对通过(共 3 页" in t["check_report"]
+
+
+def test_parse_bare_bv_id(env):
+    """只贴 BV 号(可带分 P)也认成 B 站视频;BV 号前后的空格、大小写不影响"""
+    s = env["sources"]
+    assert s.parse_source("BV1hDsg6LETy") == ("bilibili", "BV1hDsg6LETy", "https://www.bilibili.com/video/BV1hDsg6LETy")
+    assert s.parse_source("  bv1hDsg6LETy ") == ("bilibili", "BV1hDsg6LETy", "https://www.bilibili.com/video/BV1hDsg6LETy")
+    assert s.parse_source("BV1hDsg6LETy?p=3") == ("bilibili", "BV1hDsg6LETy_p3", "https://www.bilibili.com/video/BV1hDsg6LETy?p=3")
+    with pytest.raises(s.SourceError, match="找不到文件"):
+        s.parse_source("BV123")

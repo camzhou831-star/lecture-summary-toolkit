@@ -82,6 +82,9 @@ def harness_signed_in():
 def harness_status():
     dsh = find_dsh()
     if not dsh:
+        import glob
+        if os.name != "nt" and glob.glob("/Volumes/*/DeepSeek Harness.app"):      # 常见:直接在 dmg 安装盘里打开了,没拖进「应用程序」
+            return False, "DeepSeek Harness 还在安装盘(dmg)里,没装进「应用程序」:把它拖进「应用程序」文件夹,再从那里打开"
         return False, "没找到 DeepSeek Harness 桌面版"
     if not harness_signed_in():
         return False, "装了 DeepSeek Harness,但还没登录 DeepSeek 账号:打开 Harness 登录一次"
