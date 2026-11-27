@@ -538,14 +538,17 @@ def run_task(task_id):
                 todo, mark, drop = [], [], []
                 if bad:
                     db.update(task_id, message=f"复核审核意见(第 {n} 轮,{len(bad)} 条)…")
-                    votes = []
-                    for prov, temp in judges:
+                    def judge(pt):
+                        prov, temp = pt
                         try:
-                            votes.append(review.parse_votes(ask(review.judge_messages(mats, md, bad, lang, see=fdir if prov == "claude" else None),
-                                                                **{"max_tokens": 3000, "temperature": temp, "provider": prov, **rkw(prov, md)}), len(bad)))
+                            return review.parse_votes(ask(review.judge_messages(mats, md, bad, lang, see=fdir if prov == "claude" else None),
+                                                          **{"max_tokens": 3000, "temperature": temp, "provider": prov, **rkw(prov, md)}), len(bad))
                         except llm.LLMError as e:
                             log(f"⚠️ 复核没做成({prov}): {e}")
-                            votes.append(["无法确定"] * len(bad))
+                            return ["无法确定"] * len(bad)
+                    from concurrent.futures import ThreadPoolExecutor
+                    with ThreadPoolExecutor(len(judges)) as ex:      # 两次复核互不依赖,同时跑(推理模型一次要几分钟)
+                        votes = list(ex.map(judge, judges))
                     todo, mark, drop = review.combine(bad, votes)
                     rep += "\n  复核:" + ";".join(f"{i['where']} → {'/'.join(i['votes'])}" for i in todo + mark + drop)
                     rep += f"\n  结果:{len(todo)} 条两次都确认(改),{len(mark)} 条有分歧或无法确定(标待核实),{len(drop)} 条两次都否定(不改)"
