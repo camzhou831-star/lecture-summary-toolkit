@@ -9,6 +9,7 @@
 import json
 import statistics
 import subprocess
+import time
 
 from . import sources
 
@@ -27,20 +28,51 @@ def account_url(kind, meta):
 def list_videos(url, timeout=90):
     """作者最近 N 条:[(id, 播放, 点赞)];失败抛 RuntimeError(带原因)"""
     cmd = [sources.need("yt-dlp"), *sources.ytdlp_auth(), "--flat-playlist", "-J", "--playlist-end", str(N), url]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("列作者作品超时")
+    for attempt in range(3):          # B 站风控时有时无:被拦就隔几秒再试
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("列作者作品超时")
+        if r.returncode == 0 or not any(c in (r.stderr or "") for c in ("412", "352")) or attempt == 2:
+            break
+        time.sleep(4 * (attempt + 1))
     if r.returncode or not r.stdout.strip().startswith("{"):
         err = (r.stderr or "").strip().splitlines()[-1:] or ["未知错误"]
-        if "412" in err[0] or "blocked" in err[0].lower():
-            raise RuntimeError("B 站不让匿名看作者主页(412);在「设置 → 网站登录」选一个登录过 B 站的浏览器再重跑")
+        if any(c in err[0] for c in ("412", "352")) or "blocked" in err[0].lower() or "rejected" in err[0].lower():
+            raise RuntimeError("B 站不让匿名看作者主页(风控);在「设置 → 网站登录」选一个登录过 B 站的浏览器再重跑")
         raise RuntimeError("列作者作品失败:" + err[0][-160:])
-    out = []
+    out, urls = [], []
     for e in json.loads(r.stdout).get("entries") or []:
         if isinstance(e, dict):
             out.append((e.get("id"), e.get("view_count"), e.get("like_count")))
+            urls.append(e.get("url") or e.get("webpage_url"))
+    if out and not any(isinstance(v, int) or isinstance(l, int) for _, v, l in out) and all(urls):
+        out = fill_counts(urls) or out      # B 站的作者列表不带播放 / 点赞:逐条读一下
     return out
+
+
+def fill_counts(urls, groups=4, timeout=120):
+    """列表里没有数字时,用 yt-dlp 逐条读视频信息(不下载),分几组并行;→ [(id, 播放, 点赞)]"""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def run(chunk):
+        cmd = [sources.need("yt-dlp"), *sources.ytdlp_auth(), "--skip-download", "-j", "--no-warnings", "--ignore-errors", *chunk]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return []
+        rows = []
+        for line in r.stdout.splitlines():
+            if line.startswith("{"):
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                rows.append((d.get("id"), d.get("view_count"), d.get("like_count")))
+        return rows
+    chunks = [urls[i::groups] for i in range(groups) if urls[i::groups]]
+    with ThreadPoolExecutor(len(chunks)) as ex:
+        return [row for rows in ex.map(run, chunks) for row in rows]
 
 
 def stats(kind, meta, log):

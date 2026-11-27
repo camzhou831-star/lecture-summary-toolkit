@@ -1053,3 +1053,22 @@ def test_shots_template_end_to_end(env, monkeypatch, tmp_path):
         r = c.get(f"/api/tasks/{tid}/shotfile/人工镜头表.csv")
         assert r.status_code == 200 and "视频,段,镜头序号" in r.text
         assert c.get(f"/api/tasks/{tid}/shotfile/..%2Fmeta.json").status_code in (400, 404)
+
+
+def test_account_fills_counts_when_list_has_none(env, monkeypatch):
+    """B 站作者列表不带播放 / 点赞:逐条读视频信息补上,再算相对值"""
+    from wb import account
+    import subprocess as sp
+
+    class R:
+        def __init__(self, out, code=0, err=""):
+            self.stdout, self.returncode, self.stderr = out, code, err
+    def fake_run(cmd, **k):
+        if "--flat-playlist" in cmd:
+            ents = [{"id": f"BV{i}", "url": f"https://www.bilibili.com/video/BV{i}"} for i in range(6)]
+            return R(json.dumps({"entries": ents}))
+        return R("\n".join(json.dumps({"id": u[-3:], "view_count": 1000, "like_count": 100}) for u in cmd if u.startswith("https://")))
+    monkeypatch.setattr(sp, "run", fake_run)
+    monkeypatch.setattr(account.sources, "need", lambda n: n)
+    st = account.stats("bilibili", {"uploader_id": "1", "like_count": 500, "view_count": 9000}, lambda m: None)
+    assert st["n"] == 6 and st["by"] == "点赞" and st["rel"] == 5.0
