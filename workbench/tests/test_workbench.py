@@ -1095,3 +1095,29 @@ def test_harness_reasoning_effort_in_patch(env, monkeypatch):
     assert "model: deepseek-v4-pro\n" in seen["patch"] and "reasoningEffort: low" in seen["patch"]
     llm.chat([{"role": "user", "content": "U"}], provider="harness", model="deepseek-v4-pro")
     assert "reasoningEffort" not in seen["patch"]
+
+
+def test_harness_retries_when_connection_drops(env, monkeypatch):
+    """连接中途断了(TRANSPORT)自动再试;登录 / 额度这类不重试"""
+    llm = env["llm"]
+    monkeypatch.setattr(llm, "find_dsh", lambda: "/bin/dsh")
+    monkeypatch.setattr(llm.time, "sleep", lambda s: None)
+    calls = []
+    drop = '{"type":"final","reason":{"kind":"error","error":{"code":"TRANSPORT","message":"DeepSeek Messages transport failed"}},"text":""}\n'
+    ok = '{"type":"final","reason":{"kind":"completed"},"text":"正文"}\n'
+    def flaky(cmd, stdin, timeout, cwd, check=True):
+        calls.append(1)
+        return drop if len(calls) < 3 else ok
+    monkeypatch.setattr(llm, "_run", flaky)
+    assert llm.chat([{"role": "user", "content": "U"}], provider="harness")[0] == "正文" and len(calls) == 3
+    calls.clear()
+    monkeypatch.setattr(llm, "_run", lambda *a, **k: (calls.append(1), drop)[1])
+    with pytest.raises(llm.LLMError, match="已自动重试 2 次") as ei:
+        llm.chat([{"role": "user", "content": "U"}], provider="harness")
+    assert len(calls) == 3 and "连接中途断了" in str(ei.value)
+    calls.clear()
+    quota = '{"type":"final","reason":{"kind":"error","error":{"code":"ACCOUNT_QUOTA_EXCEEDED","message":"q"}},"text":""}\n'
+    monkeypatch.setattr(llm, "_run", lambda *a, **k: (calls.append(1), quota)[1])
+    with pytest.raises(llm.LLMError, match="额度用完"):
+        llm.chat([{"role": "user", "content": "U"}], provider="harness")
+    assert len(calls) == 1

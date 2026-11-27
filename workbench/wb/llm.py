@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 
 import httpx
 
@@ -92,7 +93,9 @@ def harness_status():
 
 
 class LLMError(Exception):
-    pass
+    def __init__(self, msg="", transient=False):
+        super().__init__(msg)
+        self.transient = transient          # 连接断了这类,重试可能就好
 
 
 def available():
@@ -134,7 +137,18 @@ def chat(messages, on_progress=None, max_tokens=8000, temperature=0.3, timeout=1
     if p == "claude":
         return _claude(messages, timeout, images_dir)
     if p == "harness":
-        return _harness(messages, timeout, model or HARNESS_MODEL)
+        for attempt in range(HARNESS_RETRIES + 1):       # 连接中途断了(长课更容易):隔几秒自动再试
+            try:
+                return _harness(messages, timeout, model or HARNESS_MODEL)
+            except LLMError as e:
+                if not getattr(e, "transient", False) or attempt == HARNESS_RETRIES:
+                    if getattr(e, "transient", False):
+                        raise LLMError(f"{e}。已自动重试 {HARNESS_RETRIES} 次还是断了:多半是网络不稳,过一会儿点「重跑」;"
+                                       "很长的课(两小时以上)改用 API Key 会更稳") from e
+                    raise
+                if on_progress:
+                    on_progress(0)
+                time.sleep(5 * (attempt + 1))
     return _codex(messages, timeout, images)
 
 
@@ -237,7 +251,7 @@ def _harness(messages, timeout, model):
             raise LLMError(harness_error("", str(e))) from e
     text, usage, err = parse_harness_events(out)
     if err:
-        raise LLMError(harness_error(err.get("code", ""), err.get("message", "")))
+        raise LLMError(harness_error(err.get("code", ""), err.get("message", "")), transient=is_transient(err))
     if not text:
         raise LLMError("DeepSeek Harness 没有返回内容")
     return text, {"model": f"harness · {model}", "usage": usage, "finish_reason": "stop"}
@@ -269,6 +283,17 @@ def parse_harness_events(out):
     return (final.get("text") or "").strip(), usage, err
 
 
+HARNESS_RETRIES = 2
+TRANSIENT_CODES = ("TRANSPORT", "RATE_LIMIT", "OVERLOADED", "TIMEOUT", "SERVER", "UNAVAILABLE", "NO_FINAL")
+
+
+def is_transient(err):
+    """连接断了、服务器忙这类,重试可能就好;登录、额度、参数错不重试"""
+    code = str(err.get("code", "")).upper()
+    status = err.get("status")
+    return any(k in code for k in TRANSIENT_CODES) or (isinstance(status, int) and status >= 500) or status == 429
+
+
 def harness_error(code, message):
     """把 Harness 的错误码翻成人话(原文附在后面,方便反馈)"""
     raw = f"{code}: {message}".strip(": ")[:300]
@@ -279,6 +304,8 @@ def harness_error(code, message):
     if "did not activate" in raw or "MISSING_CREDENTIAL" in raw:
         return ("DeepSeek Harness 的账号登录方式用不了了(可能是 Harness 升级后改了):先在「设置」里改用 API Key,"
                 "并把这条报错发给工作台作者: " + raw)
+    if "TRANSPORT" in raw:
+        return "DeepSeek Harness 和 DeepSeek 服务器的连接中途断了(" + raw + ")"
     if any(k in raw.upper() for k in ("CONTEXT", "MAX_TOKENS", "LENGTH", "TOO LONG")):
         return "内容太长,DeepSeek Harness 一次写不完:可以改用 API Key,或者把视频分成几段(" + raw + ")"
     return "DeepSeek Harness 出错: " + raw
