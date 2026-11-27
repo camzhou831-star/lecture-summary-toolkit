@@ -180,7 +180,7 @@ def download(url, dest, sha256=None, label=None):
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
     tmp, h, done, shown = dest + ".tmp", hashlib.sha256(), 0, -1
     print(f"== 下载 {label or os.path.basename(dest)}: {url}", file=sys.stderr)
-    with urllib.request.urlopen(url) as r, open(tmp, "wb") as f:
+    with urllib.request.urlopen(url, timeout=60) as r, open(tmp, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
         while True:
             chunk = r.read(1 << 20)
@@ -193,18 +193,35 @@ def download(url, dest, sha256=None, label=None):
     os.replace(tmp, dest)
     return dest
 
+HF_MIRRORS = ("https://huggingface.co", "https://hf-mirror.com")   # 中国大陆连不上 huggingface.co 时换国内镜像
+
+def download_hf(url, dest, label=None):
+    """从 Hugging Face 下载;连不上或中途断了就依次换镜像(环境变量 HF_ENDPOINT 指定的排最前)"""
+    bases = list(dict.fromkeys([os.environ.get("HF_ENDPOINT", "").rstrip("/")] + list(HF_MIRRORS)))
+    path = url.split("huggingface.co", 1)[1]
+    last = None
+    for base in [b for b in bases if b]:
+        try:
+            urllib.request.urlopen(urllib.request.Request(base + path, method="HEAD"), timeout=15).close()   # 先试能不能连上
+            return download(base + path, dest, label=label)
+        except (OSError, urllib.error.URLError) as e:     # 超时、被墙、中途断开
+            last = e
+            if os.path.exists(dest + ".tmp"): os.remove(dest + ".tmp")
+            print(f"   连不上 {base}({e}),换下一个下载地址", file=sys.stderr)
+    sys.exit(f"错误: 模型下载失败(试过 {', '.join(b for b in bases if b)}): {last}")
+
 def ensure_model(name):
     path = os.path.join(MODEL_DIR, f"ggml-{name}.bin")
     if not os.path.isfile(path):
         print(f"首次使用,下载 whisper 模型 {name} ...", file=sys.stderr)
-        download(MODEL_URL.format(name=name), path)
+        download_hf(MODEL_URL.format(name=name), path)
     return path
 
 def ensure_vad():
     path = os.path.join(MODEL_DIR, VAD_NAME)
     if not os.path.isfile(path):
         print("首次使用,下载 Silero VAD 模型(约 1 MB)...", file=sys.stderr)
-        download(VAD_URL, path)
+        download_hf(VAD_URL, path)
     return path
 
 def install_whisper_windows(kind="cpu"):
