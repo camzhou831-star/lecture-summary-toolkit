@@ -210,6 +210,7 @@ def restart_later(delay=1.5):
     def go():
         time.sleep(delay)
         os.chdir(config.WB_DIR)
+        sys.stdout.flush(); sys.stderr.flush()
         os.execv(uv, [uv, "run", "python", "-m", "wb", *sys.argv[1:]])
     threading.Thread(target=go, daemon=True).start()
     return True
