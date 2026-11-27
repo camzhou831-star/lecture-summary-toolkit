@@ -186,8 +186,12 @@ def download(url, dest, sha256=None, label=None):
             chunk = r.read(1 << 20)
             if not chunk: break
             f.write(chunk); h.update(chunk); done += len(chunk)
-            if total and done * 10 // total != shown:
+            if total >= (1 << 20) and done * 10 // total != shown:      # 不到 1 MB 的小文件不报百分比(会显示成 0 / 0 MB)
                 shown = done * 10 // total; print(f"   {shown * 10}%  ({done >> 20} / {total >> 20} MB)", file=sys.stderr)
+            elif not total and (done >> 20) // 100 != shown and done >= (1 << 20):      # 服务器没给文件大小:每 100 MB 报一次已下载多少
+                shown = (done >> 20) // 100; print(f"   已下载 {done >> 20} MB", file=sys.stderr)
+    if total < (1 << 20):
+        print(f"   完成({max(done >> 10, 1)} KB)" if done < (1 << 20) else f"   完成({done >> 20} MB)", file=sys.stderr)
     if sha256 and h.hexdigest() != sha256:
         os.remove(tmp); sys.exit(f"错误: {os.path.basename(dest)} 校验失败(SHA-256 不符),已删除;请重试")
     os.replace(tmp, dest)

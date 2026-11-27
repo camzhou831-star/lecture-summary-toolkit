@@ -81,6 +81,14 @@ fi
 say "== Python 依赖" "== Python dependencies"
 uv sync --quiet
 
+# 语音模型(约 1.5 GB)安装时就下好,不然第一次总结会在「拿文字稿」那一步卡好几分钟。已经有就跳过
+if [ "$OS" = "Darwin" ] || have whisper-cli; then
+  say "== 语音模型(约 1.5 GB,只下载这一次,已经有就跳过)" "== Speech model (about 1.5 GB, downloaded once; skipped if present)"
+  uv run python -c "import sys; sys.path.insert(0, '../工具'); import deps, os; deps.ensure_model(os.environ.get('WHISPER_MODEL', 'large-v3-turbo')); deps.ensure_vad()" \
+    && say "   ✓ 语音模型已就绪" "   ✓ Speech model ready" \
+    || say "   ! 模型没下载成功(多半是网络),不影响打开工作台;第一次转写时会再下载" "   ! Model download failed (usually the network); the workbench still opens and will retry on the first transcription"
+fi
+
 say "== 写总结的 AI(三选一)" "== AI for summaries (you need one)"
 AI=0
 if have claude; then say "   ✓ Claude Code(没登录过的话,运行一次 claude 登录)" "   ✓ Claude Code (run claude once to sign in if you haven't)"; AI=1; fi
