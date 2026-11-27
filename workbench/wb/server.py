@@ -8,11 +8,11 @@ import httpx
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, db, llm, materials, pipeline, sources, templates, update, worker
+from . import config, db, export, llm, materials, pipeline, sources, templates, update, worker
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 LANGS = {"auto", "zh", "en", "ja", "ko", "fr", "de", "es"}
@@ -300,6 +300,27 @@ def get_summary(tid: int):
     if not os.path.exists(p):
         raise HTTPException(404, "总结还没生成")
     return open(p, encoding="utf-8").read()
+
+
+@app.get("/api/tasks/{tid}/export")
+def export_summary(tid: int, fmt: str = "docx"):
+    """导出:docx = Word(图片嵌进去);md = Markdown(有图就连 images/ 一起打包成 zip)。PDF 在网页里打印"""
+    from urllib.parse import quote
+    t = _task(tid)
+    p = pipeline.summary_path(t)
+    if not os.path.exists(p):
+        raise HTTPException(404, "总结还没生成")
+    md = open(p, encoding="utf-8").read()
+    stem = re.sub(r'[\\/:*?"<>|\s]+', "_", (t["title"] or t["vid"]).strip())[:80] or f"summary-{tid}"
+    root = pipeline.task_root(tid)
+    if fmt == "docx":
+        data, name, ctype = export.to_docx(md, root, t["title"] or ""), f"{stem}.docx", \
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    elif fmt == "md":
+        data, name, ctype = export.md_zip(md, root, stem)
+    else:
+        raise HTTPException(400, "不支持的格式")
+    return Response(data, media_type=ctype, headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
 
 
 @app.get("/api/tasks/{tid}/transcript", response_class=PlainTextResponse)

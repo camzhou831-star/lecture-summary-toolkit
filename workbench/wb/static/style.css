@@ -704,3 +704,4 @@ a.ts:active { transform: scale(.95); }
 /* 画面拉片:接触表铺满,表格里的代表帧缩成小图 */
 .reader img { max-width: 100%; border-radius: 6px; }
 .reader td img { width: 132px; max-width: none; display: block; }
+#dl-pop { left: 0; right: auto; width: min(340px, 86vw); }

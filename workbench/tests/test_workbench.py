@@ -1210,3 +1210,44 @@ def test_update_api(env, monkeypatch):
         assert "version" in c.get("/api/config").json()
         assert c.post("/api/update/auto", json={"on": False}).json()["update_check"] is False
         assert c.get("/api/update").json().get("off")
+
+
+# ---------- 导出 Word / Markdown ----------
+def test_export_docx_and_md_zip(env, tmp_path):
+    import zipfile
+    from docx import Document
+    from PIL import Image
+    from wb import export, shotflow
+    root = tmp_path / "task"
+    (root / shotflow.DIR).mkdir(parents=True)
+    Image.new("RGB", (40, 20), "red").save(root / shotflow.DIR / "接触表-1.jpg")
+    md = ("# 标题\n\n> 链接:https://x\n> 时长 1 分\n\n## 1. 小节\n\n- **要点** 一 [01:02](https://y)\n- 要点二\n\n"
+          "![接触表](/api/tasks/9/shotfile/接触表-1.jpg)\n\n| 段 | 说明 |\n|---|---|\n| 1 | 钩子 |\n\n```\ncode\n```\n")
+    d = Document(io.BytesIO(export.to_docx(md, str(root), "T")))
+    text = "\n".join(p.text for p in d.paragraphs)
+    assert "标题" in text and "要点 一 01:02" in text and "code" in text and "](" not in text
+    assert len(d.tables) == 1 and d.tables[0].cell(1, 1).text == "钩子"
+    assert len(d.inline_shapes) == 1                                                     # 图嵌进去了
+    data, name, ctype = export.md_zip(md, str(root), "总结")
+    z = zipfile.ZipFile(io.BytesIO(data))
+    assert name == "总结.zip" and "总结/images/接触表-1.jpg" in z.namelist()
+    assert "(images/接触表-1.jpg)" in z.read("总结/总结.md").decode()
+    data, name, _ = export.md_zip("# 没图\n", str(root), "x")
+    assert name == "x.md" and data.decode() == "# 没图\n"
+
+
+def test_export_api(env, monkeypatch):
+    from fastapi.testclient import TestClient
+    db, p = env["db"], env["pipeline"]
+    kind, vid, src = env["sources"].parse_source(env["srt"])
+    tid = db.create(kind, src, vid)
+    db.update(tid, status="done", title="课程 1")
+    path = p.summary_path(db.get(tid))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    open(path, "w", encoding="utf-8").write(GOOD)
+    with TestClient(env["server"].app) as c:
+        r = c.get(f"/api/tasks/{tid}/export?fmt=docx")
+        assert r.status_code == 200 and r.content[:2] == b"PK" and "%E8%AF%BE%E7%A8%8B_1.docx" in r.headers["content-disposition"]
+        r = c.get(f"/api/tasks/{tid}/export?fmt=md")
+        assert r.status_code == 200 and r.text == GOOD
+        assert c.get(f"/api/tasks/{tid}/export?fmt=exe").status_code == 400

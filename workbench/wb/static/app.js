@@ -37,9 +37,9 @@ function ago(ts) {
   if (d < 86400) return t("hr_ago", { n: Math.floor(d / 3600) });
   const x = new Date(ts * 1000); return t("date", { m: x.getMonth() + 1, mon: MONTHS[x.getMonth()], d: x.getDate() });
 }
-function toast(msg) {
+function toast(msg, ms = 1600) {
   const t = $("#toast"); t.textContent = msg; t.classList.add("on");
-  clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 1600);
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), ms);
 }
 
 // ---------- 模板(第一期只有课程总结可用) ----------
@@ -646,11 +646,57 @@ $("#d-copy").onclick = async () => {
   try { await navigator.clipboard.writeText(rendered.md || await api(`/api/tasks/${current.id}/summary`)); toast(t("copied")); }
   catch (_) { toast(t("copy_fail")); }
 };
-$("#d-download").onclick = () => {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([rendered.md || ""], { type: "text/markdown" }));
-  a.download = `${(current.title || current.vid).replace(/[\\/:*?"<>|]+/g, "_")}.md`; a.click();
+// 导出:PDF 用浏览器打印(版式和网页一致,图一起带上);Word / Markdown 由后端生成(见 wb/export.py)
+$("#d-download").onclick = (e) => {
+  e.stopPropagation();
+  const pop = $("#dl-pop");
+  if (!pop.hidden) { pop.hidden = true; return; }
+  $("#derive-pop").hidden = true; $("#cmp-pop").hidden = true;
+  pop.innerHTML = `<div class="pop-title">${t("dl_title")}</div><div class="pop-list">
+    <a class="pop-opt" data-f="pdf">PDF<em>${t("dl_pdf")}</em></a>
+    <a class="pop-opt" data-f="docx">Word (.docx)<em>${t("dl_docx")}</em></a>
+    <a class="pop-opt" data-f="md">Markdown<em>${t("dl_md")}</em></a></div>`;
+  pop.hidden = false;
+  pop.querySelectorAll("[data-f]").forEach((o) => o.onclick = () => {
+    pop.hidden = true;
+    if (o.dataset.f === "pdf") return printSummary();
+    location.href = `/api/tasks/${current.id}/export?fmt=${o.dataset.f}`;
+  });
 };
+function printHtml(md, title) {
+  const body = window.DOMPurify ? DOMPurify.sanitize(marked.parse(md, { breaks: true })) : `<pre>${esc(md)}</pre>`;
+  return `<!doctype html><html lang="${LANG === "zh" ? "zh-CN" : "en"}"><head><meta charset="utf-8"><base href="${location.origin}/"><title>${esc(title)}</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  body { margin: 0 auto; max-width: 800px; padding: 24px; color: #1f2a24; background: #fff;
+    font: 11pt/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; }
+  h1 { font-size: 20pt; line-height: 1.3; } h2 { font-size: 14.5pt; margin-top: 1.4em; border-bottom: 1px solid #dfe5e0; padding-bottom: 4px; }
+  h3 { font-size: 12pt; } h2, h3 { break-after: avoid; }
+  blockquote { margin: 0.8em 0; padding: 6px 14px; border-left: 3px solid #4f7f6a; background: #f3f6f4; color: #3d4a43; }
+  table { border-collapse: collapse; width: 100%; font-size: 9.5pt; margin: 0.8em 0; } th, td { border: 1px solid #cfd8d2; padding: 4px 6px; vertical-align: top; text-align: left; }
+  th { background: #e8f0eb; } tr { break-inside: avoid; }
+  img { max-width: 100%; max-height: 245mm; width: auto; height: auto; object-fit: contain; break-inside: avoid; display: block; } td img { max-width: 120px; display: inline; }
+  code { background: #eef2ef; padding: 0 4px; border-radius: 4px; font-size: 9.5pt; } pre { white-space: pre-wrap; background: #f4f6f5; padding: 8px; border-radius: 6px; }
+  a { color: #2f6f5a; text-decoration: none; }
+  @media print { body { padding: 0; max-width: none; } }
+</style></head><body>${body}</body></html>`;
+}
+// 不开新窗口(会被拦):在本页放一个看不见的打印框,直接弹打印对话框
+async function printSummary() {
+  const md = rendered.md || await api(`/api/tasks/${current.id}/summary`);
+  document.querySelectorAll("iframe.print-frame").forEach((f) => f.remove());
+  const f = document.createElement("iframe");
+  f.className = "print-frame";
+  f.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+  document.body.appendChild(f);
+  const doc = f.contentDocument;
+  doc.open(); doc.write(printHtml(md, current.title || current.vid)); doc.close();
+  await Promise.all([...doc.images].map((im) => im.complete ? 0 : new Promise((r) => { im.onload = im.onerror = r; })));
+  toast(t("dl_print_hint"), 9000);
+  const old = document.title; document.title = current.title || current.vid;      // 存 PDF 时默认用这个当文件名
+  f.contentWindow.focus(); f.contentWindow.print();
+  setTimeout(() => { document.title = old; }, 1000);
+}
 // 换个用途:用已有文字稿换模板 / 语言再出一份(新任务)
 function drawDerivePop() {
   const cur = current.template || "course";
@@ -671,13 +717,14 @@ function drawDerivePop() {
   };
 }
 $("#d-derive").onclick = (e) => {
+  $("#dl-pop").hidden = true;
   e.stopPropagation();
   const pop = $("#derive-pop");
   if (!pop.hidden) { pop.hidden = true; return; }
   if (!current.timings || current.timings.fetch == null) return toast(t("derive_wait"));
   drawDerivePop(); pop.hidden = false;
 };
-document.addEventListener("click", (e) => { if (!e.target.closest(".derive-wrap")) { $("#derive-pop").hidden = true; $("#cmp-pop").hidden = true; } });
+document.addEventListener("click", (e) => { if (!e.target.closest(".derive-wrap")) { $("#derive-pop").hidden = true; $("#cmp-pop").hidden = true; $("#dl-pop").hidden = true; } });
 
 // 对比 / 汇总(拉片流程第 4、6 节):勾几条已完成的对标拆稿 → 导出汇总表 / 写横向对比与编辑决策
 function drawComparePop() {
@@ -698,7 +745,8 @@ function drawComparePop() {
     } catch (err) { toast(trServer(err.message)); }
   };
 }
-$("#d-compare").onclick = (e) => { e.stopPropagation(); const pop = $("#cmp-pop"); if (!pop.hidden) { pop.hidden = true; return; } drawComparePop(); pop.hidden = false; };
+$("#d-compare").onclick = (e) => {
+  $("#dl-pop").hidden = true; e.stopPropagation(); const pop = $("#cmp-pop"); if (!pop.hidden) { pop.hidden = true; return; } drawComparePop(); pop.hidden = false; };
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#derive-pop").hidden = true; });
 
 $("#d-retry").onclick = async () => {
