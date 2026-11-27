@@ -1,5 +1,5 @@
 ﻿# 总结工作台:Windows 一键安装 + 启动(由仓库根目录的 启动工作台.bat 调用)
-# Lecture Workbench: one-step setup and launch on Windows (called by 启动工作台.bat in the repository root)
+# Lecture Workbench: one-step setup and launch on Windows (called by 启动工作台.bat / Start Workbench.bat in the package root)
 #   用 winget 装缺的 uv / yt-dlp / ffmpeg;用录播课工具自带的 lsk setup 装 whisper.cpp(Vulkan GPU 版 + CPU 备用)、下载语音模型并做 GPU 自检;
 #   然后启动工作台并打开浏览器。已经装好的会跳过,可以放心重复运行。不会替你登录任何账号,也不会改你的 API Key。
 param([switch]$NoStart)
@@ -19,7 +19,7 @@ Say "== 总结工作台:检查和安装" "== Lecture Workbench: checking and ins
 Refresh-Path
 if (-not (Have "winget")) {
   Say "没找到 winget(Windows 自带的软件安装器)。请在 Microsoft Store 里安装或更新「应用安装程序 / App Installer」,再双击一次 启动工作台.bat。" `
-      "winget (Windows' built-in installer) was not found. Install or update 'App Installer' from the Microsoft Store, then double-click 启动工作台.bat again."
+      "winget (Windows' built-in installer) was not found. Install or update 'App Installer' from the Microsoft Store, then double-click the start file (Start Workbench.bat) again."
   exit 1
 }
 $pkgs = @(@("uv", "astral-sh.uv"), @("yt-dlp", "yt-dlp.yt-dlp"), @("ffmpeg", "Gyan.FFmpeg"))
@@ -28,7 +28,7 @@ foreach ($p in $pkgs) {
   Say "   … 安装 $($p[0])" "   … installing $($p[0])"
   winget install -e --id $p[1] --accept-package-agreements --accept-source-agreements --silent | Out-Host
   Refresh-Path
-  if (-not (Have $p[0])) { Say "   ! $($p[0]) 装完还找不到;关掉这个窗口,再双击一次 启动工作台.bat" "   ! $($p[0]) still not found; close this window and double-click 启动工作台.bat again"; exit 1 }
+  if (-not (Have $p[0])) { Say "   ! $($p[0]) 装完还找不到;关掉这个窗口,再双击一次 启动工作台.bat" "   ! $($p[0]) still not found; close this window and double-click Start Workbench.bat again"; exit 1 }
 }
 # 可选:读视频画面文字(课程总结对课件页码用)。装不上不影响别的功能;课件 PDF 用 Python 包 pypdf 读,不用另装
 if (-not (Have "tesseract") -and -not (Test-Path "$env:ProgramFiles\Tesseract-OCR\tesseract.exe")) {

@@ -31,7 +31,7 @@ It runs on your own computer. On Mac and Windows you download it and double-clic
 
 
 1. **Download.** From the [latest release](https://github.com/camzhou831-star/lecture-summary-toolkit/releases/latest): `lecture-workbench-mac.zip` for Mac, `lecture-workbench-windows.zip` for Windows. Unzip it.
-2. **Double-click to start.** On Mac, double-click `启动工作台.command` ("Start Workbench"); on Windows, `启动工作台.bat`. The first run installs what it needs, then opens the workbench in your browser.
+2. **Double-click to start.** On Mac, double-click `Start Workbench.command`; on Windows, `Start Workbench.bat`. The first run installs what it needs, then opens the workbench in your browser.
    - Mac says it "cannot be verified" the first time: Control-click the file and choose Open. On newer macOS without that button, go to System Settings → Privacy & Security and click Open Anyway.
    - Windows shows "Windows protected your PC": click More info → Run anyway.
    - Keep the window that pops up open while you use it; closing it stops the workbench.
