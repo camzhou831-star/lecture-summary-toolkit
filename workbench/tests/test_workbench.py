@@ -810,9 +810,10 @@ def test_harness_provider(env, monkeypatch, tmp_path):
     assert ok and note == str(dsh) and "SECRET" not in note
     seen = {}
 
-    def fake_run(cmd, stdin_text, timeout, cwd):
+    def fake_run(cmd, stdin_text, timeout, cwd, check=True):
         seen.update(cmd=cmd, stdin=stdin_text, patch=open(cmd[cmd.index("--patch") + 1], encoding="utf-8").read())
-        return "  总结正文\n"
+        return ('{"type":"session"}\n{"type":"status","phase":"step_end","usage":{"inputTokens":10,"outputTokens":3}}\n'
+                '{"type":"final","reason":{"kind":"completed"},"text":"  总结正文\\n"}\n')
     monkeypatch.setattr(llm, "_run", fake_run)
     text, info = llm.chat([{"role": "system", "content": "S"}, {"role": "user", "content": "U"}], provider="harness")
     assert text == "总结正文" and info["model"] == "harness · deepseek-flash"
@@ -821,11 +822,18 @@ def test_harness_provider(env, monkeypatch, tmp_path):
     llm.chat([{"role": "user", "content": "U"}], provider="harness", model="deepseek-v4-pro")
     assert "model: deepseek-v4-pro" in seen["patch"]
 
-    def signed_out(cmd, stdin_text, timeout, cwd):
-        raise llm.LLMError("dsh 出错: dsh: ACCOUNT_SIGN_IN_REQUIRED: Sign in to DeepSeek")
+    def signed_out(cmd, stdin_text, timeout, cwd, check=True):
+        return '{"type":"final","reason":{"kind":"error","error":{"code":"ACCOUNT_SIGN_IN_REQUIRED","message":"Sign in"}},"text":""}\n'
     monkeypatch.setattr(llm, "_run", signed_out)
-    with pytest.raises(llm.LLMError, match="没登录账号"):
+    with pytest.raises(llm.LLMError, match="登录过期"):
         llm.chat([{"role": "user", "content": "U"}], provider="harness")
+
+    def thinking_then_crash(cmd, stdin_text, timeout, cwd, check=True):    # 出错退出:不再把思考过程的尾巴当报错
+        return '{"type":"thinking","text":"rer said. Could omit to avoid dubious."}\n{"type":"final","reason":{"kind":"error","error":{"code":"ACCOUNT_QUOTA_EXCEEDED","message":"quota"}},"text":""}\n'
+    monkeypatch.setattr(llm, "_run", thinking_then_crash)
+    with pytest.raises(llm.LLMError, match="额度用完") as ei:
+        llm.chat([{"role": "user", "content": "U"}], provider="harness")
+    assert "dubious" not in str(ei.value)
 
 
 def make_pptx(path, slides, notes=None):
@@ -1079,9 +1087,9 @@ def test_harness_reasoning_effort_in_patch(env, monkeypatch):
     llm = env["llm"]
     seen = {}
     monkeypatch.setattr(llm, "find_dsh", lambda: "/bin/dsh")
-    def fake_run(cmd, stdin, timeout, cwd):
+    def fake_run(cmd, stdin, timeout, cwd, check=True):
         seen["patch"] = open(cmd[cmd.index("--patch") + 1], encoding="utf-8").read()
-        return "OK"
+        return '{"type":"final","reason":{"kind":"completed"},"text":"OK"}\n'
     monkeypatch.setattr(llm, "_run", fake_run)
     llm.chat([{"role": "user", "content": "U"}], provider="harness", model="deepseek-v4-pro:low")
     assert "model: deepseek-v4-pro\n" in seen["patch"] and "reasoningEffort: low" in seen["patch"]

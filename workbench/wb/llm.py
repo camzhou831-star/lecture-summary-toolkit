@@ -159,7 +159,7 @@ def _flatten(messages):
     return system, "\n\n".join(f"{label[m['role']]}\n\n{m['content']}" for m in rest)
 
 
-def _run(cmd, stdin_text, timeout, cwd):
+def _run(cmd, stdin_text, timeout, cwd, check=True):
     exe = shutil.which(cmd[0])      # Windows 上 npm 装的是 claude.cmd / codex.cmd,直接用名字 subprocess 找不到
     if exe:
         cmd = [exe, *cmd[1:]]
@@ -170,6 +170,8 @@ def _run(cmd, stdin_text, timeout, cwd):
         raise LLMError(f"找不到命令 {os.path.basename(cmd[0])}") from e
     except subprocess.TimeoutExpired as e:
         raise LLMError(f"{os.path.splitext(os.path.basename(cmd[0]))[0]} 超过 {timeout // 60} 分钟没写完") from e
+    if r.returncode != 0 and not check:
+        return r.stdout or r.stderr
     if r.returncode != 0:
         tail = (r.stderr or r.stdout).strip()[-400:]
         name = os.path.splitext(os.path.basename(cmd[0]))[0]
@@ -229,20 +231,57 @@ def _harness(messages, timeout, model):
         text_patch = HARNESS_PATCH.format(platform=plat, model=name) + (f"    reasoningEffort: {effort}\n" if effort else "")
         open(patch, "w", encoding="utf-8").write(text_patch)
         try:
-            out = _run([dsh, "headless", "--patch", patch, "--permission-mode", "read-only", "-"],
-                       f"{system}\n\n---\n\n{prompt}\n\n(直接输出回答全文,不要修改任何文件。)", timeout, tmp)
+            out = _run([dsh, "headless", "--patch", patch, "--permission-mode", "read-only", "--json", "-"],
+                       f"{system}\n\n---\n\n{prompt}\n\n(直接输出回答全文,不要修改任何文件。)", timeout, tmp, check=False)
         except LLMError as e:
-            msg = str(e)
-            if "ACCOUNT_SIGN_IN_REQUIRED" in msg:
-                raise LLMError("DeepSeek Harness 没登录账号:打开 Harness 用 DeepSeek 账号登录一次,再点「重跑」") from e
-            if "did not activate" in msg or "MISSING_CREDENTIAL" in msg:
-                raise LLMError("DeepSeek Harness 的账号登录方式用不了了(可能是 Harness 升级后改了):先在「设置」里改用 API Key,"
-                               "并把这条报错发给工作台作者: " + msg[-200:]) from e
-            raise
-    text = out.strip()
+            raise LLMError(harness_error("", str(e))) from e
+    text, usage, err = parse_harness_events(out)
+    if err:
+        raise LLMError(harness_error(err.get("code", ""), err.get("message", "")))
     if not text:
         raise LLMError("DeepSeek Harness 没有返回内容")
-    return text, {"model": f"harness · {model}", "usage": None, "finish_reason": "stop"}
+    return text, {"model": f"harness · {model}", "usage": usage, "finish_reason": "stop"}
+
+
+def parse_harness_events(out):
+    """dsh headless --json 的事件流 → (最后的回答, 用量, 出错信息或 None)。
+    出错时 final.reason = {"kind": "error", "error": {"code", "message"}};不是 completed 的其他结束原因也当出错"""
+    text, usage, err, final = "", {"input_tokens": 0, "output_tokens": 0}, None, None
+    for line in (out or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("type") == "status" and isinstance(e.get("usage"), dict):
+            usage["input_tokens"] += e["usage"].get("inputTokens") or 0
+            usage["output_tokens"] += e["usage"].get("outputTokens") or 0
+        if e.get("type") == "final":
+            final = e
+    if final is None:
+        tail = (out or "").strip()[-300:]
+        return "", usage, {"code": "NO_FINAL", "message": tail or "没有输出"}
+    reason = final.get("reason") or {}
+    if reason.get("kind") not in (None, "completed"):
+        err = reason.get("error") or {"code": str(reason.get("kind")).upper(), "message": json.dumps(reason, ensure_ascii=False)[:300]}
+    return (final.get("text") or "").strip(), usage, err
+
+
+def harness_error(code, message):
+    """把 Harness 的错误码翻成人话(原文附在后面,方便反馈)"""
+    raw = f"{code}: {message}".strip(": ")[:300]
+    if "ACCOUNT_SIGN_IN_REQUIRED" in raw or "ACCOUNT_TOKEN_INVALID" in raw:
+        return "DeepSeek Harness 的账号登录过期了:打开 Harness 重新登录一次,再点「重跑」(" + raw + ")"
+    if "QUOTA_EXCEEDED" in raw:
+        return "DeepSeek 账号的额度用完了:到 DeepSeek 开放平台看一下余额或用量,充值后点「重跑」(" + raw + ")"
+    if "did not activate" in raw or "MISSING_CREDENTIAL" in raw:
+        return ("DeepSeek Harness 的账号登录方式用不了了(可能是 Harness 升级后改了):先在「设置」里改用 API Key,"
+                "并把这条报错发给工作台作者: " + raw)
+    if any(k in raw.upper() for k in ("CONTEXT", "MAX_TOKENS", "LENGTH", "TOO LONG")):
+        return "内容太长,DeepSeek Harness 一次写不完:可以改用 API Key,或者把视频分成几段(" + raw + ")"
+    return "DeepSeek Harness 出错: " + raw
 
 
 # ---------- OpenAI 兼容接口 ----------
