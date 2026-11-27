@@ -402,6 +402,26 @@ function setTab(name) {
   $("#summary").hidden = name !== "summary"; $("#transcript").hidden = name !== "transcript"; $("#logpane").hidden = name !== "log";
 }
 
+// ---------- 数学公式:$…$ / $$…$$ / \(…\) / \[…\] 用 KaTeX 排版 ----------
+// 先换成占位符再交给 marked(不然 \ 和 _ 会被当成 Markdown 吃掉),过滤完 HTML 再把排好的公式放回去。代码里的 $ 不动;$5 这种金额不算公式
+const MATH_RE = /(```[\s\S]*?```|`[^`\n]*`)|\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\((.+?)\\\)|(?<![\\$\w])\$(?![\s$])([^\n$`　-〿一-鿿＀-￯]+?)(?<![\s\\])\$(?![\d$])/g;
+function mdToHtml(md) {
+  const items = [];
+  const src = window.katex ? md.replace(MATH_RE, (all, code, d1, d2, i1, i2) => {
+    if (code) return code;
+    const display = d1 != null || d2 != null;
+    items.push({ tex: (d1 ?? d2 ?? i1 ?? i2).trim(), display });
+    return `KXMATH${items.length - 1}XK`;
+  }) : md;
+  let html = window.marked ? marked.parse(src, { breaks: true }) : `<pre>${esc(src)}</pre>`;
+  html = window.DOMPurify ? DOMPurify.sanitize(html) : html;
+  return html.replace(/KXMATH(\d+)XK/g, (_, n) => {
+    const it = items[+n];
+    try { return katex.renderToString(it.tex, { displayMode: it.display, throwOnError: false, output: "html", strict: "ignore" }); }
+    catch (_) { return esc(it.display ? `$$${it.tex}$$` : `$${it.tex}$`); }
+  });
+}
+
 // ---------- 总结 ----------
 const TS = /(?<![\d:])(\d{1,3}):([0-5]\d)(?![\d:])/g;
 async function loadSummary(t) {
@@ -409,9 +429,8 @@ async function loadSummary(t) {
   const md = await api(`/api/tasks/${t.id}/summary`);
   rendered.md = md;
   // breaks:引用块里"讲者 / 链接 / 时长"一行一条,不并成一段
-  const html = window.marked ? marked.parse(md, { breaks: true }) : `<pre>${esc(md)}</pre>`;
   const box = $("#summary");
-  box.innerHTML = window.DOMPurify ? DOMPurify.sanitize(html) : html;
+  box.innerHTML = mdToHtml(md);
   box.querySelectorAll("a").forEach((a) => {
     const m = a.textContent.trim().match(/^\[?(\d{1,3}):([0-5]\d)\]?$/);
     if (m) { a.dataset.t = +m[1] * 60 + +m[2]; a.classList.add("ts"); }
@@ -664,8 +683,8 @@ $("#d-download").onclick = (e) => {
   });
 };
 function printHtml(md, title) {
-  const body = window.DOMPurify ? DOMPurify.sanitize(marked.parse(md, { breaks: true })) : `<pre>${esc(md)}</pre>`;
-  return `<!doctype html><html lang="${LANG === "zh" ? "zh-CN" : "en"}"><head><meta charset="utf-8"><base href="${location.origin}/"><title>${esc(title)}</title>
+  const body = mdToHtml(md);
+  return `<!doctype html><html lang="${LANG === "zh" ? "zh-CN" : "en"}"><head><meta charset="utf-8"><base href="${location.origin}/"><title>${esc(title)}</title><link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
 <style>
   @page { size: A4; margin: 16mm 15mm; }
   body { margin: 0 auto; max-width: 800px; padding: 24px; color: #1f2a24; background: #fff;

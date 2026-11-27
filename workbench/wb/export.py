@@ -50,6 +50,48 @@ def md_zip(md, task_root, stem):
     return buf.getvalue(), f"{stem}.zip", "application/zip"
 
 
+# ---------- 数学公式 → Word 里能直接读的文字 ----------
+# 网页和 PDF 用 KaTeX 排版;Word 里换成 Unicode:x^2 → x²、a_{n+1} → aₙ₊₁、\frac{1}{2} → 1/2、\le → ≤ ……
+MATH_MD = re.compile(r"(```[\s\S]*?```|`[^`\n]*`)|\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\((.+?)\\\)"
+                     r"|(?<![\\$\w])\$(?![\s$])([^\n$`　-〿一-鿿＀-￯]+?)(?<![\s\\])\$(?![\d$])")
+SUP = dict(zip("0123456789+-=()nijkx", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱʲᵏˣ"))
+SUB = dict(zip("0123456789+-=()aeoxijknmt", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₒₓᵢⱼₖₙₘₜ"))
+SCRIPT = re.compile(r"([\^_])(\{([^{}]*)\}|([A-Za-z0-9]))")
+
+
+def _scripts(tex):
+    def one(m):
+        body = m.group(3) if m.group(3) is not None else m.group(4)
+        table = SUP if m.group(1) == "^" else SUB
+        if body and all(ch in table for ch in body):
+            return "".join(table[ch] for ch in body)
+        return f"{m.group(1)}({body})" if len(body) > 1 else m.group(1) + body
+    prev = None
+    while prev != tex:
+        prev, tex = tex, SCRIPT.sub(one, tex)
+    return tex
+
+
+def tex_text(tex):
+    from pylatexenc.latex2text import LatexNodes2Text
+    try:
+        out = LatexNodes2Text(math_mode="text").latex_to_text(_scripts(tex))
+    except Exception:
+        return tex
+    return re.sub(r"\s+", " ", out).strip()
+
+
+def plain_math(md):
+    """把总结里的公式换成可读文字(代码里的不动)"""
+    def rep(m):
+        if m.group(1):
+            return m.group(1)
+        if m.group(2) is not None or m.group(3) is not None:
+            return "\n\n" + tex_text(m.group(2) if m.group(2) is not None else m.group(3)) + "\n\n"
+        return tex_text(m.group(4) if m.group(4) is not None else m.group(5))
+    return MATH_MD.sub(rep, md)
+
+
 # ---------- Markdown → Word ----------
 def _font(doc):
     st = doc.styles["Normal"]
@@ -152,7 +194,7 @@ def _table(doc, rows, task_root):
 def to_docx(md, task_root, title=""):
     doc = Document()
     _font(doc)
-    lines = md.replace("\r\n", "\n").split("\n")
+    lines = plain_math(md.replace("\r\n", "\n")).split("\n")
     i, n = 0, len(lines)
     while i < n:
         line = lines[i]

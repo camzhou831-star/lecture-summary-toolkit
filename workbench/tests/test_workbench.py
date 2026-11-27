@@ -1251,3 +1251,12 @@ def test_export_api(env, monkeypatch):
         r = c.get(f"/api/tasks/{tid}/export?fmt=md")
         assert r.status_code == 200 and r.text == GOOD
         assert c.get(f"/api/tasks/{tid}/export?fmt=exe").status_code == 400
+
+
+def test_export_docx_turns_latex_into_readable_text(env, tmp_path):
+    from docx import Document
+    from wb import export
+    md = "## 要点\n\n1. 若 $f(x)$ 在 $[a,b]$ 上连续,$f(a)f(b)<0$;$a_{n+1}=\\frac{1}{2}a_n$\n\n$$\\int_0^1 x^2\\,dx$$\n\n价格 $5 和 $10。\n"
+    text = "\n".join(p.text for p in Document(io.BytesIO(export.to_docx(md, str(tmp_path)))).paragraphs)
+    assert "f(a)f(b)<0" in text and "aₙ₊₁=1/2aₙ" in text and "∫₀¹ x² dx" in text and "$5 和 $10" in text
+    assert "$f(x)$" not in text and "\\frac" not in text
