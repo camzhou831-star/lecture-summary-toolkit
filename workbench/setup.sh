@@ -24,7 +24,26 @@ brew_env() {   # 装了 Homebrew 但这个窗口的 PATH 里还没有(双击启�
   done
   return 1
 }
-BREW_CMD='/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+BREW_URL="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+
+# 中国大陆连不上 GitHub 的 raw 地址时(或 WORKBENCH_CN=1),Homebrew、Python、Python 包都换国内镜像:
+# Homebrew 用中科大镜像(https://mirrors.ustc.edu.cn/help/brew.git.html),Python 用 npmmirror,Python 包用阿里云
+CN=0
+if [ "${WORKBENCH_CN:-}" = 1 ]; then CN=1
+elif [ "${WORKBENCH_CN:-}" != 0 ] && ! curl -fsI --max-time 8 https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh >/dev/null 2>&1; then CN=1; fi
+if [ "$CN" = 1 ]; then
+  say "== 连不上 GitHub,改用国内镜像下载(中科大 Homebrew、npmmirror、阿里云 PyPI)" \
+      "== GitHub is unreachable; using mirrors in mainland China (USTC Homebrew, npmmirror, Aliyun PyPI)"
+  export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.ustc.edu.cn/brew.git"
+  export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.ustc.edu.cn/homebrew-core.git"
+  export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.ustc.edu.cn/homebrew-bottles"
+  export HOMEBREW_API_DOMAIN="https://mirrors.ustc.edu.cn/homebrew-bottles/api"
+  export HOMEBREW_NO_AUTO_UPDATE=1
+  export UV_PYTHON_INSTALL_MIRROR="https://registry.npmmirror.com/-/binary/python-build-standalone"
+  export UV_DEFAULT_INDEX="https://mirrors.aliyun.com/pypi/simple/"
+  export HF_ENDPOINT="https://hf-mirror.com"
+  BREW_URL="https://mirrors.ustc.edu.cn/misc/brew-install.sh"
+fi
 
 if [ "$OS" = "Darwin" ]; then
   have brew || brew_env || true
@@ -33,13 +52,14 @@ if [ "$OS" = "Darwin" ]; then
     if [ -t 0 ]; then
       if zh; then read -r -p "现在安装吗?过程中要输入一次开机密码 [y/N] " ans; else read -r -p "Install it now? You'll be asked for your Mac password once [y/N] " ans; fi
       case "$ans" in
-        y|Y|yes|YES) /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && brew_env || true ;;
+        y|Y|yes|YES) /bin/bash -c "$(curl -fsSL "$BREW_URL")" && brew_env || true ;;
       esac
     fi
     if ! have brew; then
       say "没有装上。可以在终端运行下面这一行装好,再重新运行本脚本(或再双击「启动工作台」):" \
           "Not installed. Run this line in Terminal, then run this script again (or double-click Start again):"
-      echo "  $BREW_CMD"
+      [ "$CN" = 1 ] && echo "  export HOMEBREW_BREW_GIT_REMOTE=$HOMEBREW_BREW_GIT_REMOTE HOMEBREW_CORE_GIT_REMOTE=$HOMEBREW_CORE_GIT_REMOTE HOMEBREW_BOTTLE_DOMAIN=$HOMEBREW_BOTTLE_DOMAIN HOMEBREW_API_DOMAIN=$HOMEBREW_API_DOMAIN"
+      echo "  /bin/bash -c \"\$(curl -fsSL $BREW_URL)\""
       exit 1
     fi
   fi
