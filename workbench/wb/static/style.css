@@ -693,3 +693,7 @@ a.ts:active { transform: scale(.95); }
 .keyline a, .ob-note a { color: var(--brand); }
 .rec-tag { display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 999px; background: var(--brand); color: var(--on-brand, #fff); font-size: 11px; font-weight: 600; vertical-align: 1px; }
 .ob-sep { margin-top: 12px; font-weight: 500; }
+
+/* 画面拉片:接触表铺满,表格里的代表帧缩成小图 */
+.reader img { max-width: 100%; border-radius: 6px; }
+.reader td img { width: 132px; max-width: none; display: block; }

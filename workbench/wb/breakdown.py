@@ -176,6 +176,29 @@ def stats(subs, segs, lang="zh"):
     return head + "\n".join(rows) + "\n\n" + metrics
 
 
+def numbers(subs, segs):
+    """汇总表要的数字(口径同 stats):口播秒数、总字数、字每分、信息点、信息点每分、钩子秒数、第一个信息点秒数、举例 / 清单占比、结尾类型、有无商单"""
+    tot_c = sum(count(t) for _, _, t in subs)
+    dur = max(subs[-1][1] - subs[0][0], 0.1)
+    tot_p = sum(int(s.get("points", 0) or 0) for s in segs)
+    role_dur, first_point, hook_end = {}, None, None
+    for s in segs:
+        part = subs[s["from"] - 1: s["to"]]
+        a = part[0][0]
+        b = subs[s["to"]][0] if s["to"] < len(subs) else part[-1][1]
+        role = str(s.get("role", ""))
+        role_dur[role] = role_dur.get(role, 0) + max(b - a, 0.1)
+        if int(s.get("points", 0) or 0) and first_point is None:
+            first_point = a
+        if hook_end is None and role in ("钩子", "Hook"):
+            hook_end = b
+    share = lambda *names: round(sum(role_dur.get(r, 0) for r in names) / dur * 100)
+    return {"秒数": round(dur, 1), "总字数": tot_c, "字每分": round(tot_c / dur * 60), "信息点": tot_p, "信息点每分": round(tot_p / dur * 60, 1),
+            "钩子秒数": round(hook_end - subs[0][0], 1) if hook_end else "", "第一个信息点秒数": round(first_point - subs[0][0], 1) if first_point is not None else "",
+            "举例占比": f"{share('举例', 'Example')}%", "清单占比": f"{share('清单', 'Takeaway list')}%",
+            "结尾类型": str(segs[-1].get("role", "")) if segs else "", "商单": any(r in ("广告", "Sponsor") for r in role_dur)}
+
+
 def assemble(title_block, subs, segs, body, lang="zh"):
     """标题和信息块 + 代码算的 1–4 节 + AI 写的 5–7 节"""
     return f"{title_block.strip()}\n\n{edges(subs, lang)}\n{stats(subs, segs, lang)}\n{body.strip()}\n"

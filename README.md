@@ -12,7 +12,10 @@ It runs on your own computer. On Mac and Windows you download it and double-clic
 
 - **You missed a 90-minute lecture and don't want to watch all of it.** Read the summary first, and click the timestamp for the part you didn't get.
 - **When you revise.** Anything the lecturer flagged ("this will be on the exam", "pay attention here") is pulled out, course notices (assignments, deadlines, how marks are split) are collected, and there's a set of review cards you can drop straight into Obsidian.
-- **Learning how good short videos are written.** Paste a short video and it breaks the script down sentence by sentence: how it hooks you, what each part does, how fast it talks.
+- **Learning how good short videos are made.** Paste a hit video:
+  - **Script breakdown**: sentence by sentence, how it hooks you, what each part does, how fast it talks, why people save it and what you mustn't copy; plus how it compares with the creator's last 20 videos.
+  - **Side-by-side comparison**: put 3 breakdowns on one topic side by side across 9 dimensions and get five editing decisions; or export a summary table.
+  - **Shot breakdown**: shot by shot, with contact sheets, cut rhythm, measured entry motion and draft shot specs.
 - **Writing up a meeting.** Drop in the recording and get the decisions, who owns what, and a timestamp for each.
 
 ## How is this different from pasting into ChatGPT?

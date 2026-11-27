@@ -7,7 +7,9 @@ const ICON = {
   dot: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
 };
 const STAGES = ["fetch", "prepare", "summarize", "check", "names", "review"];
-const stagesOf = (tpl, kind) => (!tpl || tpl === "course" ? STAGES : STAGES.filter((k) => k !== "review")).filter((k) => !(kind === "slides" && k === "fetch"));   // 只有课件的任务没有「拿文字稿」   // 审核内容只有课程总结有
+const stagesOf = (tpl, kind) => kind === "compare" ? ["prepare", "summarize", "check"]       // 横向对比:收集拆稿 → 写 → 核对
+  : tpl === "shots" ? ["fetch", "prepare", "summarize", "check"]                                  // 画面拉片:下载视频 → 机测 → 逐镜头登记 → 核对
+  : (!tpl || tpl === "course" || tpl === "breakdown" ? STAGES : STAGES.filter((k) => k !== "review")).filter((k) => !(kind === "slides" && k === "fetch"));   // 只有课件的任务没有「拿文字稿」   // 审核内容只有课程总结有
 const kindName = (k) => t("kind_" + k);
 const statusName = (s) => t("status_" + s);
 
@@ -46,6 +48,8 @@ const TEMPLATES = [
   },
   { id: "breakdown", key: "tpl_bench", ready: true, icon: '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   },
+  { id: "shots", key: "tpl_shots", ready: true, icon: '<svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 5v14M17 5v14M2 10h5M2 14h5M17 10h5M17 14h5"/></svg>',
+  },
   { id: "meeting", key: "tpl_meet", ready: true, icon: '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
   },
 ];
@@ -65,6 +69,7 @@ let meetings = [], meetingVariant = "meeting.standard_meeting";
 const tplId = () => template === "meeting" ? meetingVariant : template;   // 提交给后端的模板 id
 function tplName(id) {
   if (!id || id === "course") return t("tpl_course");
+  if (id === "shots") return t("tpl_shots");
   if (id === "breakdown") return t("tpl_bench");
   const m = meetings.find((x) => x.id === id);
   return t("tpl_meet") + (m ? " · " + (LANG === "zh" ? m.name_zh : m.name_en) : "");
@@ -348,6 +353,7 @@ function drawDetail(t) {
   $("#d-retry").disabled = $("#d-del").disabled = t.status === "running";
 
   const tr = window.t;
+  $("#cmp-wrap").hidden = !(t.template === "breakdown" && t.status === "done");
   const stages = stagesOf(t.template, t.kind);
   $("#steps").style.gridTemplateColumns = innerWidth > 980 ? `repeat(${stages.length}, 1fr)` : "";
   $("#steps").innerHTML = stages.map((k, i) => {
@@ -357,7 +363,8 @@ function drawDetail(t) {
     const cls = bad ? "bad" : now ? "now" : ok ? "done" : "";
     const ic = bad ? ICON.x : now ? ICON.spin : ok ? ICON.check : `<b style="font-size:12px">${i + 1}</b>`;
     const tm = bad ? tr("step_failed") : now ? tr("step_now") : ok ? dur(t.timings[k]) : t.status === "queued" && i === 0 ? tr("step_queued") : tr("step_wait");
-    return `<div class="step ${cls}"><span class="ic">${ic}</span><div><div class="nm">${tr("st_" + k)}</div><div class="tm">${tm}</div></div></div>`;
+    const nm = t.template === "shots" && ["fetch", "prepare", "summarize"].includes(k) ? tr("st_" + k + "_v") : tr("st_" + k);
+    return `<div class="step ${cls}"><span class="ic">${ic}</span><div><div class="nm">${nm}</div><div class="tm">${tm}</div></div></div>`;
   }).join("");
 
   const st = $("#d-status");
@@ -669,7 +676,28 @@ $("#d-derive").onclick = (e) => {
   if (!current.timings || current.timings.fetch == null) return toast(t("derive_wait"));
   drawDerivePop(); pop.hidden = false;
 };
-document.addEventListener("click", (e) => { if (!e.target.closest(".derive-wrap")) $("#derive-pop").hidden = true; });
+document.addEventListener("click", (e) => { if (!e.target.closest(".derive-wrap")) { $("#derive-pop").hidden = true; $("#cmp-pop").hidden = true; } });
+
+// 对比 / 汇总(拉片流程第 4、6 节):勾几条已完成的对标拆稿 → 导出汇总表 / 写横向对比与编辑决策
+function drawComparePop() {
+  const list = tasks.filter((x) => x.template === "breakdown" && x.kind !== "compare" && x.status === "done");
+  $("#cmp-pop").innerHTML = `<div class="pop-title">${t("cmp_title")}</div><p class="pop-hint">${t("cmp_hint")}</p>
+    <div class="pop-list">${list.map((x) => `<label class="pop-opt"><input type="checkbox" name="cmp-id" value="${x.id}" ${x.id === current.id ? "checked" : ""}>
+      <span>${esc(x.title || x.vid)}</span></label>`).join("")}</div>
+    <div class="pop-foot"><button type="button" id="cmp-csv" class="btn btn-ghost btn-sm">${t("cmp_csv")}</button>
+      <button type="button" id="cmp-go" class="btn btn-primary btn-sm">${t("cmp_go")}</button></div>`;
+  const ids = () => [...document.querySelectorAll("input[name=cmp-id]:checked")].map((i) => +i.value);
+  $("#cmp-csv").onclick = () => { const v = ids(); if (!v.length) return toast(t("cmp_need1")); location.href = `/api/compare.csv?ids=${v.join(",")}`; };
+  $("#cmp-go").onclick = async () => {
+    const v = ids();
+    if (v.length < 2 || v.length > 5) return toast(t("cmp_need"));
+    try {
+      const nt = await api("/api/compare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: v, out_lang: current.out_lang || "zh" }) });
+      $("#cmp-pop").hidden = true; await refresh(); location.hash = `#/t/${nt.id}`;
+    } catch (err) { toast(trServer(err.message)); }
+  };
+}
+$("#d-compare").onclick = (e) => { e.stopPropagation(); const pop = $("#cmp-pop"); if (!pop.hidden) { pop.hidden = true; return; } drawComparePop(); pop.hidden = false; };
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#derive-pop").hidden = true; });
 
 $("#d-retry").onclick = async () => {
@@ -726,7 +754,7 @@ function aiName(c) {
 }
 // 首页大标题、说明、输入框提示和开始按钮跟着所选模板换(课程总结 / 对标拆稿 / 会议纪要)
 function drawHero() {
-  const k = { breakdown: "_bench", meeting: "_meet" }[template] || "";
+  const k = { breakdown: "_bench", meeting: "_meet", shots: "_shots" }[template] || "";
   $("#hero-h1").dataset.i18n = "home_h1" + k; $("#hero-p").dataset.i18n = "home_p" + k;
   $("#source").dataset.i18nPh = "source_ph" + k; $("#start-label").dataset.i18n = "start" + k;
   $("#hero-h1").textContent = t("home_h1" + k); $("#hero-p").textContent = t("home_p" + k);
@@ -739,6 +767,7 @@ function drawReady() {
   const has = (n) => !!(status.tools.find((x) => x.name === n) || {}).path;
   const n = aiName(cfg), parts = [];
   if (template === "breakdown") parts.push(t("rd_bench", { n }));
+  else if (template === "shots") parts.push(t("rd_shots", { n }) + (["claude", "harness"].includes(cfg.active) || (cfg.active === "api" && /deepseek\.com/.test(cfg.base_url || "")) || cfg.active === "codex" ? "" : t("rd_shots_noimg")));
   else if (template === "meeting") {
     const m = meetings.find((x) => x.id === meetingVariant);
     parts.push(t("rd_meet", { n, m: m ? (LANG === "zh" ? m.name_zh : m.name_en) : "" }));

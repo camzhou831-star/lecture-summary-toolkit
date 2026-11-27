@@ -10,6 +10,7 @@ dependencies = [
     "httpx>=0.27",
     "pillow>=10",
     "pypdf>=4",
+    "numpy>=1.26",
 ]
 
 [dependency-groups]

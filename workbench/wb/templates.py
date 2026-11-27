@@ -45,7 +45,7 @@ def meeting_names():
 
 
 def valid(tid):
-    if tid in ("course", "breakdown"):
+    if tid in ("course", "breakdown", "shots"):
         return True
     return tid.startswith("meeting.") and _meeting(tid.split(".", 1)[1]) is not None
 
@@ -62,7 +62,7 @@ def listing():
         meetings.append({"id": "meeting." + n, "name_en": j["name"], "name_zh": j.get("name_zh", j["name"]),
                          "desc_en": j.get("description", ""), "desc_zh": j.get("description_zh", ""),
                          "sections_en": [s["title"] for s in j["sections"]], "sections_zh": [s.get("title_zh", s["title"]) for s in j["sections"]]})
-    return {"templates": ["course", "breakdown", "meeting"], "meetings": meetings}
+    return {"templates": ["course", "breakdown", "shots", "meeting"], "meetings": meetings}
 
 
 # ---------- 系统提示 ----------

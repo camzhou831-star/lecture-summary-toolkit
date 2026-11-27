@@ -213,7 +213,7 @@ def test_pipeline_end_to_end_with_fake_model(env, monkeypatch):
     def fake_chat(messages, on_progress=None, **k):
         if "专名校对员" in messages[0]["content"]:
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
-        if "课程总结的审核员" in messages[0]["content"]:
+        if ("课程总结的审核员" in messages[0]["content"] or "抽查复核员" in messages[0]["content"]):
             return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         calls.append(messages)
         assert "[05:00]" in messages[1]["content"]          # 讲义稿用 [MM:SS] 标签
@@ -240,7 +240,7 @@ def test_pipeline_repairs_once_when_check_fails(env, monkeypatch):
     def fake_chat(messages, on_progress=None, **k):
         if "专名校对员" in messages[0]["content"]:
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
-        if "课程总结的审核员" in messages[0]["content"]:
+        if ("课程总结的审核员" in messages[0]["content"] or "抽查复核员" in messages[0]["content"]):
             return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         if len(replies) == 1:
             assert "检查结果" in messages[-1]["content"] and "59:00" in messages[-1]["content"]
@@ -373,7 +373,7 @@ def test_pipeline_breakdown_with_fake_model(env, monkeypatch, tmp_path):
     def fake_chat(messages, on_progress=None, **k):
         if "专名校对员" in messages[0]["content"]:
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
-        if "课程总结的审核员" in messages[0]["content"]:
+        if ("课程总结的审核员" in messages[0]["content"] or "抽查复核员" in messages[0]["content"]):
             return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         assert "逐句表" in messages[1]["content"] and "钩子 / 承诺" in messages[0]["content"]
         segs = [{"from": 1, "to": 2, "role": "钩子", "points": 1, "note": "反常识"}, {"from": 3, "to": n, "role": "清单", "points": 3, "note": "三步"}]
@@ -561,7 +561,7 @@ def test_pipeline_review_fixes_then_passes(env, monkeypatch):
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         if "你是复核员" in sysm:
             return '[{"n": 1, "verdict": "成立", "why": "x"}]', {"model": "fake", "usage": None, "finish_reason": "stop"}
-        if "课程总结的审核员" in sysm:
+        if ("课程总结的审核员" in sysm or "抽查复核员" in sysm):
             seen["review"] += 1
             assert "<summary>" in messages[1]["content"] and "讲义稿" in messages[1]["content"]
             body = {"verdict": "有问题", "issues": [issue, fake_issue]} if seen["review"] == 1 else {"verdict": "通过", "issues": []}
@@ -597,7 +597,7 @@ def test_pipeline_review_disputed_issues_are_marked(env, monkeypatch):
         if "你是复核员" in sysm:     # 两次判定:第 1 条一次成立一次无法确定 → 标待核实;第 2 条两次都不成立 → 不改
             first = "成立" if k.get("temperature", 0) < 0.5 else "无法确定"
             return json.dumps([{"n": 1, "verdict": first}, {"n": 2, "verdict": "不成立"}], ensure_ascii=False), {"model": "fake", "usage": None, "finish_reason": "stop"}
-        if "课程总结的审核员" in sysm:
+        if ("课程总结的审核员" in sysm or "抽查复核员" in sysm):
             assert "已在原处标了待核实" in messages[1]["content"] or "复核两次都否定" not in messages[1]["content"] or True
             issues = [issue, other] if not seen["fix"] else []
             return json.dumps({"verdict": "有问题", "issues": issues}, ensure_ascii=False), {"model": "fake", "usage": None, "finish_reason": "stop"}
@@ -650,7 +650,7 @@ def test_slides_upload_reach_writer_and_reviewer(env, monkeypatch):
         if "专名校对员" in sysm:
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         seen.append((sysm, messages[1]["content"]))
-        if "课程总结的审核员" in sysm:
+        if ("课程总结的审核员" in sysm or "抽查复核员" in sysm):
             return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         return GOOD, {"model": "fake", "usage": None, "finish_reason": "stop"}
     monkeypatch.setattr(llm, "chat", fake_chat)
@@ -692,7 +692,7 @@ def test_writer_can_decline_wrong_review_issue(env, monkeypatch):
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         if "你是复核员" in sysm:
             return '[{"n": 1, "verdict": "成立", "why": "x"}]', {"model": "fake", "usage": None, "finish_reason": "stop"}
-        if "课程总结的审核员" in sysm:
+        if ("课程总结的审核员" in sysm or "抽查复核员" in sysm):
             seen.append(messages[1]["content"])
             body = {"verdict": "有问题", "issues": [issue]} if len(seen) == 1 else {"verdict": "通过", "issues": []}
             return json.dumps(body, ensure_ascii=False), {"model": "fake", "usage": None, "finish_reason": "stop"}
@@ -726,7 +726,7 @@ def test_claude_writer_can_open_screenshots(env, monkeypatch):
         calls.append((sysm[:20], k))
         if "专名校对员" in sysm:
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
-        if "课程总结的审核员" in sysm:
+        if ("课程总结的审核员" in sysm or "抽查复核员" in sysm):
             return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         assert "看图的工具打开" in sysm and fdir in sysm
         return cited, {"model": "fake", "usage": None, "finish_reason": "stop"}
@@ -839,7 +839,7 @@ def test_slides_only_task(env, monkeypatch, tmp_path):
         sysm = messages[0]["content"]
         if "专名校对员" in sysm:
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
-        if "课程总结的审核员" in sysm:
+        if ("课程总结的审核员" in sysm or "抽查复核员" in sysm):
             seen.append(("review", messages[1]["content"]))
             return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         seen.append(("write", sysm, messages[1]["content"]))
@@ -881,7 +881,7 @@ def test_slides_only_attaches_page_images_for_deepseek(env, monkeypatch, tmp_pat
         sysm = messages[0]["content"]
         if "专名校对员" in sysm:
             return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
-        if "课程总结的审核员" in sysm:
+        if ("课程总结的审核员" in sysm or "抽查复核员" in sysm):
             return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
         seen.setdefault("write", messages)
         return "# x", {"model": "fake", "usage": None, "finish_reason": "stop"}
@@ -898,3 +898,113 @@ def test_slides_only_attaches_page_images_for_deepseek(env, monkeypatch, tmp_pat
     assert [x["text"] for x in content if x["type"] == "text"][1:] == ["[课件 p1 的页面图片]", "[课件 p2 的页面图片]"]
     assert content[2]["image_url"]["url"].startswith("data:image/png;base64,")
     assert "图示解读(课件 pN)" in msgs[0]["content"] and "图片附在用户消息后面" in msgs[0]["content"]
+
+
+# ---------- 拉片流程:选片数据、拆稿复核、汇总表、横向对比 ----------
+def test_account_relative_value(env, monkeypatch):
+    from wb import account
+    assert account.account_url("bilibili", {"uploader_id": "123"}) == "https://space.bilibili.com/123/video"
+    assert account.account_url("youtube", {"channel_url": "https://www.youtube.com/@x"}) == "https://www.youtube.com/@x/videos"
+    monkeypatch.setattr(account, "list_videos", lambda url, timeout=90: [(i, 1000, like) for i, like in enumerate([10, 20, 30, 40, 50, 60])])
+    st = account.stats("bilibili", {"uploader_id": "1", "like_count": 105}, lambda s: None)
+    assert st["by"] == "点赞" and st["median"] == 35 and st["rel"] == 3.0 and st["n"] == 6
+
+    def blocked(url, timeout=90):
+        raise RuntimeError("B 站不让匿名看作者主页(412)")
+    monkeypatch.setattr(account, "list_videos", blocked)
+    assert "412" in account.stats("bilibili", {"uploader_id": "1", "like_count": 5}, lambda s: None)["note"]
+    assert account.tier(1500, None).startswith("大爆款") and account.tier(150, None).startswith("小爆款")
+    assert "相对爆款" in account.tier(40, 3.2) and account.tier(40, 1.0).startswith("未过门槛") and account.tier(None, None) == "未取到"
+
+
+def _bd_reply(n, note="三步"):
+    segs = [{"from": 1, "to": 2, "role": "钩子", "points": 1, "note": "反常识"}, {"from": 3, "to": n, "role": "清单", "points": 3, "note": note}]
+    return ("```segments\n" + json.dumps(segs, ensure_ascii=False) + "\n```\n\n## 5. 逐段要点\n- 段1 [00:00]\n\n## 6. 可学的写法\n- 反常识开头 [00:00]\n\n"
+            "## 7. 收藏点与借鉴边界\n- 收藏点:三步清单 [00:12]\n- 借鉴边界:作者的实测时间不能搬")
+
+
+def test_breakdown_review_and_compare(env, monkeypatch, tmp_path):
+    """对标拆稿也走审核(拉片口径的复核员),修正时连 segments 一起重写;再拿两条拆稿做汇总表和横向对比"""
+    from fastapi.testclient import TestClient
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    srt = short_srt(tmp_path)
+    from wb import breakdown as b
+    n = len(b.sentences(srt))
+    seen = {"fix": 0, "review": 0}
+    issue = {"severity": "一般", "type": "作用标注", "where": "分段 2", "quote": "三步", "problem": "清单段说明太空",
+             "evidence": "第一步打开设置", "source": "逐句表 #3", "fix": "写清三步"}
+
+    def fake_chat(messages, on_progress=None, **k):
+        sysm = messages[0]["content"]
+        if "专名校对员" in sysm:
+            return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "抽查复核员" in sysm:
+            seen["review"] += 1
+            assert "钩子只算「让人停下来的第一下」" in sysm and "<summary>" in messages[1]["content"]
+            body = {"verdict": "有问题", "issues": [issue]} if seen["review"] == 1 else {"verdict": "通过", "issues": []}
+            return json.dumps(body, ensure_ascii=False), {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "你是复核员" in sysm:
+            return '[{"n": 1, "verdict": "成立"}]', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "横向对比与编辑决策" in sysm:
+            dims = "\n".join(f"| {d} | a | b | c |" for d in ["数据信号", "开头钩子", "留人机制", "中段结构", "核心痛点", "可信度来源", "结尾", "收藏点", "借鉴边界"])
+            return ("# 横向对比与编辑决策\n\n## 1. 横向对比\n\n| 对比维度 | 参考 #1 | 参考 #2 | 横向结论 |\n|---|---|---|---|\n" + dims +
+                    "\n\n## 2. 编辑决策\n- **开头**:x\n- **结构**:x\n- **证据**:x\n- **结尾**:x\n- **明确舍弃**:x\n"), {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "复核员按拉片口径提出了" in messages[-1]["content"]:
+            seen["fix"] += 1
+            assert "```segments" in messages[-2]["content"]          # 给模型的是它上次带 segments 的原始回答
+            return _bd_reply(n, "打开设置、找到隐私、关掉追踪") + '\n```declined\n[]\n```', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        return _bd_reply(n), {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    kind, vid, src = env["sources"].parse_source(srt)
+    ids = []
+    for _ in range(2):
+        tid = db.create(kind, src, vid, template="breakdown")
+        p.run_task(tid)
+        ids.append(tid)
+    t = db.get(ids[0])
+    assert t["status"] == "done" and t["meta"]["review"]["passed"] and seen["fix"] >= 1, t["log"]
+    assert "打开设置、找到隐私、关掉追踪" in open(p.summary_path(t), encoding="utf-8").read()
+    assert os.path.isfile(os.path.join(p.task_root(ids[0]), "segments.json"))
+    with TestClient(env["server"].app) as c:
+        r = c.get(f"/api/compare.csv?ids={ids[0]},{ids[1]}")
+        assert r.status_code == 200 and r.text.startswith("﻿编号,账号,标题") and "三步清单" in r.text
+        assert c.post("/api/compare", json={"ids": [ids[0]]}).status_code == 400
+        ct = c.post("/api/compare", json={"ids": ids}).json()
+        assert ct["kind"] == "compare"
+    p.run_task(ct["id"])
+    ct = db.get(ct["id"])
+    assert ct["status"] == "done" and ct["check_ok"] == 1 and ct["meta"]["refs"] == ids, ct["log"]
+    assert "**明确舍弃**" in open(p.summary_path(ct), encoding="utf-8").read()
+
+
+@pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="没装 ffmpeg")
+def test_shots_template_end_to_end(env, monkeypatch, tmp_path):
+    """画面拉片:本地视频 → 机测切镜(三段纯色 = 3 个镜头)、接触表、代表帧 → 看图的模型逐镜头登记 → 报告 + 人工镜头表 CSV"""
+    import subprocess
+    from fastapi.testclient import TestClient
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    v = tmp_path / "ref.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=red:s=320x180:d=2:r=25", "-f", "lavfi", "-i", "color=c=blue:s=320x180:d=2:r=25",
+                    "-f", "lavfi", "-i", "color=c=white:s=320x180:d=2:r=25", "-filter_complex", "[0][1][2]concat=n=3:v=1:a=0", "-pix_fmt", "yuv420p", str(v)], check=True)
+    seen = {}
+
+    def fake_chat(messages, on_progress=None, **k):
+        seen["msgs"], seen["kw"] = messages, k
+        return ('```json\n{"shots": [{"n": 1, "底": "其他", "景别": "全", "镜头类型": "其他", "主体占画面": "100 估"}, {"n": 2, "底": "深色纯色"}, {"n": 3, "底": "白底"}],'
+                ' "first5": [{"t": "0.0", "what": "红色画面"}], "learn": [{"name": "纯色硬切", "shots": [1, 2], "why": "节奏清楚"}]}\n```'), {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    kind, vid, src = env["sources"].parse_source(str(v))
+    tid = db.create(kind, src, vid, template="shots")
+    p.run_task(tid)
+    t = db.get(tid)
+    assert t["status"] == "done" and t["check_ok"] == 1, t["log"]
+    assert "3 个镜头" in t["log"] and set(t["timings"]) == {"fetch", "prepare", "summarize", "check"}
+    user = seen["msgs"][1]["content"]
+    assert isinstance(user, list) and any(x.get("type") == "image_url" for x in user)       # DeepSeek 接口:把代表帧附在消息里
+    md = open(p.summary_path(t), encoding="utf-8").read()
+    assert "## 3. 逐镜头登记" in md and "| 2 | 2.0–4.0 |" in md and "深色纯色" in md and "纯色硬切" in md and "机测" in md
+    with TestClient(env["server"].app) as c:
+        assert c.get(f"/api/tasks/{tid}/shotfile/接触表-1.jpg").status_code == 200
+        r = c.get(f"/api/tasks/{tid}/shotfile/人工镜头表.csv")
+        assert r.status_code == 200 and "视频,段,镜头序号" in r.text
+        assert c.get(f"/api/tasks/{tid}/shotfile/..%2Fmeta.json").status_code in (400, 404)

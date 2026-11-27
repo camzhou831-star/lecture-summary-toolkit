@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-from . import breakdown, config, db, llm, materials, names, review, slidenotes, sources, templates
+from . import account, breakdown, config, db, llm, materials, names, review, slidenotes, sources, templates
 
 sys.path.insert(0, config.TOOLS)
 import headings as H  # noqa: E402  录播课工具的小节标题约定
@@ -150,7 +150,8 @@ def strip_fence(text):
 
 
 def title_block(task, meta, lang):
-    """对标拆稿的标题 + 视频信息 + 数据(点赞门槛:100+ 小爆款、1000+ 大爆款;收藏数 yt-dlp 一般拿不到,写未取到)"""
+    """对标拆稿的标题 + 视频信息 + 数据。门槛照拉片流程:100+ 赞小爆款、1000+ 大爆款,不到 100 赞看相对值(≥3 也可进);
+    收藏数 yt-dlp 一般拿不到,写未取到,藏赞比也就未取到"""
     v, lk, cm = meta.get("view_count"), meta.get("like_count"), meta.get("comment_count")
     d = meta.get("duration")
     date = str(meta.get("upload_date") or "")
@@ -159,13 +160,20 @@ def title_block(task, meta, lang):
     who = meta.get("uploader") or ("未知账号" if lang == "zh" else "Unknown creator")
     title = meta.get("title") or task.get("title") or task["vid"]
     link = task["source"] if task["kind"] != "local" else ("本地文件" if lang == "zh" else "local file")
+    acc = meta.get("account") or {}
+    rel = acc.get("rel")
+    tier = account.tier(lk, rel, lang)
     if lang == "en":
-        tier = "big hit (1000+ likes)" if isinstance(lk, int) and lk >= 1000 else "small hit (100+ likes)" if isinstance(lk, int) and lk >= 100 else "below the 100-like bar" if isinstance(lk, int) else "n/a"
+        relline = (f"Relative value: {rel}× the median {'likes' if acc.get('by') == '点赞' else 'views'} of the creator's last {acc['n']} videos ({acc['median']:g})"
+                   if rel is not None else f"Relative value: n/a ({acc.get('note') or 'not computed'})")
         return (f"# {who} | {title}\n\n> Platform / link: {task['kind']} {link}  \n> Published: {date} · Length: {f'{int(d)//60} min {int(d)%60} s' if d else 'n/a'}  \n"
-                f"> Data: {n(v)} views, {n(lk)} likes, {n(cm)} comments, saves n/a; save/like ratio n/a; tier: {tier}  \n> Transcript: {meta.get('how', 'n/a')}; long segments split into sentences by word count, sentence times about ±1 s")
-    tier = "大爆款(1000+ 赞)" if isinstance(lk, int) and lk >= 1000 else "小爆款(100+ 赞)" if isinstance(lk, int) and lk >= 100 else "未过 100 赞门槛" if isinstance(lk, int) else "未取到"
+                f"> Data: {n(v)} views, {n(lk)} likes, {n(cm)} comments, saves n/a; save/like ratio n/a  \n> {relline}  \n> Reference pool: {tier}  \n"
+                f"> Transcript: {meta.get('how', 'n/a')}; long segments split into sentences by word count, sentence times about ±1 s")
+    relline = (f"相对值:{rel} 倍(作者近 {acc['n']} 条{acc.get('by')}中位数 {acc['median']:g})" if rel is not None
+               else f"相对值:未取到({acc.get('note') or '没算'})")
     return (f"# {who}｜{title}\n\n> 平台 / 链接:{task['kind']} {link}  \n> 发布日期:{date} · 时长:{f'{int(d)//60} 分 {int(d)%60} 秒' if d else '未知'}  \n"
-            f"> 数据:播放 {n(v)}、点赞 {n(lk)}、评论 {n(cm)}、收藏 未取到;藏赞比 未取到;门槛:{tier}  \n> 转写来源:{meta.get('how', '未知')};长段按句切开,逐句时间按字数分配,约 ±1 秒")
+            f"> 数据:播放 {n(v)}、点赞 {n(lk)}、评论 {n(cm)}、收藏 未取到;藏赞比 未取到  \n> {relline}  \n> 参考池门槛:{tier}  \n"
+            f"> 转写来源:{meta.get('how', '未知')};长段按句切开,逐句时间按字数分配,约 ±1 秒")
 
 
 # ---------- 核对 ----------
@@ -204,8 +212,54 @@ def check(path, root):
 
 
 # ---------- 主流程 ----------
+def run_compare(task_id):
+    """横向对比与编辑决策(拉片流程第 6 节):几份已完成的对标拆稿 → 一份对比 + 五行决策。source 是「compare:任务号,任务号,…」"""
+    from . import compare
+    task = db.get(task_id)
+    timings = {}
+    log = lambda s: s and db.append_log(task_id, s)
+    db.update(task_id, status="running", stage="prepare", message="收集拆稿…")
+    try:
+        t0 = time.time()
+        ids = [int(x) for x in task["source"].split(":", 1)[1].split(",") if x.strip()]
+        refs = compare.breakdown_tasks(ids)
+        lang = task["out_lang"]
+        messages = [{"role": "system", "content": compare.system_prompt(lang)}, {"role": "user", "content": compare.user_prompt(refs)}]
+        timings["prepare"] = round(time.time() - t0, 1)
+        log(f"== 参考 {len(refs)} 条:任务 {', '.join(str(i) for i in ids)}")
+        db.update(task_id, stage="summarize", message="写横向对比…", timings=timings)
+        t0 = time.time()
+        text, info = llm.chat(messages)
+        text = strip_fence(text)
+        timings["summarize"] = round(time.time() - t0, 1)
+        log(f"== 模型 {info['model']}")
+        db.update(task_id, stage="check", message="核对格式…", timings=timings)
+        t0 = time.time()
+        ok, rep = compare.check(text, len(refs), lang)
+        if not ok:
+            log(rep)
+            fix = messages + [{"role": "assistant", "content": text}, {"role": "user", "content": "检查结果如下,只修正这些问题,其余不动,输出完整结果:\n\n" + rep}]
+            text = strip_fence(llm.chat(fix)[0])
+            ok, rep = compare.check(text, len(refs), lang)
+        timings["check"] = round(time.time() - t0, 1)
+        log(rep)
+        out = summary_path(task)
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        open(out, "w", encoding="utf-8").write(text.strip() + "\n")
+        db.update(task_id, status="done", stage="check", timings=timings, check_ok=int(ok), check_report=rep,
+                  meta=dict(task["meta"] or {}, refs=ids), message="完成,格式核对通过" if ok else "完成,但格式还有问题(见核对报告)")
+    except (compare.CompareError, llm.LLMError, OSError) as e:
+        log(f"❌ {e}")
+        db.update(task_id, status="failed", message=str(e).splitlines()[0][:300], timings=timings)
+
+
 def run_task(task_id):
     task = db.get(task_id)
+    if task["kind"] == "compare":
+        return run_compare(task_id)
+    if templates.kind(task["template"]) == "shots":          # 画面拉片:单独一条流程(见 shotflow.py)
+        from . import shotflow
+        return shotflow.run(task_id, summary_path, task_root)
     root = task_root(task_id)
     os.makedirs(root, exist_ok=True)
     timings = dict(task["timings"])
@@ -237,6 +291,7 @@ def run_task(task_id):
             srt, meta = timed("fetch", lambda: sources.fetch(task, root, log))
         db.update(task_id, meta=meta, title=meta.get("title") or task["title"])
         is_course = templates.kind(task["template"]) == "course"
+        rv_kind = "breakdown" if templates.kind(task["template"]) == "breakdown" else ("course" if is_course else None)   # 哪些模板要审核内容
 
         def prep():
             if only_slides:
@@ -248,6 +303,9 @@ def run_task(task_id):
             return text, (materials.slides_text(root, log) if is_course else "")
 
         transcript, slides = timed("prepare", prep)
+        if templates.kind(task["template"]) == "breakdown" and "account" not in meta:     # 选片数据:和作者近 20 条比的相对值
+            meta = dict(meta, account=account.stats(task["kind"], meta, log))
+            db.update(task_id, meta=meta)
         pages = materials.page_count(root) if only_slides else 0
         page_imgs = materials.page_images(root, log) if only_slides else []
         has_frames = is_course and os.path.isfile(os.path.join(materials.frames_dir(root, task["vid"]), "ocr.json"))
@@ -316,6 +374,8 @@ def run_task(task_id):
                 bad = breakdown.validate(segs, len(subs))
                 if bad:
                     return text, "分段有问题:\n" + "\n".join("  " + b for b in bad)
+                with open(os.path.join(root, "segments.json"), "w", encoding="utf-8") as f:     # 汇总表、横向对比要用
+                    json.dump(segs, f, ensure_ascii=False, indent=1)
                 return breakdown.assemble(title_block(task, meta, lang), subs, segs, body, lang), None
             return text, None
 
@@ -355,7 +415,7 @@ def run_task(task_id):
 
         def check_names():
             """专名核对(见 names.py):有把握的直接改并注明原转写,拿不准的列成待核实;出错只记日志"""
-            nonlocal ok, report
+            nonlocal ok, report, summary
             md = open(out, encoding="utf-8").read()
             try:
                 text, _ = llm.chat(names.messages(md, lang), max_tokens=3000, temperature=0)
@@ -364,6 +424,8 @@ def run_task(task_id):
                 log(f"⚠️ 专名核对没做成(总结不受影响): {e}")
                 return None
             new, used, skipped = names.apply(md, fixes)
+            if used and templates.kind(tid) == "breakdown":      # 对标拆稿的原始回答(带 segments)也同步改,后面审核修正时不会把专名改回去
+                summary = names.apply(summary, [dict(f) for f in used])[0]
             if used:
                 open(out, "w", encoding="utf-8").write(new)
                 ok2, report2 = verify(new)
@@ -418,12 +480,13 @@ def run_task(task_id):
 
             def apply(items, label):
                 """交写作方改;返回 (是否改成, 不采纳的)"""
-                nonlocal ok, report
+                nonlocal ok, report, summary
                 md = open(out, encoding="utf-8").read()
-                convo = messages + [{"role": "assistant", "content": md}, {"role": "user", "content": review.fix_prompt(items, lang)}]
+                prev = summary if rv_kind == "breakdown" else md      # 对标拆稿要连 segments 代码块一起改,给模型它上次的原始回答
+                convo = messages + [{"role": "assistant", "content": prev}, {"role": "user", "content": review.fix_prompt(items, lang, rv_kind)}]
                 try:
                     new, no = review.split_declined(llm.chat(convo, **wkw)[0], items)
-                    ok2, report2, _ = settle(strip_fence(new), convo, "修正后核对没过")
+                    ok2, report2, newraw = settle(strip_fence(new), convo, "修正后核对没过")
                 except llm.LLMError as e:
                     log(f"⚠️ {label}没做成: {e}")
                     open(out, "w", encoding="utf-8").write(md)
@@ -434,13 +497,14 @@ def run_task(task_id):
                     log(f"⚠️ {label}后格式核对不过,已退回上一版")
                     return False, []
                 ok, report = ok2, report2
+                summary = newraw
                 return True, no
 
             for n in range(1, REVIEW_ROUNDS + 1):
                 md = open(out, encoding="utf-8").read()
                 db.update(task_id, message=f"审核内容第 {n} 轮({who})…")
                 try:
-                    text = ask(review.messages(mats, md, lang, settled, see=fdir if who == "claude" else None),
+                    text = ask(review.messages(mats, md, lang, settled, see=fdir if who == "claude" else None, kind=rv_kind),
                                **{"max_tokens": 6000, "temperature": 0, "provider": who, **rkw(who, md)})
                     issues = review.parse(text)
                 except (llm.LLMError, review.ReviewError) as e:
@@ -515,7 +579,7 @@ def run_task(task_id):
                     "marked": len(marked), "fixed": len(fixed), "remaining": len(remaining), "detail": rounds, "report": text.strip()}
 
         rv = None
-        if is_course:
+        if rv_kind:
             rv = timed("review", do_review)
             meta = dict(meta, review=rv)
             db.update(task_id, meta=meta)

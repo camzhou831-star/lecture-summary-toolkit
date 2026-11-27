@@ -347,6 +347,63 @@ def derive(tid: int, body: DeriveBody):
     return _public(db.get(nid))
 
 
+class CompareBody(BaseModel):
+    ids: list[int]
+    out_lang: str = "zh"
+
+
+def _compare_ids(ids):
+    from . import compare
+    if not 2 <= len(ids) <= 5:
+        raise HTTPException(400, "选 2 到 5 条对标拆稿")
+    try:
+        compare.breakdown_tasks(ids)
+    except compare.CompareError as e:
+        raise HTTPException(400, str(e))
+    return ids
+
+
+@app.post("/api/compare")
+def create_compare(body: CompareBody):
+    """横向对比与编辑决策:几条已完成的对标拆稿并排比较(拉片流程第 6 节)"""
+    ids = _compare_ids(body.ids)
+    _check_langs("auto", body.out_lang)
+    title = "横向对比:" + "、".join((db.get(i)["title"] or str(i))[:16] for i in ids) if body.out_lang == "zh" else "Comparison: " + ", ".join(str(i) for i in ids)
+    tid = db.create("compare", "compare:" + ",".join(map(str, ids)), "compare-" + "-".join(map(str, ids)), out_lang=body.out_lang,
+                    template="breakdown", title=title)
+    worker.kick()
+    return _public(db.get(tid))
+
+
+@app.get("/api/compare.csv")
+def compare_csv(ids: str):
+    """汇总表(拉片流程第 4 节):表头照拉片 skill 的汇总表头,Excel 能直接打开"""
+    from . import compare
+    from fastapi.responses import Response
+    nums = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    if not 1 <= len(nums) <= 50:
+        raise HTTPException(400, "选 1 到 50 条对标拆稿")
+    try:
+        compare.breakdown_tasks(nums)
+    except compare.CompareError as e:
+        raise HTTPException(400, str(e))
+    return Response(compare.csv_text(nums), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": "attachment; filename*=UTF-8''%E6%B1%87%E6%80%BB%E8%A1%A8.csv"})
+
+
+@app.get("/api/tasks/{tid}/shotfile/{name}")
+def shot_file(tid: int, name: str):
+    """画面拉片的接触表、代表帧(只给这个任务 画面拉片/ 目录里的图)"""
+    from . import shotflow
+    _task(tid)
+    if os.path.basename(name) != name or not name.lower().endswith((".jpg", ".png", ".csv")):
+        raise HTTPException(400, "文件名不对")
+    p = os.path.join(pipeline.task_root(tid), shotflow.DIR, name)
+    if not os.path.isfile(p):
+        raise HTTPException(404, "没有这个文件")
+    return FileResponse(p)
+
+
 @app.delete("/api/tasks/{tid}")
 def delete_task(tid: int):
     t = _task(tid)

@@ -24,7 +24,7 @@ SUB_EXTS = (".srt", ".vtt")
 # B 站 CDN 对不带 Range 头的下载返回 HTTP 567(yt-dlp issue #17847,2026-11 仍未修);
 # 照 issue 里给的临时解法带上 Range: bytes=0-(浏览器播放时也发这个头),yt-dlp 修好后可删
 BILI_DL_ARGS = ["--add-header", "Range:bytes=0-"]
-META_KEYS = ["id", "title", "uploader", "duration", "upload_date", "view_count", "like_count", "comment_count", "webpage_url", "language"]
+META_KEYS = ["id", "title", "uploader", "uploader_id", "uploader_url", "channel_url", "duration", "upload_date", "view_count", "like_count", "comment_count", "webpage_url", "language"]
 
 
 class SourceError(Exception):
