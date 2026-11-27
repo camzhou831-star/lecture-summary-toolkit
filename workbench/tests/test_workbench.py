@@ -1072,3 +1072,18 @@ def test_account_fills_counts_when_list_has_none(env, monkeypatch):
     monkeypatch.setattr(account.sources, "need", lambda n: n)
     st = account.stats("bilibili", {"uploader_id": "1", "like_count": 500, "view_count": 9000}, lambda m: None)
     assert st["n"] == 6 and st["by"] == "点赞" and st["rel"] == 5.0
+
+
+def test_harness_reasoning_effort_in_patch(env, monkeypatch):
+    """模型名带 :low 时,给 Harness 的配置里写上推理强度"""
+    llm = env["llm"]
+    seen = {}
+    monkeypatch.setattr(llm, "find_dsh", lambda: "/bin/dsh")
+    def fake_run(cmd, stdin, timeout, cwd):
+        seen["patch"] = open(cmd[cmd.index("--patch") + 1], encoding="utf-8").read()
+        return "OK"
+    monkeypatch.setattr(llm, "_run", fake_run)
+    llm.chat([{"role": "user", "content": "U"}], provider="harness", model="deepseek-v4-pro:low")
+    assert "model: deepseek-v4-pro\n" in seen["patch"] and "reasoningEffort: low" in seen["patch"]
+    llm.chat([{"role": "user", "content": "U"}], provider="harness", model="deepseek-v4-pro")
+    assert "reasoningEffort" not in seen["patch"]

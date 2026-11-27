@@ -478,8 +478,8 @@ def run_task(task_id):
                 strong=False(快速审核的第一遍):DeepSeek 接口和 Harness 用写总结同一个快模型"""
                 if prov == "api":
                     return {"model": rmodel, "max_tokens": 20000} if rmodel and strong else {}
-                if prov == "harness":
-                    return {"model": llm.HARNESS_REVIEW_MODEL} if strong else {}   # 审核 / 复核用推理更强的模型
+                if prov == "harness":       # 审核 / 复核用推理更强的模型;快速审核让它少想一会儿(low 档实测快约 6 倍,判定和默认一致)
+                    return {"model": llm.HARNESS_REVIEW_MODEL + (":low" if quick else "")} if strong else {}
                 if prov == "claude" and fdir:
                     return {"images_dir": fdir}
                 if prov == "codex" and fdir:

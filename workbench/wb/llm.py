@@ -225,7 +225,9 @@ def _harness(messages, timeout, model):
     with tempfile.TemporaryDirectory(prefix="wb-dsh-") as tmp:
         patch = os.path.join(tmp, "account.yml")
         plat = "win32" if os.name == "nt" else "darwin"
-        open(patch, "w", encoding="utf-8").write(HARNESS_PATCH.format(platform=plat, model=model))
+        name, _, effort = (model or HARNESS_MODEL).partition(":")      # "deepseek-v4-pro:off" = 指定推理强度(off / low / high / max)
+        text_patch = HARNESS_PATCH.format(platform=plat, model=name) + (f"    reasoningEffort: {effort}\n" if effort else "")
+        open(patch, "w", encoding="utf-8").write(text_patch)
         try:
             out = _run([dsh, "headless", "--patch", patch, "--permission-mode", "read-only", "-"],
                        f"{system}\n\n---\n\n{prompt}\n\n(直接输出回答全文,不要修改任何文件。)", timeout, tmp)
