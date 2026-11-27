@@ -189,7 +189,7 @@ code, kbd, pre { font-family: var(--mono); }
 .drop.on { opacity: 1; transform: none; }
 
 /* ---------- 模板卡片 ---------- */
-.tpl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.tpl-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }   /* 四个模板排成 2×2 */
 .tpl { position: relative; text-align: left; font: inherit; color: inherit; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-lg); padding: 14px 16px;
   cursor: pointer; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow-xs);
   transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-moderate) var(--ease), transform var(--dur-moderate) var(--ease); }
