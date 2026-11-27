@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, db, llm, materials, pipeline, sources, templates, worker
+from . import config, db, llm, materials, pipeline, sources, templates, update, worker
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 LANGS = {"auto", "zh", "en", "ja", "ko", "fr", "de", "es"}
@@ -107,7 +107,35 @@ def get_config():
     return {"model": c.model, "base_url": c.base_url, "review_model": config.review_model(), "key_ok": bool(c.api_key), "key_source": c.source,
             "provider": c.provider, "active": active, "ready": active is not None,
             "cookies_browser": config.cookies_browser(), "browsers": list(config.BROWSERS),
+            "version": update.current(), "update_check": config.update_check(),
             "providers": [{"id": p, "name": info["name"], "ok": av[p][0], "note": av[p][1]} for p, info in llm.PROVIDERS.items()]}
+
+
+@app.get("/api/update")
+def update_check(force: int = 0):
+    """有没有新版(关了自动检查又不是手动点的,就不去问)"""
+    if not force and not config.update_check():
+        return {"current": update.current(), "off": True}
+    return update.check(force=bool(force))
+
+
+@app.post("/api/update")
+def update_apply():
+    try:
+        ver = update.apply(log=print)
+    except update.UpdateError as e:
+        raise HTTPException(400, str(e))
+    return {"version": ver, "restarting": update.restart_later()}
+
+
+class UpdatePref(BaseModel):
+    on: bool
+
+
+@app.post("/api/update/auto")
+def update_auto(body: UpdatePref):
+    config.save_setting("update_check", bool(body.on))
+    return {"update_check": config.update_check()}
 
 
 class ProviderBody(BaseModel):

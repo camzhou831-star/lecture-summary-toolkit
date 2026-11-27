@@ -1,6 +1,7 @@
 """工作台基本测试:不联网、不需要 whisper 和模型 Key(模型调用用假的替换)。运行: cd workbench && uv run pytest -q
 字幕素材在测试里现生成(仓库规定 .srt 不能放在 tests/ 和 examples/ 之外)。
 """
+import io
 import json
 import os
 import sys
@@ -1121,3 +1122,91 @@ def test_harness_retries_when_connection_drops(env, monkeypatch):
     with pytest.raises(llm.LLMError, match="额度用完"):
         llm.chat([{"role": "user", "content": "U"}], provider="harness")
     assert len(calls) == 1
+
+
+# ---------- 检查更新 / 一键更新 ----------
+def _npm_tgz(files):
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for rel, content in files.items():
+            data = content.encode() if isinstance(content, str) else content
+            ti = tarfile.TarInfo("package/app/" + rel); ti.size = len(data); ti.mode = 0o644
+            tf.addfile(ti, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def test_update_check_falls_back_and_compares(env, monkeypatch):
+    from wb import update
+    import httpx
+    monkeypatch.setattr(update, "current", lambda: "0.8.0")
+    monkeypatch.setenv("WORKBENCH_CN", "1")
+    seen = []
+
+    class R:
+        def __init__(self, j): self._j = j
+        def json(self): return self._j
+    def fake_get(url, timeout=10):
+        seen.append(url)
+        if "npmmirror" in url:
+            raise httpx.ConnectError("down")
+        return R({"version": "0.10.0", "dist": {"tarball": "https://x/t.tgz", "integrity": "sha512-AA=="},
+                  "workbench": {"notes": {"zh": "改了", "en": "changed"}}})
+    monkeypatch.setattr(update, "_get", fake_get)
+    info = update.check(force=True)
+    assert "npmmirror" in seen[0] and "registry.npmjs.org" in seen[1]          # 国内时区先试国内镜像,不通再换
+    assert info["newer"] and info["latest"] == "0.10.0" and info["notes"]["zh"] == "改了" and info["source"] == "global"
+    assert update.vtuple("0.10.0") > update.vtuple("0.9.9")
+
+
+def test_update_install_backs_up_skips_data_and_rolls_back(env, tmp_path):
+    import base64, hashlib
+    from wb import update
+    root = tmp_path / "app"
+    (root / "workbench" / "wb").mkdir(parents=True)
+    (root / "workbench" / "data").mkdir()
+    (root / "workbench" / "wb" / "server.py").write_text("old")
+    (root / "workbench" / "data" / "workbench.db").write_text("MY TASKS")
+    (root / "启动工作台.command").write_text("launcher")
+    new = {"workbench/VERSION": "0.9.0\n", "workbench/wb/server.py": "new", "workbench/wb/extra.py": "x",
+           "workbench/data/workbench.db": "WIPED", "启动工作台.command": "other"}
+    data = _npm_tgz(new)
+    update._verify(data, "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode())
+    with pytest.raises(update.UpdateError):
+        update._verify(data, "sha512-" + base64.b64encode(b"x" * 64).decode())
+    files = update._members(data)
+    assert update.install(files, root=str(root), smoke=False) == "0.9.0"
+    assert (root / "workbench" / "wb" / "server.py").read_text() == "new"
+    assert (root / "workbench" / "data" / "workbench.db").read_text() == "MY TASKS"           # 任务记录不动
+    assert (root / "启动工作台.command").read_text() == "launcher"                             # 启动文件不动
+    assert (root / ".update-backup" / "old" / "workbench" / "wb" / "server.py").read_text() == "old"
+
+    def broken(r):
+        raise update.UpdateError("import failed")
+    (root / "workbench" / "wb" / "server.py").write_text("v9")
+    orig = update._smoke
+    update._smoke = broken
+    try:
+        with pytest.raises(update.UpdateError, match="退回"):
+            update.install(update._members(_npm_tgz(dict(new, **{"workbench/wb/server.py": "v10", "workbench/wb/brand_new.py": "y"}))),
+                           root=str(root), smoke=True)
+    finally:
+        update._smoke = orig
+    assert (root / "workbench" / "wb" / "server.py").read_text() == "v9" and not (root / "workbench" / "wb" / "brand_new.py").exists()
+
+
+def test_update_rejects_unsafe_paths(env):
+    from wb import update
+    with pytest.raises(update.UpdateError):
+        update._members(_npm_tgz({"../evil.py": "x", "workbench/VERSION": "1", "workbench/wb/server.py": "s"}))
+
+
+def test_update_api(env, monkeypatch):
+    from fastapi.testclient import TestClient
+    from wb import update
+    monkeypatch.setattr(update, "check", lambda force=False: {"current": "0.8.0", "latest": "0.9.0", "newer": True, "notes": {}})
+    with TestClient(env["server"].app) as c:
+        assert c.get("/api/update").json()["newer"]
+        assert "version" in c.get("/api/config").json()
+        assert c.post("/api/update/auto", json={"on": False}).json()["update_check"] is False
+        assert c.get("/api/update").json().get("off")

@@ -321,6 +321,7 @@ async function drawSettings() {
   $("#set-tools").innerHTML = s.tools.map((x) => `<li><span class="ck ${x.path ? "ok" : "no"}">${x.path ? ok : no}</span>
     <span>${esc(x.name.replace("whisper 模型", "whisper model"))}</span><span class="sub">${t(NEED[x.name] || "tool_model")}${x.path ? " · " + esc(x.path) : " · " + t("not_found")}</span></li>`).join("");
   const n = s.counts, total = Object.values(n).reduce((a, b) => a + b, 0);
+  cfg = c; drawUpdateCard();
   $("#set-data").innerHTML = `<dt>${t("data_tasks")}</dt><dd>${t("data_count", { t: total, d: n.done || 0, f: n.failed || 0 })}</dd>
     <dt>${t("data_dir")}</dt><dd><code>${esc(s.data_dir)}</code></dd><dt>${t("data_note_k")}</dt><dd class="muted">${t("data_note")}</dd>`;
 }
@@ -930,3 +931,56 @@ $("#out_lang").value = LANG;
 
 refresh().then(route);
 setInterval(tick, 2000);
+
+// ---------- 检查更新(新版从 npm / 国内 npmmirror 拿,见 wb/update.py) ----------
+let updInfo = null;
+function updNotes(info) { const n = (info && info.notes) || {}; return n[LANG] || n.zh || n.en || ""; }
+function drawUpdateBar() {
+  const bar = $("#update-bar"), info = updInfo;
+  let skip = ""; try { skip = localStorage.getItem("wb-update-skip") || ""; } catch (_) {}
+  if (!info || !info.newer || skip === info.latest) { bar.hidden = true; return; }
+  bar.hidden = false;
+  bar.innerHTML = `<div class="u-text"><b>${t("upd_new", { v: esc(info.latest) })}</b>${esc(updNotes(info))}</div>
+    <div class="u-acts"><button type="button" class="btn btn-primary btn-sm" id="upd-go">${t("upd_go")}</button>
+    <button type="button" class="btn btn-ghost btn-sm" id="upd-later">${t("upd_later")}</button></div>`;
+  $("#upd-go").onclick = applyUpdate;
+  $("#upd-later").onclick = () => { try { localStorage.setItem("wb-update-skip", info.latest); } catch (_) {} bar.hidden = true; };
+}
+async function checkUpdate(force) {
+  try { updInfo = await api("/api/update" + (force ? "?force=1" : "")); } catch (_) { updInfo = null; }
+  drawUpdateBar();
+  if (shownPage === "settings") drawUpdateCard();
+  return updInfo;
+}
+async function applyUpdate() {
+  const bar = $("#update-bar");
+  if (tasks.some((x) => x.status === "running") && !confirm(t("upd_running"))) return;
+  bar.hidden = false;
+  bar.innerHTML = `<div class="u-text"><b>${t("upd_doing")}</b>${t("upd_doing_d")}</div>`;
+  let res;
+  try { res = await api("/api/update", { method: "POST" }); }
+  catch (err) { bar.innerHTML = `<div class="u-text"><b>${t("upd_fail")}</b>${esc(trServer(err.message))}</div>`; return; }
+  if (!res.restarting) { bar.innerHTML = `<div class="u-text"><b>${t("upd_done", { v: esc(res.version) })}</b>${t("upd_reopen")}</div>`; return; }
+  bar.innerHTML = `<div class="u-text"><b>${t("upd_done", { v: esc(res.version) })}</b>${t("upd_restarting")}</div>`;
+  for (let i = 0; i < 90; i++) {               // 等新版起来(最多约 3 分钟:可能要装新依赖)
+    await new Promise((r) => setTimeout(r, 2000));
+    try { const c = await api("/api/config"); if (c.version === res.version) { location.reload(); return; } } catch (_) {}
+  }
+  bar.innerHTML = `<div class="u-text"><b>${t("upd_done", { v: esc(res.version) })}</b>${t("upd_reopen")}</div>`;
+}
+async function drawUpdateCard() {
+  const box = $("#set-update"); if (!box) return;
+  const c = cfg || await api("/api/config"), info = updInfo;
+  const st = !info ? "" : info.error ? t("upd_unreach") : info.off ? "" : info.newer ? t("upd_new", { v: esc(info.latest) }) : t("upd_latest");
+  box.innerHTML = `<div class="upd-line"><span>${t("upd_cur", { v: esc(c.version || "?") })}</span><span class="muted">${st}</span>
+      <button type="button" class="btn btn-ghost btn-sm" id="upd-check">${t("upd_check")}</button>
+      ${info && info.newer ? `<button type="button" class="btn btn-primary btn-sm" id="upd-go2">${t("upd_go")}</button>` : ""}</div>
+    <label class="upd-auto"><input type="checkbox" id="upd-auto" ${c.update_check !== false ? "checked" : ""}> ${t("upd_auto")}</label>`;
+  $("#upd-check").onclick = async () => { $("#upd-check").disabled = true; const i = await checkUpdate(true);
+    try { localStorage.removeItem("wb-update-skip"); } catch (_) {} drawUpdateBar(); drawUpdateCard();
+    toast(!i || i.error ? t("upd_unreach") : i.newer ? t("upd_new", { v: i.latest }) : t("upd_latest")); };
+  if ($("#upd-go2")) $("#upd-go2").onclick = applyUpdate;
+  $("#upd-auto").onchange = async (e) => { cfg = Object.assign(cfg || {}, await api("/api/update/auto", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on: e.target.checked }) })); };
+}
+setTimeout(() => checkUpdate(false), 1500);
