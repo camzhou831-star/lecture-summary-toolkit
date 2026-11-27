@@ -23,8 +23,63 @@ def slides_dir(root):
     return os.path.join(root, SLIDES_DIR)
 
 
+SLIDE_EXTS = (".pdf", ".pptx")
+
+
+def slide_files(root):
+    """任务目录里的课件:PDF 和 PowerPoint(.pptx)"""
+    d = slides_dir(root)
+    return sorted(f for f in glob.glob(os.path.join(glob.escape(d), "*")) if f.lower().endswith(SLIDE_EXTS))
+
+
 def slide_pdfs(root):
-    return sorted(glob.glob(os.path.join(glob.escape(slides_dir(root)), "*.pdf")))
+    return [f for f in slide_files(root) if f.lower().endswith(".pdf")]
+
+
+def _pptx_pages(path):
+    """.pptx 逐页文字(不用装 PowerPoint / LibreOffice):按放映顺序读每页的文字,演讲者备注附在后面"""
+    import re
+    import zipfile
+    from xml.etree import ElementTree as ET
+    A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    PR = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+    try:
+        z = zipfile.ZipFile(path)
+        pres = ET.fromstring(z.read("ppt/presentation.xml"))
+        rels = {r.get("Id"): r.get("Target") for r in ET.fromstring(z.read("ppt/_rels/presentation.xml.rels")).iter(PR + "Relationship")}
+    except (zipfile.BadZipFile, KeyError, ET.ParseError) as e:
+        raise RuntimeError(f"读不了 {os.path.basename(path)}(不是有效的 .pptx):{e}")
+    names = set(z.namelist())
+
+    def text_of(xml):
+        out = []
+        for para in ET.fromstring(xml).iter(A + "p"):
+            line = "".join(t.text or "" for t in para.iter(A + "t")).strip()
+            if line:
+                out.append(line)
+        return out
+
+    pages = []
+    for sid in pres.iter("{http://schemas.openxmlformats.org/presentationml/2006/main}sldId"):
+        target = rels.get(sid.get(R + "id"), "")
+        name = "ppt/" + target.lstrip("/").removeprefix("ppt/")
+        if name not in names:
+            continue
+        lines = text_of(z.read(name))
+        srels = "ppt/slides/_rels/" + os.path.basename(name) + ".rels"          # 演讲者备注
+        if srels in names:
+            for r in ET.fromstring(z.read(srels)).iter(PR + "Relationship"):
+                if r.get("Type", "").endswith("/notesSlide"):
+                    nname = "ppt/" + re.sub(r"^(\.\./)+", "", r.get("Target", ""))
+                    if nname in names:
+                        notes = [l for l in text_of(z.read(nname)) if not l.isdigit()]   # 去掉备注页上的页码
+                        if notes:
+                            lines.append("(演讲者备注)" + " ".join(notes))
+        pages.append("\n".join(lines))
+    if not pages:
+        raise RuntimeError(f"{os.path.basename(path)} 里没读到幻灯片")
+    return pages
 
 
 def frames_dir(root, vid):
@@ -45,12 +100,27 @@ def _pdf_pages(path):
     return [p.extract_text() or "" for p in pypdf.PdfReader(path).pages]
 
 
+def read_pages(path):
+    return _pptx_pages(path) if path.lower().endswith(".pptx") else _pdf_pages(path)
+
+
+def page_count(root):
+    """所有课件里最多的页数(只有课件的任务核对页码用)"""
+    n = 0
+    for f in slide_files(root):
+        try:
+            n = max(n, len(read_pages(f)))
+        except RuntimeError:
+            pass
+    return n
+
+
 def slides_text(root, log):
     """课件逐页文字,给写总结和审核用。没有课件返回空字符串"""
     out = []
-    for pdf in slide_pdfs(root):
+    for pdf in slide_files(root):
         try:
-            pages = _pdf_pages(pdf)
+            pages = read_pages(pdf)
         except RuntimeError as e:
             log(f"⚠️ {e},这份课件没用上")
             continue

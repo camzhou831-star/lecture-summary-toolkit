@@ -20,7 +20,7 @@ It runs on your own computer. On Mac and Windows you download it and double-clic
 - **No hunting for subtitles or transcripts.** Paste the link. If the site has subtitles it uses them; if not, it transcribes the audio on your computer.
 - **The timestamps are checked.** Each one is checked against the transcript, so clicking it really lands on that second. The AI didn't just make it up.
 - **It doesn't copy the lecturer's mistakes.** After the summary is written, a second AI checks it against the transcript and slides. Each problem it finds is checked twice more, independently, and only fixed if both agree. Anything still uncertain is marked "to check" in place, with both readings, rather than written as fact.
-- **It can read the slides and the screen.** Attach the lecture's slides as a PDF and the summary cites page numbers. For local videos it also reads the text on screen, such as a marking rubric the lecturer put up.
+- **It can read the slides and the screen.** Attach the lecture's slides (PDF or PowerPoint .pptx) and the summary cites page numbers. Only have the slides, no recording? It writes revision notes from the slides alone. For local videos it also reads the text on screen, such as a marking rubric the lecturer put up.
 
 ## Get started in three steps
 

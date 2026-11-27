@@ -45,7 +45,7 @@ def _slides_file(name):
     """/api/slides 存下的课件:只认 uploads/slides/ 里的 pdf 文件名,不接受路径"""
     if not name:
         return None
-    if os.path.basename(name) != name or not name.lower().endswith(".pdf"):
+    if os.path.basename(name) != name or not name.lower().endswith(materials.SLIDE_EXTS):
         raise HTTPException(400, "课件文件名不对")
     p = os.path.join(_slides_up(), name)
     if not os.path.isfile(p):
@@ -190,6 +190,13 @@ def get_status():
 def create_task(body: NewTask):
     _check_langs(body.lang, body.out_lang)
     _check_template(body.template)
+    if not body.source.strip() and body.slides:        # 只附了课件、没贴链接:只根据课件写复习笔记
+        sp = _slides_file(body.slides)
+        stem = os.path.splitext(os.path.basename(sp))[0]
+        tid = db.create("slides", os.path.basename(sp), sources.safe(stem), lang=body.lang, out_lang=body.out_lang, template="course", title=stem)
+        _add_slides(tid, sp)
+        worker.kick()
+        return _public(db.get(tid))
     try:
         kind, vid, source = sources.parse_source(body.source)
     except sources.SourceError as e:
@@ -204,9 +211,18 @@ def create_task(body: NewTask):
 @app.post("/api/slides")
 def upload_slides(file: UploadFile = File(...)):
     """课件 PDF 先传上来,建任务时带上返回的文件名"""
-    if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(400, "课件只支持 PDF(PowerPoint 先另存为 PDF)")
+    low = (file.filename or "").lower()
+    if low.endswith((".ppt", ".key", ".pps")):
+        raise HTTPException(400, "老版 .ppt 和 Keynote 先另存为 PDF 或 .pptx 再选")
+    if not low.endswith(materials.SLIDE_EXTS):
+        raise HTTPException(400, "课件只支持 PDF 和 PowerPoint(.pptx)")
     dest = _save_upload(file, _slides_up())
+    if dest.lower().endswith(".pptx"):          # 先试读一下,坏文件当场说,不等到任务跑起来才失败
+        try:
+            materials.read_pages(dest)
+        except RuntimeError as e:
+            os.remove(dest)
+            raise HTTPException(400, f"课件读不了:{e}")
     return {"slides": os.path.basename(dest)}
 
 

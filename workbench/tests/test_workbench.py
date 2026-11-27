@@ -655,7 +655,8 @@ def test_slides_upload_reach_writer_and_reviewer(env, monkeypatch):
         return GOOD, {"model": "fake", "usage": None, "finish_reason": "stop"}
     monkeypatch.setattr(llm, "chat", fake_chat)
     with TestClient(env["server"].app) as c:
-        assert c.post("/api/slides", files={"file": ("a.pptx", b"x")}).status_code == 400
+        assert c.post("/api/slides", files={"file": ("a.docx", b"x")}).status_code == 400
+        assert "课件读不了" in c.post("/api/slides", files={"file": ("a.pptx", b"x")}).json()["detail"]
         r = c.post("/api/slides", files={"file": ("W09.pdf", make_pdf(["Recap and Traffic Jam", "Cars vs average speed eps 0.01"]))})
         assert r.status_code == 200, r.text
         name = r.json()["slides"]
@@ -780,3 +781,80 @@ def test_harness_provider(env, monkeypatch, tmp_path):
     monkeypatch.setattr(llm, "_run", signed_out)
     with pytest.raises(llm.LLMError, match="没登录账号"):
         llm.chat([{"role": "user", "content": "U"}], provider="harness")
+
+
+def make_pptx(path, slides, notes=None):
+    """手写一个最小的 .pptx:presentation.xml 定顺序,每页一段文字,可选演讲者备注"""
+    import zipfile
+    P = 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+    REL = "http://schemas.openxmlformats.org/package/2006/relationships"
+    body = lambda texts: f'<p:sld {P}><p:cSld><p:spTree><p:sp><p:txBody>' + "".join(f"<a:p><a:r><a:t>{t}</a:t></a:r></a:p>" for t in texts) + "</p:txBody></p:sp></p:spTree></p:cSld></p:sld>"
+    with zipfile.ZipFile(path, "w") as z:
+        ids = "".join(f'<p:sldId id="{256 + i}" r:id="rId{i + 1}"/>' for i in range(len(slides)))
+        z.writestr("ppt/presentation.xml", f"<p:presentation {P}><p:sldIdLst>{ids}</p:sldIdLst></p:presentation>")
+        rels = "".join(f'<Relationship Id="rId{i + 1}" Type="x/slide" Target="slides/slide{len(slides) - i}.xml"/>' for i in range(len(slides)))
+        z.writestr("ppt/_rels/presentation.xml.rels", f'<Relationships xmlns="{REL}">{rels}</Relationships>')
+        for i, texts in enumerate(slides):
+            n = len(slides) - i                      # 文件名顺序和放映顺序故意不一样
+            z.writestr(f"ppt/slides/slide{n}.xml", body(texts))
+            if notes and notes[i]:
+                z.writestr(f"ppt/slides/_rels/slide{n}.xml.rels", f'<Relationships xmlns="{REL}"><Relationship Id="rId9" Type="http://x/notesSlide" Target="../notesSlides/notesSlide{n}.xml"/></Relationships>')
+                z.writestr(f"ppt/notesSlides/notesSlide{n}.xml", body([notes[i], str(n)]))
+
+
+def test_pptx_pages_in_show_order_with_notes(tmp_path):
+    from wb import materials
+    f = tmp_path / "W01.pptx"
+    make_pptx(f, [["Title slide", "Week 1"], ["Gradient descent", "Learning rate"], []], notes=[None, "Explain the step size", None])
+    pages = materials.read_pages(str(f))
+    assert pages == ["Title slide\nWeek 1", "Gradient descent\nLearning rate\n(演讲者备注)Explain the step size", ""]
+    bad = tmp_path / "x.pptx"
+    bad.write_bytes(b"not a zip")
+    with pytest.raises(RuntimeError, match="不是有效的 .pptx"):
+        materials.read_pages(str(bad))
+
+
+def test_slidenotes_check():
+    from wb import slidenotes
+    good = ("# Deck — 主题\n\n> 只依据课件\n\n## 一句话概括\n\n讲梯度下降 [课件 p2]\n\n## 核心要点\n\n1. 学习率 [课件 p2–3]\n\n## 逐页笔记\n\n### p1–3\n\n内容\n\n"
+            "## 概念与术语\n\n- **学习率**:步长 [课件 p2]\n\n## 课件里的考试 / 作业信息\n\n课件里没有\n\n## 复习卡\n\n学习率是什么::步长\n梯度::==方向==\n第三张::三\n")
+    assert slidenotes.check(good, 3, "zh")[0]
+    ok, rep = slidenotes.check(good.replace("[课件 p2–3]", "[课件 p2–9] [05:00]").replace("## 概念与术语", "## 概念"), 3, "zh")
+    assert not ok and "p9 超出课件范围" in rep and "时间戳 [05:00]" in rep and "缺少小节「## 概念与术语」" in rep
+    sp = slidenotes.system_prompt("en")
+    assert "## Slide-by-slide notes" in sp and "{structure}" not in sp and "English" in sp
+
+
+def test_slides_only_task(env, monkeypatch, tmp_path):
+    """只附课件、不贴链接:建「只有课件」任务,不拿文字稿,按课件写笔记、核对页码,再审核"""
+    from fastapi.testclient import TestClient
+    db, p, llm = env["db"], env["pipeline"], env["llm"]
+    deck = tmp_path / "Lecture 3.pptx"
+    make_pptx(deck, [["Intro"], ["Gradient descent", "Learning rate controls step size"], ["Summary"]])
+    notes = ("# Lecture 3 — 梯度下降\n\n> 只依据课件\n\n## 一句话概括\n\n讲梯度下降 [课件 p2]\n\n## 核心要点\n\n1. 学习率控制步长 [课件 p2]\n\n## 逐页笔记\n\n### p1–3\n\n内容 [课件 p1–3]\n\n"
+             "## 概念与术语\n\n- **学习率**:步长 [课件 p2]\n\n## 课件里的考试 / 作业信息\n\n课件里没有\n\n## 复习卡\n\n学习率是什么::步长\n梯度::==方向==\n第三张::三\n")
+    seen = []
+
+    def fake_chat(messages, on_progress=None, **k):
+        sysm = messages[0]["content"]
+        if "专名校对员" in sysm:
+            return '{"fixes": [], "unsure": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        if "课程总结的审核员" in sysm:
+            seen.append(("review", messages[1]["content"]))
+            return '{"verdict": "通过", "issues": []}', {"model": "fake", "usage": None, "finish_reason": "stop"}
+        seen.append(("write", sysm, messages[1]["content"]))
+        return notes, {"model": "fake", "usage": None, "finish_reason": "stop"}
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    with TestClient(env["server"].app) as c:
+        assert c.post("/api/slides", files={"file": ("old.ppt", b"x")}).json()["detail"].startswith("老版 .ppt")
+        name = c.post("/api/slides", files={"file": ("Lecture 3.pptx", deck.read_bytes())}).json()["slides"]
+        t = c.post("/api/tasks", json={"source": "", "slides": name}).json()
+        assert t["kind"] == "slides" and t["title"] == "Lecture 3"
+        assert c.post("/api/tasks", json={"source": ""}).status_code == 400          # 什么都没给
+    p.run_task(t["id"])
+    t = db.get(t["id"])
+    assert t["status"] == "done" and t["check_ok"] == 1, t["log"]
+    assert "fetch" not in t["timings"] and t["meta"]["review"]["passed"]
+    w = [x for x in seen if x[0] == "write"][0]
+    assert "只有课件的复习笔记" in w[1] and "[课件 p2/3]" in w[2] and "Learning rate controls step size" in w[2] and "视频信息" not in w[2]
+    assert "课件笔记核对通过(共 3 页" in t["check_report"]

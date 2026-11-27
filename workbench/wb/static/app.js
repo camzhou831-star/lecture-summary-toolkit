@@ -7,7 +7,7 @@ const ICON = {
   dot: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
 };
 const STAGES = ["fetch", "prepare", "summarize", "check", "names", "review"];
-const stagesOf = (tpl) => !tpl || tpl === "course" ? STAGES : STAGES.filter((k) => k !== "review");   // 审核内容只有课程总结有
+const stagesOf = (tpl, kind) => (!tpl || tpl === "course" ? STAGES : STAGES.filter((k) => k !== "review")).filter((k) => !(kind === "slides" && k === "fetch"));   // 只有课件的任务没有「拿文字稿」   // 审核内容只有课程总结有
 const kindName = (k) => t("kind_" + k);
 const statusName = (s) => t("status_" + s);
 
@@ -175,7 +175,7 @@ window.addEventListener("hashchange", route);
 $("#form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const source = $("#source").value.trim();
-  if (!source) return $("#source").focus();
+  if (!source && !(slidesFile && template === "course")) return $("#source").focus();   // 只附了课件也能开始:只根据课件写复习笔记
   formMsg(t("submitting"));
   try {
     const slides = await sendSlides();
@@ -194,7 +194,7 @@ function setSlides(f) {
   slidesFile = f; $("#slides").value = "";
   const chip = $("#slides-chip");
   chip.hidden = !f; if (f) chip.querySelector(".nm").textContent = f.name;
-  drawReady();
+  drawReady(); drawSrcHint();
 }
 function drawSlidesBtn() { const on = template === "course"; $("#slides-btn").hidden = !on; if (!on) setSlides(null); }
 $("#slides").addEventListener("change", () => { const f = $("#slides").files[0]; if (f) setSlides(f); });
@@ -207,7 +207,7 @@ async function sendSlides() {
 }
 
 async function upload(f) {
-  if (/\.pdf$/i.test(f.name)) { if (template === "course") { setSlides(f); formMsg(""); } else formMsg(t("slides_course_only"), true); return; }
+  if (/\.(pdf|pptx)$/i.test(f.name)) { if (template === "course") { setSlides(f); formMsg(""); } else formMsg(t("slides_course_only"), true); return; }
   try {
     const slides = await sendSlides();
     const fd = new FormData();
@@ -348,7 +348,7 @@ function drawDetail(t) {
   $("#d-retry").disabled = $("#d-del").disabled = t.status === "running";
 
   const tr = window.t;
-  const stages = stagesOf(t.template);
+  const stages = stagesOf(t.template, t.kind);
   $("#steps").style.gridTemplateColumns = innerWidth > 980 ? `repeat(${stages.length}, 1fr)` : "";
   $("#steps").innerHTML = stages.map((k, i) => {
     const ok = t.timings[k] != null && !(t.status !== "done" && t.stage === k);
@@ -751,7 +751,8 @@ function drawReady() {
     else parts.push(t("rd_self", { r: PNAME[cfg.active] }));
     parts.push(slidesFile ? t("rd_slides", { f: esc(slidesFile.name) }) : t("rd_noslides"));
     const v = $("#source").value.trim();
-    if (/^https?:\/\//i.test(v) || /https?:\/\/\S+/.test(v)) parts.push(t("rd_link"));
+    if (!v && slidesFile) parts.push(t("rd_slides_only"));
+    else if (/^https?:\/\//i.test(v) || /https?:\/\/\S+/.test(v)) parts.push(t("rd_link"));
     else parts.push(has("tesseract") ? t("rd_frames") : t("rd_noframes"));
   }
   box.innerHTML = `<span class="ob-item"><span class="ck ok">${OKI}</span></span><span class="ob-ready rd">${t("rd_head")}${parts.join(t("rd_sep"))}${t("rd_end")}${status.model_ready ? "" : " " + t("ob_model")}</span>`;
@@ -818,7 +819,8 @@ const LOGIN_SITES = /panopto|echo360|kaltura|yuja|coursera|udemy|edx\.org|instru
 function drawSrcHint() {
   const v = $("#source").value.trim(), el = $("#srchint");
   let msg = "", warn = false;
-  if (!v && template === "breakdown") msg = t("hint_bench");
+  if (!v && template === "course" && slidesFile) msg = t("hint_slides_only");
+  else if (!v && template === "breakdown") msg = t("hint_bench");
   else if (!v && template === "meeting") msg = t("hint_meet");
   else if (/douyin\.com|iesdouyin/i.test(v)) { msg = t("hint_douyin"); warn = true; }
   else if (/^https?:\/\//i.test(v) || /https?:\/\/\S+/.test(v)) {
