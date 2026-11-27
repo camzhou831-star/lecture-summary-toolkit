@@ -24,6 +24,9 @@
 
 ## 三步开始
 
+> **完全没用过这类软件？** 看图文版 [一步一步使用说明（PDF）](docs/guide/使用说明.zh.pdf)：每一步写了要点哪里、会看到什么、哪里容易卡，适合发给家里人。
+
+
 1. **下载。** 到 [最新版本](https://github.com/camzhou831-star/lecture-summary-toolkit/releases/latest) 下载：Mac 下 `lecture-workbench-mac.zip`，Windows 下 `lecture-workbench-windows.zip`，然后解压。
 2. **双击启动。** Mac 双击 `启动工作台.command`，Windows 双击 `启动工作台.bat`。第一次会自动装好需要的工具，然后在浏览器里打开工作台。
    - Mac 第一次会提示"无法验证"：按住 Control 点这个文件，选「打开」。新版 macOS 没有这个按钮的话，去「系统设置 → 隐私与安全性」点「仍要打开」。

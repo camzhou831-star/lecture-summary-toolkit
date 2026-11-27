@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>课程总结工作台 · 一步一步使用说明</title>
+<style>
+  @page { size: A4; margin: 14mm 13mm; }
+  :root { --text: #1f2a24; --muted: #5d6b62; --accent: #3f7a62; --soft: #eaf2ed; --line: #dde4df; --warn: #8a5a12; --warn-bg: #fbf1df; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--text); font: 15.5px/1.8 -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; }
+  main { max-width: 780px; margin: 0 auto; padding: 26px 16px 40px; }
+  h1 { font-size: 27px; margin: 0 0 6px; line-height: 1.35; }
+  h2 { font-size: 21px; margin: 34px 0 12px; padding: 8px 12px; background: var(--soft); border-radius: 10px; break-after: avoid; }
+  h3 { font-size: 17px; margin: 22px 0 8px; break-after: avoid; }
+  p { margin: 8px 0; }
+  .muted { color: var(--muted); }
+  .big { font-size: 17px; }
+  .step { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 12px 62px; margin: 14px 0; position: relative; break-inside: avoid; }
+  .step .n { position: absolute; left: 14px; top: 14px; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 17px; }
+  .step .t { font-weight: 700; font-size: 17px; margin-bottom: 4px; }
+  .lab { display: inline-block; font-size: 13px; font-weight: 700; border-radius: 6px; padding: 0 7px; margin-right: 6px; }
+  .do { background: #e3f1e9; color: #2f6a4f; }
+  .see { background: #e4ecf8; color: #2f4f80; }
+  .tip { background: var(--warn-bg); color: var(--warn); }
+  .row { margin: 6px 0; }
+  .shot { display: block; width: 100%; border: 1px solid var(--line); border-radius: 10px; margin: 8px 0 2px; }
+  .cap { font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+  .term { background: #1e1f22; color: #e6e6e6; border-radius: 10px; padding: 10px 14px; font: 13px/1.6 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; margin: 8px 0; break-inside: avoid; }
+  .term .hl { color: #ffd479; font-weight: 700; }
+  .dlg { border: 1px solid #cfd4da; border-radius: 14px; background: #f6f6f7; padding: 14px 16px; margin: 8px 0; max-width: 420px; font-size: 14px; break-inside: avoid; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+  .dlg b { display: block; margin-bottom: 4px; }
+  .dlg .btns { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; }
+  .dlg .btns span { border: 1px solid #cfd4da; background: #fff; border-radius: 7px; padding: 2px 12px; }
+  .dlg .btns span.pri { background: #2f7af6; color: #fff; border-color: #2f7af6; }
+  kbd, .btn { display: inline-block; border: 1px solid #c9cfd4; border-bottom-width: 2px; border-radius: 6px; padding: 0 7px; background: #fafafa; font: 600 14px/1.6 -apple-system, "PingFang SC", sans-serif; white-space: nowrap; }
+  .box { background: var(--soft); border-radius: 12px; padding: 12px 16px; margin: 12px 0; break-inside: avoid; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14.5px; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); }
+  tr { break-inside: avoid; }
+  .toc li { margin: 2px 0; }
+  .pagebreak { break-before: page; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>课程总结工作台 · 一步一步使用说明</h1>
+<p class="big">它能做什么：你给它一个网课或录播课的链接（比如 B 站视频），它会自动帮你整理出一份<b>复习笔记</b>——每一段讲了什么、重点在哪、还有复习用的问答卡。笔记里的每个时间点都能点，一点就跳回视频那一秒。</p>
+
+<div class="box">
+<b>这份说明怎么看：</b>每一步都分三块——<span class="lab do">要做</span>你要动手的事，<span class="lab see">你会看到</span>做完以后屏幕上应该出现什么，<span class="lab tip">注意</span>容易卡住的地方。<b>看到的和说明里一样，就做下一步；不一样，就停下来截图发给发你这个软件的人。</b>
+</div>
+
+<h3>开始之前，请准备好</h3>
+<ul>
+  <li>一台电脑（苹果电脑或 Windows 电脑都可以），连着网。</li>
+  <li>电脑的<b>开机密码</b>（安装时要输一次）。</li>
+  <li>一个 <b>DeepSeek 账号</b>（用手机号就能注册），帮你"写笔记"用。</li>
+  <li><b>大约 40 分钟</b>：第一次安装大部分时间是在下载，只需要第一次这样，以后打开只要几秒。</li>
+</ul>
+
+<h3>先分清你的电脑是哪种</h3>
+<table>
+  <tr><th>如果……</th><th>你的电脑是</th><th>看哪一部分</th></tr>
+  <tr><td>屏幕左上角有一个<b>苹果标志</b></td><td>苹果电脑（Mac）</td><td>第一部分</td></tr>
+  <tr><td>屏幕左下角有一个<b>四个方块的 Windows 标志</b></td><td>Windows 电脑</td><td>第二部分</td></tr>
+</table>
+
+<ol class="toc">
+  <li>第一部分：苹果电脑怎么装</li>
+  <li>第二部分：Windows 电脑怎么装</li>
+  <li>第三部分：接上帮你写笔记的 AI（DeepSeek）</li>
+  <li>第四部分：第一次用：整理一节课</li>
+  <li>第五部分：以后怎么打开、遇到问题怎么办</li>
+</ol>
+
+<!-- ================= Mac ================= -->
+<h2 class="pagebreak">第一部分：苹果电脑怎么装</h2>
+
+<div class="step"><div class="n">1</div>
+  <div class="t">把压缩包保存到电脑上</div>
+  <div class="row"><span class="lab do">要做</span>在电脑版微信里，找到别人发给你的「课程总结工作台.zip」，点一下它下载。下载完，在这个文件上点<b>右键</b>（触控板用两根手指一起按），选 <span class="btn">在 Finder 中显示</span>。</div>
+  <div class="row"><span class="lab see">你会看到</span>打开一个文件夹窗口，里面有「课程总结工作台.zip」。</div>
+  <div class="row"><span class="lab tip">注意</span>如果你是从 GitHub 的「Releases」页面下载的，压缩包在「下载」文件夹里，名字是 <b>lecture-workbench-mac.zip</b>，解压出来的文件夹叫 <b>lecture-workbench</b>。下面说的「课程总结工作台」文件夹就是它，其他步骤一样。</div>
+</div>
+
+<div class="step"><div class="n">2</div>
+  <div class="t">解压，并把文件夹放到桌面</div>
+  <div class="row"><span class="lab do">要做</span><b>双击</b>「课程总结工作台.zip」。</div>
+  <div class="row"><span class="lab see">你会看到</span>旁边多出一个叫「课程总结工作台」的文件夹（文件夹图标是蓝色的）。</div>
+  <div class="row"><span class="lab do">要做</span>用鼠标按住这个文件夹，拖到屏幕上空白的桌面上，松手。以后都在桌面上找它。</div>
+</div>
+
+<div class="step"><div class="n">3</div>
+  <div class="t">第一次打开启动文件（会被系统拦一下，正常）</div>
+  <div class="row"><span class="lab do">要做</span>双击打开桌面上的「课程总结工作台」文件夹，找到「<b>启动工作台.command</b>」，双击它。</div>
+  <div class="row"><span class="lab see">你会看到</span>苹果电脑弹出一个提示，大意是"Apple 无法验证它是否包含恶意软件"，下面有两个按钮：</div>
+  <div class="dlg"><b>未打开"启动工作台.command"</b>Apple 无法验证"启动工作台.command"是否包含可能危害 Mac 安全或泄漏隐私的恶意软件。<div class="btns"><span>移到废纸篓</span><span class="pri">完成</span></div></div>
+  <p class="cap">（示意图，不同系统版本文字可能略有不同）</p>
+  <div class="row"><span class="lab do">要做</span>点 <span class="btn">完成</span>。<b>千万不要点「移到废纸篓」</b>。</div>
+  <div class="row"><span class="lab tip">注意</span>这是因为这个小软件不是从 App Store 下载的，所以苹果电脑先拦一下。下一步告诉电脑"我信任它"就好，只需要做这一次。</div>
+</div>
+
+<div class="step"><div class="n">4</div>
+  <div class="t">在「系统设置」里允许它打开</div>
+  <div class="row"><span class="lab do">要做</span>点屏幕左上角的苹果标志，选 <span class="btn">系统设置</span>。在左边一栏往下找，点 <span class="btn">隐私与安全性</span>。右边往下滚动，滚到「安全性」那一块。</div>
+  <div class="row"><span class="lab see">你会看到</span>一行字：「已阻止"启动工作台.command"……」，旁边有一个按钮 <span class="btn">仍要打开</span>。</div>
+  <div class="row"><span class="lab do">要做</span>点 <span class="btn">仍要打开</span>。如果又弹出一个提示，再点里面的 <span class="btn">仍要打开</span> 或 <span class="btn">打开</span>。要你输入密码时，输入<b>开机密码</b>，点 <span class="btn">好</span>。</div>
+  <div class="row"><span class="lab tip">注意</span>「仍要打开」按钮在你双击后<b>一小时内</b>才会出现。找不到的话，回到第 3 步再双击一次，然后马上来这里找。</div>
+</div>
+
+<div class="step"><div class="n">5</div>
+  <div class="t">等它自动安装（黑色窗口）</div>
+  <div class="row"><span class="lab see">你会看到</span>弹出一个黑色的窗口（叫「终端」），里面开始一行一行出现文字。第一行是：</div>
+  <div class="term">== 总结工作台:检查和安装</div>
+  <div class="row">如果接着出现这一行，说明它发现你在国内，会自动换成国内的下载地址，<b>不用管</b>：</div>
+  <div class="term">== 连不上 GitHub,改用国内镜像下载(中科大 Homebrew、npmmirror、阿里云 PyPI)</div>
+  <div class="row"><span class="lab tip">注意</span><b>这个黑色窗口在用工作台的时候要一直开着，不要关。</b></div>
+</div>
+
+<div class="step"><div class="n">6</div>
+  <div class="t">它问"现在安装吗"，输入 y</div>
+  <div class="row"><span class="lab see">你会看到</span></div>
+  <div class="term">需要先装 Homebrew(Mac 上装软件用的官方工具,https://brew.sh)。
+<span class="hl">现在安装吗?过程中要输入一次开机密码 [y/N]</span></div>
+  <div class="row"><span class="lab do">要做</span>在键盘上按一下 <kbd>y</kbd> 键，再按 <kbd>回车</kbd>（键盘右边那个大的 return / ↵ 键）。</div>
+  <div class="row"><span class="lab tip">注意</span>电脑以前装过 Homebrew 的话，不会问这一句，直接跳到第 9 步。</div>
+</div>
+
+<div class="step"><div class="n">7</div>
+  <div class="t">输入开机密码（输的时候看不到，正常）</div>
+  <div class="row"><span class="lab see">你会看到</span></div>
+  <div class="term"><span class="hl">Password:</span></div>
+  <div class="row"><span class="lab do">要做</span>直接输入你的<b>开机密码</b>，然后按 <kbd>回车</kbd>。</div>
+  <div class="row"><span class="lab tip">注意</span><b>输密码时屏幕上什么都不会显示，连小圆点都没有</b>，这是正常的，不是键盘坏了。输完直接按回车就行。输错了它会让你再输一次。</div>
+</div>
+
+<div class="step"><div class="n">8</div>
+  <div class="t">出现一大段英文，最后让你按回车</div>
+  <div class="row"><span class="lab see">你会看到</span>一大段英文，最后一行是：</div>
+  <div class="term">==> HOMEBREW_BREW_GIT_REMOTE is set to a non-default URL:
+https://mirrors.ustc.edu.cn/brew.git will be used as the Homebrew/brew Git remote.
+
+<span class="hl">Press RETURN/ENTER to continue or any other key to abort:</span></div>
+  <div class="row"><span class="lab do">要做</span>按一下 <kbd>回车</kbd>。</div>
+  <div class="row"><span class="lab see">你会看到</span>接着出现 <code>Installing Command Line Tools</code>、<code>Finding available software</code> 这样的字，然后<b>很长时间不动</b>。</div>
+  <div class="row"><span class="lab tip">注意</span>它在从苹果下载一个叫"命令行开发者工具"的东西，<b>要等 10 到 30 分钟</b>，期间窗口可能好几分钟都没有新字。不要关窗口，不要乱按键，可以去倒杯水。如果弹出一个小窗口问要不要安装"命令行开发者工具"，点 <span class="btn">安装</span>，再点 <span class="btn">同意</span>。</div>
+</div>
+
+<div class="step"><div class="n">9</div>
+  <div class="t">它继续装其他工具</div>
+  <div class="row"><span class="lab see">你会看到</span>一行一行出现：</div>
+  <div class="term">   … 安装 uv
+   … 安装 yt-dlp
+   … 安装 ffmpeg
+   … 安装 whisper-cpp
+   ……</div>
+  <div class="row">每一样都要下载一会儿，全部装完大约要 5 到 15 分钟，看网速。<b>继续等，不用操作。</b></div>
+</div>
+
+<div class="step"><div class="n">10</div>
+  <div class="t">装好了：浏览器自动打开工作台</div>
+  <div class="row"><span class="lab see">你会看到</span>黑色窗口最后几行是：</div>
+  <div class="term">== 启动工作台:http://127.0.0.1:8770(关掉这个终端窗口或按 Ctrl+C 就会停)
+<span class="hl">== 总结工作台: http://127.0.0.1:8770</span></div>
+  <div class="row">几秒后，浏览器（Safari 或 Chrome）会自动打开一个新页面，就是工作台。<b>安装完成！</b>接着看第三部分，接上 DeepSeek。</div>
+  <div class="row"><span class="lab tip">注意</span>窗口里可能有"写总结的 AI 还没有"之类的字，不用管，第三部分会在网页里配好。浏览器没有自动打开的话，自己打开浏览器，在最上面的地址栏输入 <code>127.0.0.1:8770</code> 回车。</div>
+</div>
+
+<!-- ================= Windows ================= -->
+<h2 class="pagebreak">第二部分：Windows 电脑怎么装</h2>
+<p class="muted">Windows 版还没在很多电脑上试过，遇到和说明不一样的地方，请截图发给发你软件的人。</p>
+
+<div class="step"><div class="n">1</div>
+  <div class="t">保存并解压</div>
+  <div class="row"><span class="lab do">要做</span>在电脑版微信里下载「课程总结工作台.zip」，在文件上点右键，选 <span class="btn">在文件夹中显示</span>。然后在这个 zip 文件上点<b>右键</b>，选 <span class="btn">全部解压缩…</span>，再点 <span class="btn">解压缩</span>。</div>
+  <div class="row"><span class="lab see">你会看到</span>多出一个「课程总结工作台」文件夹，并且自动打开了它。（从 GitHub 下载的是 lecture-workbench-windows.zip，解压出来叫 lecture-workbench。）</div>
+  <div class="row"><span class="lab tip">注意</span>一定要"全部解压缩"。直接双击 zip 看到的只是预览，在预览里双击启动会失败。</div>
+</div>
+
+<div class="step"><div class="n">2</div>
+  <div class="t">双击「启动工作台.bat」</div>
+  <div class="row"><span class="lab do">要做</span>在文件夹里双击「<b>启动工作台.bat</b>」（有的电脑不显示 .bat，看到「启动工作台」、图标像一个齿轮窗口的就是它）。</div>
+  <div class="row"><span class="lab see">你会看到</span>可能弹出蓝色提示「Windows 已保护你的电脑」。</div>
+  <div class="row"><span class="lab do">要做</span>点提示里的小字 <span class="btn">更多信息</span>，再点出现的按钮 <span class="btn">仍要运行</span>。</div>
+</div>
+
+<div class="step"><div class="n">3</div>
+  <div class="t">等它自动安装</div>
+  <div class="row"><span class="lab see">你会看到</span>一个黑色窗口，一行一行地安装东西，还会下载一个约 1.6 GB 的语音模型。可能会弹出"你要允许此应用对你的设备进行更改吗"，点 <span class="btn">是</span>。</div>
+  <div class="row"><span class="lab tip">注意</span>整个过程可能要 20 到 40 分钟，<b>黑色窗口不要关</b>。</div>
+</div>
+
+<div class="step"><div class="n">4</div>
+  <div class="t">浏览器自动打开工作台</div>
+  <div class="row"><span class="lab see">你会看到</span>浏览器打开了工作台页面。安装完成，接着看第三部分。</div>
+</div>
+
+<!-- ================= AI ================= -->
+<h2 class="pagebreak">第三部分：接上帮你写笔记的 AI（DeepSeek）</h2>
+<p>工作台负责下载视频、把声音转成文字、核对时间；<b>"写笔记"这一步要借 DeepSeek</b>（国内的 AI，和 ChatGPT 类似）。打开工作台后，页面最上面有一块「<b>开始前检查</b>」，告诉你还差什么：</p>
+<img class="shot" src="img/check.zh.png" alt="开始前检查">
+<p class="cap">图：第一次打开时的「开始前检查」。前两项打了勾，说明下载和转写工具都装好了；第三项「写总结的 AI」还没配。</p>
+
+<p>有两种接法，<b>任选一种</b>。推荐第一种，不用碰"API Key"这种东西。</p>
+
+<h3>接法一（推荐）：装 DeepSeek Harness，登录一次</h3>
+<p class="muted">要求：苹果电脑需要是 2020 年以后的 M 系列芯片（点屏幕左上角的苹果标志 → 关于本机，看"芯片"一行写着 Apple M1/M2/M3/M4…）；或者 64 位 Windows。老款 Intel 芯片的苹果电脑用接法二。</p>
+
+<div class="step"><div class="n">1</div>
+  <div class="t">下载 DeepSeek Harness</div>
+  <div class="row"><span class="lab do">要做</span>在「开始前检查」里点蓝色的 <span class="btn">下载 DeepSeek Harness ↗</span>，在打开的官网页面上点下载（苹果电脑选 macOS，Windows 电脑选 Windows）。</div>
+</div>
+
+<div class="step"><div class="n">2</div>
+  <div class="t">安装（苹果电脑这一步最容易做错）</div>
+  <div class="row"><span class="lab do">要做（苹果）</span>双击下载好的文件（名字像「DeepSeek Harness 0.2.2…dmg」）。</div>
+  <div class="row"><span class="lab see">你会看到</span>一个窗口，左边是「DeepSeek Harness」图标，右边是一个「Applications」文件夹。</div>
+  <div class="row"><span class="lab do">要做</span><b>把左边的 DeepSeek Harness 图标拖到右边的 Applications 文件夹上</b>，松手，等它复制完（约 1 GB，一两分钟）。</div>
+  <div class="row"><span class="lab tip">注意</span><b>不要直接在这个窗口里双击打开 Harness！</b>那样它没有真正装进电脑，工作台会找不到它。拖完以后，在 Finder 左边栏点安装盘名字旁边的 ⏏ 把它弹出。</div>
+  <div class="row"><span class="lab do">要做（Windows）</span>双击下载好的 .exe 安装程序，一路点「下一步」装好。</div>
+</div>
+
+<div class="step"><div class="n">3</div>
+  <div class="t">打开 Harness，用 DeepSeek 账号登录</div>
+  <div class="row"><span class="lab do">要做</span>苹果电脑：打开 Finder 左边栏的「应用程序」，双击 DeepSeek Harness。按它的提示，用手机号登录 DeepSeek 账号。</div>
+  <div class="row"><span class="lab see">你会看到</span>登录成功后进入 Harness 的聊天界面。登录好就可以把它关掉了，以后不用开着它。</div>
+</div>
+
+<div class="step"><div class="n">4</div>
+  <div class="t">回到工作台，点「重新检查」</div>
+  <div class="row"><span class="lab do">要做</span>回到浏览器的工作台页面，点「开始前检查」下面绿色的 <span class="btn">重新检查</span>。</div>
+  <div class="row"><span class="lab see">你会看到</span>那一大块检查变成一行绿色的字：「<b>准备就绪:DeepSeek Harness 写课程总结……</b>」。就可以用了！</div>
+</div>
+
+<h3>接法二：用 API Key（老款苹果电脑，或者装不了 Harness 时）</h3>
+<p>需要在 DeepSeek 开放平台充一点钱（一节 1.5 小时的课大约花两三毛钱），拿到一串以 <code>sk-</code> 开头的"钥匙"，粘贴到「开始前检查」的输入框里，点 <span class="btn">保存并试一下</span>。详细步骤：打开文件夹里的「<b>如何接入DeepSeek.html</b>」，或者点「开始前检查」里的 <span class="btn">第一次用?看图文说明(5 分钟)</span>。</p>
+
+<!-- ================= Use ================= -->
+<h2 class="pagebreak">第四部分：第一次用：整理一节课</h2>
+
+<img class="shot" src="img/home.zh.png" alt="工作台首页">
+<p class="cap">图：准备好以后的工作台首页。最上面一行绿字表示可以用了；中间的大框是贴链接的地方；右边绿色按钮是「开始总结」。</p>
+
+<div class="step"><div class="n">1</div>
+  <div class="t">复制课程视频的链接</div>
+  <div class="row"><span class="lab do">要做</span>在浏览器里打开你要整理的那节课（比如 B 站视频），点浏览器最上面的地址栏，按 <kbd>⌘ Command</kbd> + <kbd>C</kbd>（Windows 是 <kbd>Ctrl</kbd> + <kbd>C</kbd>）复制。在 B 站手机 App 里也可以点「分享 → 复制链接」，再发到电脑上。</div>
+  <div class="row"><span class="lab tip">注意</span>只有 B 站视频的话，只复制那串以 <b>BV</b> 开头的编号（比如 BV1hDsg6LETy）也可以。</div>
+</div>
+
+<div class="step"><div class="n">2</div>
+  <div class="t">粘贴到工作台，点「开始总结」</div>
+  <div class="row"><span class="lab do">要做</span>点工作台中间的大框，按 <kbd>⌘ Command</kbd> + <kbd>V</kbd>（Windows 是 <kbd>Ctrl</kbd> + <kbd>V</kbd>）粘贴，然后点右边绿色的 <span class="btn">开始总结 →</span>。</div>
+  <div class="row"><span class="lab tip">注意</span>如果这节课有课件（PPT 或 PDF），可以先点 <span class="btn">课件 PDF / PPT</span> 选上它，笔记会更准，还会标出第几页。<b>只有课件、没有视频</b>也行：不贴链接，只选课件，直接点开始。</div>
+</div>
+
+<div class="step"><div class="n">3</div>
+  <div class="t">等它整理（第一次要多等一会儿）</div>
+  <div class="row"><span class="lab see">你会看到</span>页面上方一排小方块，依次打勾：拿文字稿 → 整理讲义稿 → 写总结 → 核对时间戳 → 核对专名 → 审核内容。</div>
+  <div class="row"><span class="lab tip">注意</span><b>第一次</b>转文字时会先下载一个约 1.6 GB 的语音模型，要等比较久，以后就快了。一节 1 小时的课，一般 10 到 20 分钟整理完。可以先去做别的事，浏览器标签上出现 ✓ 就是好了。</div>
+</div>
+
+<div class="step"><div class="n">4</div>
+  <div class="t">看笔记</div>
+  <img class="shot" src="img/summary.zh.png" alt="整理好的笔记">
+  <p class="cap">图：整理好的一节课。上面一排全打勾；左边是笔记；右边是视频和「章节」，点任意一章，视频就跳到那里。</p>
+  <div class="row"><span class="lab do">要做</span>往下滚动看笔记。笔记里的时间（比如 <code>19:05</code>）可以点，点了视频就跳到那一秒。</div>
+  <div class="row"><span class="lab tip">注意</span>笔记里写着「<b>待核实</b>」的地方，是 AI 拿不准、怕写错的地方，复习时对照一下原视频或课件。</div>
+</div>
+
+<div class="step"><div class="n">5</div>
+  <div class="t">把笔记存下来</div>
+  <div class="row"><span class="lab do">要做</span>点右上角的 <span class="btn">复制</span>，就能粘贴到备忘录、微信、Word 或 Obsidian 里；点 <span class="btn">下载</span> 会存成一个文件。以前整理过的课，都在左边「资料库」里能找到。</div>
+</div>
+
+<!-- ================= Later ================= -->
+<h2 class="pagebreak">第五部分：以后怎么打开、遇到问题怎么办</h2>
+
+<h3>以后怎么打开</h3>
+<div class="step"><div class="n">1</div>
+  <div class="t">双击同一个启动文件</div>
+  <div class="row"><span class="lab do">要做</span>打开桌面上的「课程总结工作台」文件夹，双击「启动工作台」（苹果电脑是 .command，Windows 是 .bat）。<b>不会再安装一遍</b>，几秒后浏览器就打开工作台。</div>
+  <div class="row"><span class="lab tip">注意</span>用完想关掉：直接关掉那个黑色窗口就行。</div>
+</div>
+
+<h3>遇到问题怎么办</h3>
+<table>
+  <tr><th style="width:42%">你看到的</th><th>怎么办</th></tr>
+  <tr><td>双击启动文件，提示"无法打开 / 无法验证"</td><td>按第一部分第 3、4 步：点「完成」，再去「系统设置 → 隐私与安全性」点「仍要打开」。</td></tr>
+  <tr><td>「隐私与安全性」里找不到「仍要打开」</td><td>回去再双击一次启动文件，然后一小时内去找。</td></tr>
+  <tr><td>黑色窗口里输入密码，屏幕上没反应</td><td>正常，输入时就是看不到。输完按回车。</td></tr>
+  <tr><td>黑色窗口很久不动（10 分钟以上）</td><td>如果最后一行是 <code>Finding available software</code>：正在下载开发者工具，继续等，最多 30 分钟。超过 30 分钟，关掉窗口，重新双击启动文件再试。</td></tr>
+  <tr><td>黑色窗口里出现红字、"错误"、"Error"</td><td>把整个窗口拍照或截图，发给发你软件的人。大多数是网络问题，重新双击启动文件常常就好了。</td></tr>
+  <tr><td>浏览器没有自动打开</td><td>自己打开浏览器，在地址栏输入 <code>127.0.0.1:8770</code>，按回车。</td></tr>
+  <tr><td>网页打不开，显示"无法连接"</td><td>黑色窗口被关掉了。重新双击启动文件。</td></tr>
+  <tr><td>「开始前检查」里 DeepSeek Harness 显示"不可用"</td><td>大多是 Harness 没拖进「应用程序」文件夹（看第三部分第 2 步），或者还没登录。弄好后点「重新检查」。</td></tr>
+  <tr><td>提示"Key 不对"或"余额不足"</td><td>Key 不对：重新复制粘贴一次；余额不足：去 DeepSeek 开放平台充值，回来点「重跑」。</td></tr>
+  <tr><td>整理到一半显示失败（红色）</td><td>点右上角 <span class="btn">重跑</span>。还是失败就截图发给发你软件的人。</td></tr>
+  <tr><td>学校录播要登录才能看，链接贴进去失败</td><td>在工作台左边点「设置 → 网站登录」，选你平时登录学校网站用的浏览器；还不行就把视频下载下来，点「选文件」选它。</td></tr>
+</table>
+
+<div class="box">
+<b>小提示</b>
+<ul style="margin:4px 0">
+  <li>视频和转成的文字都只在你自己电脑上，只有文字会发给 DeepSeek 写笔记。</li>
+  <li>只整理你自己有权看的课程视频，不要把下载的视频再发给别人。</li>
+  <li>遇到任何看不懂的，<b>拍照或截图</b>发给发你软件的人，比用文字描述清楚得多。</li>
+</ul>
+</div>
+
+</main>
+</body>
+</html>
