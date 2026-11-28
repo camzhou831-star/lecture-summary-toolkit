@@ -10,12 +10,32 @@ Set-Location -LiteralPath $PSScriptRoot
 $zh = (Get-UICulture).Name -like "zh*"
 function Say($cn, $en) { if ($zh) { Write-Host $cn } else { Write-Host $en } }
 function Have($c) { [bool](Get-Command $c -ErrorAction SilentlyContinue) }
+# 安装记录:每一步都写进这个文件,出问题时把它发过来就能看到卡在哪
+$logDir = Join-Path $env:USERPROFILE ".local\share\lecture-summary-toolkit"
+New-Item -ItemType Directory -Force $logDir | Out-Null
+$installLog = Join-Path $logDir "install-log.txt"
+try { Start-Transcript -Path $installLog -Append | Out-Null } catch {}
+# 装的时候不让电脑睡眠(睡着后网会断,下载到一半就失败);窗口开着时一直有效,开着工作台跑长录播也不会被睡眠打断。
+# 再关掉命令行窗口的「快速编辑」:不然在窗口里点一下,程序就暂停了,看起来像卡死,要按一下键才继续
+try {
+  Add-Type -Namespace WB -Name Native -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint f);
+[DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int h);
+[DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr h, out uint m);
+[DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr h, uint m);
+'@
+  [WB.Native]::SetThreadExecutionState(0x80000001) | Out-Null          # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+  $h = [WB.Native]::GetStdHandle(-10); $m = [uint32]0
+  if ([WB.Native]::GetConsoleMode($h, [ref]$m)) { [WB.Native]::SetConsoleMode($h, (($m -band (-bnot [uint32]0x40)) -bor [uint32]0x80)) | Out-Null }   # 去掉 QUICK_EDIT,加 EXTENDED_FLAGS
+} catch {}
+function Stamp { Get-Date -Format "HH:mm:ss" }
 function Refresh-Path {
   $links = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links"
   $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User") + ";" + $links + ";" + (Join-Path $env:USERPROFILE ".local\bin")
 }
 
-Say "== 总结工作台:检查和安装" "== Lecture Workbench: checking and installing"
+Say "== 总结工作台:检查和安装($(Stamp);安装记录:$installLog)" "== Lecture Workbench: checking and installing ($(Stamp); install log: $installLog)"
+Say "   第一次要下载约 2 GB,网慢的话要半小时以上;下面一直有新的进度就是正常在装,别关窗口" "   The first run downloads about 2 GB and can take over half an hour on a slow connection; as long as new lines keep appearing it is working — keep this window open"
 Refresh-Path
 if (-not (Have "winget")) {
   Say "没找到 winget(Windows 自带的软件安装器)。请在 Microsoft Store 里安装或更新「应用安装程序 / App Installer」,再双击一次 启动工作台.bat。" `
@@ -25,7 +45,7 @@ if (-not (Have "winget")) {
 $pkgs = @(@("uv", "astral-sh.uv"), @("yt-dlp", "yt-dlp.yt-dlp"), @("ffmpeg", "Gyan.FFmpeg"))
 foreach ($p in $pkgs) {
   if (Have $p[0]) { Say "   ✓ $($p[0]) 已安装" "   ✓ $($p[0]) installed"; continue }
-  Say "   … 安装 $($p[0])" "   … installing $($p[0])"
+  Say "   … 安装 $($p[0])($(Stamp))" "   … installing $($p[0]) ($(Stamp))"
   winget install -e --id $p[1] --accept-package-agreements --accept-source-agreements --silent | Out-Host
   Refresh-Path
   if (-not (Have $p[0])) { Say "   ! $($p[0]) 装完还找不到;关掉这个窗口,再双击一次 启动工作台.bat" "   ! $($p[0]) still not found; close this window and double-click Start Workbench.bat again"; exit 1 }
@@ -47,7 +67,13 @@ if ($cli -and (Test-Path $model)) {
   Say "   ✓ whisper.cpp 和语音模型已安装" "   ✓ whisper.cpp and the speech model are installed"
 } else {
   Say "== 转写工具 whisper.cpp + 语音模型(约 1.6 GB,只下一次,会花几分钟)" "== Transcription: whisper.cpp + speech model (about 1.6 GB, downloaded once, takes a few minutes)"
-  uv run python ..\工具\lsk.py setup | Out-Host   # 工具缺 tesseract 之类时 doctor 会报 ❌,工作台用不到,不算失败
+  # 下载进度打在 stderr 上;合进来一起显示并记进安装记录。PowerShell 5 把 stderr 当错误,这一段临时不按错误停
+  $ErrorActionPreference = "Continue"
+  uv run python ..\工具\lsk.py setup 2>&1 | ForEach-Object { "$_" } | Out-Host   # 工具缺 tesseract 之类时 doctor 会报 ❌,工作台用不到,不算失败
+  $ErrorActionPreference = "Stop"
+  if (-not (Test-Path $model)) {
+    Say "   ! 语音模型没下载完(多半是网断了或电脑睡着了)。工作台照样先打开;处理第一个视频时会再下载,也可以关掉窗口再双击一次 启动工作台.bat 重装" "   ! The speech model did not finish downloading (usually the network dropped or the PC went to sleep). The workbench still opens and retries on your first video; or close this window and double-click Start Workbench.bat again"
+  }
 }
 
 Say "== 写总结的 AI(三选一)" "== AI for summaries (you need one)"
@@ -67,6 +93,9 @@ if ($NoStart) { Say "== 装好了" "== Done"; exit 0 }
 $port = if ($env:PORT) { $env:PORT } else { "8770" }
 $url = "http://127.0.0.1:$port"
 try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 "$url/api/config" | Out-Null; Say "== 工作台已经在运行:$url" "== The workbench is already running: $url"; Start-Process $url; exit 0 } catch {}
-Say "== 启动工作台:$url(这个窗口别关;关掉窗口工作台就停了)" "== Starting the workbench at $url (keep this window open; closing it stops the workbench)"
+Say "== 装好了,启动工作台($(Stamp)):$url" "== All set, starting the workbench ($(Stamp)): $url"
+Say "   浏览器几秒后会自己打开;没打开的话,自己在浏览器地址栏输入 $url" "   Your browser opens in a few seconds; if it doesn't, type $url into the address bar"
+Say "   用工作台的时候这个窗口别关,关掉工作台就停了" "   Keep this window open while you use the workbench; closing it stops the workbench"
+try { Stop-Transcript | Out-Null } catch {}
 Start-Job -ScriptBlock { param($u) Start-Sleep -Seconds 3; Start-Process $u } -ArgumentList $url | Out-Null
 uv run python -m wb

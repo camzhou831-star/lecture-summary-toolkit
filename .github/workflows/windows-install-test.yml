@@ -9,6 +9,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v4
       - name: Tools already on the runner
         shell: pwsh
         run: |
@@ -22,6 +23,12 @@ jobs:
           gh release download v0.8.5 -R ${{ github.repository }} -p lecture-workbench-zh-windows.zip -D $d
           Expand-Archive (Join-Path $d lecture-workbench-zh-windows.zip) -DestinationPath $d -Force
           Get-ChildItem $d
+      - name: Overlay the fixed launcher files from this branch
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:USERPROFILE "Desktop\课程总结工作台"
+          Copy-Item workbench\setup.ps1 (Join-Path $root "workbench\setup.ps1") -Force
+          Copy-Item "启动工作台.bat" $root -Force
       - name: Double-click the bat (run like a user, log everything)
         shell: pwsh
         run: |
@@ -34,11 +41,14 @@ jobs:
             Start-Sleep 20
             try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 http://127.0.0.1:8770/api/config | Out-Null; $ok = $true; break } catch {}
             if ($p.HasExited) { "bat exited with code $($p.ExitCode)"; break }
+            "--- power requests (should list powershell while installing):"; powercfg /requests | Select-String -Pattern "SYSTEM:" -Context 0,3
             "--- {0:N0} min, still running; log tail:" -f ((Get-Date) - $t0).TotalMinutes
             if (Test-Path $log) { Get-Content $log -Tail 5 -Encoding utf8 }
           }
           "===== FULL LOG ====="
           if (Test-Path $log) { Get-Content $log -Encoding utf8 }
           "===== server up: $ok ====="
+          "===== install-log.txt ====="
+          Get-Content (Join-Path $env:USERPROFILE ".local\share\lecture-summary-toolkit\install-log.txt") -Encoding utf8 -ErrorAction SilentlyContinue
           Get-ChildItem (Join-Path $env:USERPROFILE ".local\share") -Recurse -Depth 1 -ErrorAction SilentlyContinue | Select-Object FullName, Length
           if (-not $ok) { exit 1 }
