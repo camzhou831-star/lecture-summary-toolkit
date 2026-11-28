@@ -41,7 +41,7 @@ jobs:
             Start-Sleep 20
             try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 http://127.0.0.1:8770/api/config | Out-Null; $ok = $true; break } catch {}
             if ($p.HasExited) { "bat exited with code $($p.ExitCode)"; break }
-            "--- power requests (should list powershell while installing):"; powercfg /requests | Select-String -Pattern "SYSTEM:" -Context 0,3
+            "--- power requests (should list powershell while installing):"; powercfg /requests | Out-String | Select-String -Pattern "(?s)SYSTEM:.*?AWAYMODE" -AllMatches | ForEach-Object { $_.Matches.Value }
             "--- {0:N0} min, still running; log tail:" -f ((Get-Date) - $t0).TotalMinutes
             if (Test-Path $log) { Get-Content $log -Tail 5 -Encoding utf8 }
           }

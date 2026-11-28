@@ -17,14 +17,23 @@ $installLog = Join-Path $logDir "install-log.txt"
 try { Start-Transcript -Path $installLog -Append | Out-Null } catch {}
 # 装的时候不让电脑睡眠(睡着后网会断,下载到一半就失败);窗口开着时一直有效,开着工作台跑长录播也不会被睡眠打断。
 # 再关掉命令行窗口的「快速编辑」:不然在窗口里点一下,程序就暂停了,看起来像卡死,要按一下键才继续
+$keepAwake = $false
 try {
   Add-Type -Namespace WB -Name Native -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct REASON { public uint Version; public uint Flags; public string Text; }
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr PowerCreateRequest(ref REASON r);
+[DllImport("kernel32.dll")] public static extern bool PowerSetRequest(IntPtr h, int type);
 [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint f);
 [DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int h);
 [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr h, out uint m);
 [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr h, uint m);
 '@
-  [WB.Native]::SetThreadExecutionState(0x80000001) | Out-Null          # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+  $reason = New-Object WB.Native+REASON; $reason.Version = 0; $reason.Flags = 1; $reason.Text = "Lecture Workbench is installing / running"   # POWER_REQUEST_CONTEXT_SIMPLE_STRING
+  $script:powerReq = [WB.Native]::PowerCreateRequest([ref]$reason)
+  $keepAwake = [WB.Native]::PowerSetRequest($script:powerReq, 1)          # PowerRequestSystemRequired:屏幕可以黑,电脑不睡
+  [WB.Native]::SetThreadExecutionState(0x80000001) | Out-Null          # 老办法也设上:ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+} catch {}
+try {
   $h = [WB.Native]::GetStdHandle(-10); $m = [uint32]0
   if ([WB.Native]::GetConsoleMode($h, [ref]$m)) { [WB.Native]::SetConsoleMode($h, (($m -band (-bnot [uint32]0x40)) -bor [uint32]0x80)) | Out-Null }   # 去掉 QUICK_EDIT,加 EXTENDED_FLAGS
 } catch {}
@@ -35,6 +44,7 @@ function Refresh-Path {
 }
 
 Say "== 总结工作台:检查和安装($(Stamp);安装记录:$installLog)" "== Lecture Workbench: checking and installing ($(Stamp); install log: $installLog)"
+if (-not $keepAwake) { Say "   (没能阻止电脑自动睡眠;装的时候请别让电脑睡着)" "   (Could not stop the PC from sleeping; please keep it awake while installing)" }
 Say "   第一次要下载约 2 GB,网慢的话要半小时以上;下面一直有新的进度就是正常在装,别关窗口" "   The first run downloads about 2 GB and can take over half an hour on a slow connection; as long as new lines keep appearing it is working — keep this window open"
 Refresh-Path
 if (-not (Have "winget")) {
