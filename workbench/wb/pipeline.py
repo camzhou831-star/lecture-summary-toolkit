@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-from . import account, breakdown, config, db, llm, materials, names, review, slidenotes, sources, templates
+from . import account, breakdown, config, db, heavy, llm, materials, names, review, slidenotes, sources, templates
 
 sys.path.insert(0, config.TOOLS)
 import headings as H  # noqa: E402  录播课工具的小节标题约定
@@ -301,7 +301,8 @@ def run_task(task_id):
         if only_slides:
             srt, meta = None, dict(task.get("meta") or {}, title=task["title"] or task["vid"], how="只有课件,没有录播")
         else:
-            srt, meta = timed("fetch", lambda: sources.fetch(task, root, log))
+            with heavy.turn(task_id):
+                srt, meta = timed("fetch", lambda: sources.fetch(task, root, log))
         db.update(task_id, meta=meta, title=meta.get("title") or task["title"])
         is_course = templates.kind(task["template"]) == "course"
         rv_kind = "breakdown" if templates.kind(task["template"]) == "breakdown" else ("course" if is_course else None)   # 哪些模板要审核内容
@@ -315,7 +316,8 @@ def run_task(task_id):
             text = prepare(task, srt, meta, log)
             return text, (materials.slides_text(root, log) if is_course else "")
 
-        transcript, slides = timed("prepare", prep)
+        with heavy.turn(task_id):
+            transcript, slides = timed("prepare", prep)
         if templates.kind(task["template"]) == "breakdown" and "account" not in meta:     # 选片数据:和作者近 20 条比的相对值
             meta = dict(meta, account=account.stats(task["kind"], meta, log))
             db.update(task_id, meta=meta)
@@ -576,7 +578,8 @@ def run_task(task_id):
                 fixed += [i for i in todo if id(i) not in ids]
                 settled += [dict(i, declined="已在原处标了待核实") for i in mark if id(i) not in ids]
                 remaining = []
-                if n == maxr:          # 快速审核:改完这一轮就收
+                if n == maxr:          # 快速审核:改完这一轮就收(改了的都是两次复核确认的,拿不准的已标待核实,算审完)
+                    passed = True
                     break
             if remaining:      # 轮数用完还有没处理的:不改结论,统一在原处标待核实,至少让读的人知道这里有疑问
                 db.update(task_id, message="把没解决的问题在原处标成待核实…")

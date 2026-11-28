@@ -615,7 +615,7 @@ def test_quick_review_for_short_content(env, monkeypatch):
     t = db.get(tid)
     rv = t["meta"]["review"]
     assert t["status"] == "done", t["log"]
-    assert rv["quick"] and rv["fixed"] == 1 and rv["rounds"] == 1
+    assert rv["quick"] and rv["fixed"] == 1 and rv["rounds"] == 1 and rv["passed"]
     assert calls[0] == ("review", None)                                    # 第一遍:快模型
     assert [c for c in calls if c[0] == "judge"] == [("judge", "deepseek-v4-pro")] * 2   # 复核:推理模型
     assert [c[0] for c in calls].count("review") == 1 and "快速审核" in t["log"]
@@ -1260,3 +1260,58 @@ def test_export_docx_turns_latex_into_readable_text(env, tmp_path):
     text = "\n".join(p.text for p in Document(io.BytesIO(export.to_docx(md, str(tmp_path)))).paragraphs)
     assert "f(a)f(b)<0" in text and "aₙ₊₁=1/2aₙ" in text and "∫₀¹ x² dx" in text and "$5 和 $10" in text
     assert "$f(x)$" not in text and "\\frac" not in text
+
+
+# ---------- 同时跑几个任务 ----------
+def test_parallel_tasks_setting(env, monkeypatch):
+    from wb import config
+    assert config.parallel_tasks() == 2
+    for v, want in (("1", 1), ("9", 4), ("0", 1), ("x", 2)):
+        monkeypatch.setenv("WORKBENCH_PARALLEL", v)
+        assert config.parallel_tasks() == want
+    monkeypatch.delenv("WORKBENCH_PARALLEL")
+    from fastapi.testclient import TestClient
+    c = TestClient(env["server"].app)
+    assert c.post("/api/parallel", json={"n": 3}).json()["parallel_tasks"] == 3
+    assert c.get("/api/config").json()["parallel_tasks"] == 3
+
+
+def test_claim_next_marks_running(env):
+    from wb import db
+    a = db.create("local", "/x/a.srt", "a")
+    b = db.create("local", "/x/b.srt", "b")
+    assert db.claim_next() == a and db.get(a)["status"] == "running"
+    assert db.claim_next() == b
+    assert db.claim_next() is None
+
+
+def test_worker_overlaps_model_steps_but_not_heavy(env, monkeypatch):
+    """两个任务同时跑:重活(heavy 锁里)不重叠,锁外的步骤重叠"""
+    import threading
+    import time as _t
+    from wb import db, heavy, pipeline, worker
+    __import__("importlib").reload(worker)
+    ids = [db.create("local", f"/x/{i}.srt", str(i)) for i in range(2)]
+    spans, lock = {"heavy": [], "model": []}, threading.Lock()
+
+    def fake(tid):
+        with heavy.turn(tid):
+            t0 = _t.time(); _t.sleep(0.3)
+            with lock: spans["heavy"].append((t0, _t.time()))
+        t0 = _t.time(); _t.sleep(0.6)
+        with lock: spans["model"].append((t0, _t.time()))
+        db.update(tid, status="done")
+    monkeypatch.setattr(pipeline, "run_task", fake)
+    worker.start()
+    try:
+        for _ in range(60):
+            if all(db.get(i)["status"] == "done" for i in ids):
+                break
+            _t.sleep(0.1)
+    finally:
+        worker.stop()
+    assert all(db.get(i)["status"] == "done" for i in ids)
+    (a0, a1), (b0, b1) = sorted(spans["heavy"])
+    assert b0 >= a1 - 0.01                       # 转写一个接一个
+    (m0, m1), (n0, n1) = sorted(spans["model"])
+    assert n0 < m1                               # 调模型的步骤有重叠

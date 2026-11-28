@@ -69,6 +69,15 @@ def update_check():
     return True if v is None else bool(v)
 
 
+def parallel_tasks():
+    """最多同时跑几个任务(1–4,默认 2)。转写仍一次一个,同时跑的是写总结、审核这些调模型的步骤"""
+    v = os.environ.get("WORKBENCH_PARALLEL") or _file_config().get("parallel_tasks")
+    try:
+        return min(4, max(1, int(v))) if v not in (None, "") else 2
+    except (TypeError, ValueError):
+        return 2
+
+
 def quick_review_minutes():
     """多短的内容用快速审核(分钟):审核用写总结同一个快模型、只审一轮,挑出严重问题才用推理模型复核。0 = 一律严格审核"""
     v = os.environ.get("WORKBENCH_QUICK_REVIEW_MIN") or _file_config().get("quick_review_minutes")

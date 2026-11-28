@@ -106,6 +106,16 @@ def next_queued():
     return r["id"] if r else None
 
 
+def claim_next():
+    """取最早排队的任务并标成 running(同一个任务不会被两个线程拿到)→ 任务号或 None"""
+    with _lock, connect() as c:
+        r = c.execute("SELECT id FROM tasks WHERE status='queued' ORDER BY id LIMIT 1").fetchone()
+        if not r:
+            return None
+        c.execute("UPDATE tasks SET status='running', message='开始处理…' WHERE id=?", (r["id"],))
+    return r["id"]
+
+
 def delete(task_id):
     with _lock, connect() as c:
         c.execute("DELETE FROM tasks WHERE id=?", (task_id,))

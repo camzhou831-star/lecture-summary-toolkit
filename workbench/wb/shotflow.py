@@ -11,7 +11,7 @@ import os
 import re
 import time
 
-from . import config, db, llm, shots, slidenotes, sources
+from . import config, db, heavy, llm, shots, slidenotes, sources
 
 DIR = "画面拉片"
 CSV_HEAD = ["视频", "段", "镜头序号", "起秒", "止秒", "时长", "底", "景别", "镜头类型", "持续在动", "主体占画面", "备注"]
@@ -183,13 +183,14 @@ def run(task_id, summary_path, task_root):
         return time.time()
     db.update(task_id, status="running")
     try:
-        t0 = step("fetch", "下载视频…")
-        video, meta = fetch_video(task, root, log)
-        timings["fetch"] = round(time.time() - t0, 1)
-        db.update(task_id, meta=dict(task.get("meta") or {}, **meta), title=meta.get("title") or task["title"])
-        t0 = step("prepare", "机测:接触表、切镜、进场动效…")
-        a = analyze(video, root, log)
-        timings["prepare"] = round(time.time() - t0, 1)
+        with heavy.turn(task_id):
+            t0 = step("fetch", "下载视频…")
+            video, meta = fetch_video(task, root, log)
+            timings["fetch"] = round(time.time() - t0, 1)
+            db.update(task_id, meta=dict(task.get("meta") or {}, **meta), title=meta.get("title") or task["title"])
+            t0 = step("prepare", "机测:接触表、切镜、进场动效…")
+            a = analyze(video, root, log)
+            timings["prepare"] = round(time.time() - t0, 1)
         t0 = step("summarize", "逐镜头登记…")
         try:
             writer = llm.resolve()

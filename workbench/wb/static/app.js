@@ -1035,9 +1035,19 @@ async function applyUpdate() {
   }
   bar.innerHTML = `<div class="u-text"><b>${t("upd_done", { v: esc(res.version) })}</b>${t("upd_reopen")}</div>`;
 }
+function drawParallelCard(c) {
+  const box = $("#set-parallel"); if (!box) return;
+  const n = c.parallel_tasks || 2;
+  box.innerHTML = `<label class="upd-line"><span>${t("par_label")}</span>
+      <select id="par-n">${[1, 2, 3, 4].map((i) => `<option value="${i}" ${i === n ? "selected" : ""}>${i}</option>`).join("")}</select>
+      <span>${t("par_unit")}</span></label><p class="muted small" style="margin:10px 0 0">${t("par_note")}</p>`;
+  $("#par-n").onchange = async (e) => { cfg = Object.assign(cfg || {}, await api("/api/parallel", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ n: +e.target.value }) })); toast(t("saved")); };
+}
 async function drawUpdateCard() {
   const box = $("#set-update"); if (!box) return;
   const c = cfg || await api("/api/config"), info = updInfo;
+  drawParallelCard(c);
   const st = !info ? "" : info.error ? t("upd_unreach") : info.off ? "" : info.newer ? t("upd_new", { v: esc(info.latest) }) : t("upd_latest");
   box.innerHTML = `<div class="upd-line"><span>${t("upd_cur", { v: esc(c.version || "?") })}</span><span class="muted">${st}</span>
       <button type="button" class="btn btn-ghost btn-sm" id="upd-check">${t("upd_check")}</button>

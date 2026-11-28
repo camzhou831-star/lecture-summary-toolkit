@@ -25,6 +25,8 @@ const I18N = {
     th_title: "标题", th_src: "来源", th_lang: "语言", th_status: "状态", th_time: "用时", th_when: "时间",
     tpl_crumb: "总结工作台 / 模板", tpl_p: "模板决定总结的结构和写法。选好模板后在「新建总结」里贴链接。",
     set_crumb: "总结工作台 / 设置", set_p: "写总结的 AI、网站登录、配色、本机程序和数据位置。改设置不用重启。",
+    set_parallel: "同时处理", par_label: "最多同时跑", par_unit: "个任务",
+    par_note: "转写一次只跑一个(很吃电脑);写总结和审核可以几个任务一起跑,排了好几节课时能快不少。网络不稳就调回 1。",
     set_update: "版本与更新", upd_new: "有新版 {v}", upd_go: "更新", upd_later: "以后再说", upd_doing: "正在更新…",
     upd_doing_d: "下载新版、换程序文件、试启动一次,一般一两分钟。任务记录、Key、语音模型都不动。", upd_fail: "更新没成功:",
     upd_done: "已更新到 {v}。", upd_restarting: "正在重启工作台,好了会自动刷新页面……", upd_reopen: "请关掉工作台的终端窗口,再双击一次「启动工作台」。",
@@ -134,6 +136,8 @@ const I18N = {
     th_title: "Title", th_src: "Source", th_lang: "Language", th_status: "Status", th_time: "Took", th_when: "Added",
     tpl_crumb: "Workbench / Templates", tpl_p: "A template decides how a summary is structured and written. Pick one, then paste a link under New summary.",
     set_crumb: "Workbench / Settings", set_p: "Which AI writes summaries, site logins, colours, local tools and where data lives. No restart needed.",
+    set_parallel: "Running tasks together", par_label: "Run up to", par_unit: "tasks at once",
+    par_note: "Transcription still runs one at a time (it is heavy on the computer); writing and review can overlap across tasks, which helps when several lectures are queued. Set it to 1 if your connection is unstable.",
     set_update: "Version and updates", upd_new: "Version {v} is available", upd_go: "Update", upd_later: "Not now", upd_doing: "Updating…",
     upd_doing_d: "Downloading, replacing the program files and test-starting it; usually a minute or two. Your tasks, keys and speech model are untouched.", upd_fail: "Update failed: ",
     upd_done: "Updated to {v}. ", upd_restarting: "Restarting the workbench; this page reloads when it's back…", upd_reopen: "Close the workbench's terminal window and double-click Start Workbench again.",
@@ -246,7 +250,7 @@ function applyI18n(root = document) {
 
 // 后端的中文进度 / 报错 → 英文(按开头匹配;对不上的原样返回)
 const SERVER_EN = [
-  [/^排队中$/, "Queued"], [/^Key 不对/, "That key was rejected; check you copied all of it"], [/^连不上 (\S+?):/, "Could not reach $1"], [/^接口地址要以/, "The API address must start with https://"], [/^排队中\(沿用任务 (\d+) 的文字稿\)$/, "Queued (reusing the transcript of #$1)"], [/^这个任务还没拿到文字稿/, "The transcript isn't ready yet; try again once it is"], [/^重新排队$/, "Queued again"], [/^上次未完成,重新排队$/, "Interrupted last time, queued again"],
+  [/^排队中$/, "Queued"], [/^Key 不对/, "That key was rejected; check you copied all of it"], [/^连不上 (\S+?):/, "Could not reach $1"], [/^接口地址要以/, "The API address must start with https://"], [/^排队中\(沿用任务 (\d+) 的文字稿\)$/, "Queued (reusing the transcript of #$1)"], [/^这个任务还没拿到文字稿/, "The transcript isn't ready yet; try again once it is"], [/^重新排队$/, "Queued again"], [/^开始处理…$/, "Starting…"], [/^等前一个任务转写完…$/, "Waiting for the previous task to finish transcribing…"], [/^上次未完成,重新排队$/, "Interrupted last time, queued again"],
   [/^拿文字稿…$/, "Getting the transcript…"], [/^整理讲义稿…$/, "Preparing the transcript…"], [/^写总结…$/, "Writing the summary…"], [/^核对时间戳…$/, "Checking timestamps…"], [/^核对专名…$/, "Checking names…"],
   [/^写总结… 已生成 (\d+) 字$/, "Writing the summary… $1 characters so far"],
   [/^核对没过,让模型按检查结果改一轮…$/, "The check found issues; asking the AI to fix them…"], [/^(?:修正后)?核对没过,让模型按检查结果改\(第 (\d) 次\)…$/, "The check found issues; asking the AI to fix them (attempt $1)…"],

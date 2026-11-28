@@ -107,7 +107,7 @@ def get_config():
     return {"model": c.model, "base_url": c.base_url, "review_model": config.review_model(), "key_ok": bool(c.api_key), "key_source": c.source,
             "provider": c.provider, "active": active, "ready": active is not None,
             "cookies_browser": config.cookies_browser(), "browsers": list(config.BROWSERS),
-            "version": update.current(), "update_check": config.update_check(),
+            "version": update.current(), "update_check": config.update_check(), "parallel_tasks": config.parallel_tasks(),
             "providers": [{"id": p, "name": info["name"], "ok": av[p][0], "note": av[p][1]} for p, info in llm.PROVIDERS.items()]}
 
 
@@ -130,6 +130,17 @@ def update_apply():
 
 class UpdatePref(BaseModel):
     on: bool
+
+
+class ParallelPref(BaseModel):
+    n: int
+
+
+@app.post("/api/parallel")
+def set_parallel(body: ParallelPref):
+    config.save_setting("parallel_tasks", min(4, max(1, int(body.n))))
+    worker.kick()
+    return {"parallel_tasks": config.parallel_tasks()}
 
 
 @app.post("/api/update/auto")
