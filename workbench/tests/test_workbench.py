@@ -1323,3 +1323,59 @@ def test_card_colons_display_only():
     out = export.card_colons(md)
     assert "问题一：答案一" in out and "等于什么?：$" in out and "What is X: the answer" in out and "`std::vector` 是什么：动态数组" in out
     assert "use std::vector here" in out and "a::b" in out
+
+
+# ---------- 方言:阿里云百炼识别 ----------
+def test_cloud_asr_flow(env, monkeypatch, tmp_path):
+    import httpx
+    from wb import cloud_asr
+    calls = []
+
+    def handler(req):
+        u = str(req.url)
+        calls.append((req.method, u, dict(req.headers)))
+        if "/uploads" in u:
+            return httpx.Response(200, json={"data": {"policy": "p", "signature": "s", "upload_dir": "dashscope-instant/x", "upload_host": "https://oss.example/up",
+                                                      "oss_access_key_id": "id", "x_oss_object_acl": "private", "x_oss_forbid_overwrite": "true", "max_file_size_mb": 100}})
+        if u == "https://oss.example/up":
+            return httpx.Response(200)
+        if u.endswith("/services/audio/asr/transcription"):
+            body = json.loads(req.content)
+            assert body["model"] == "paraformer-v2" and body["input"]["file_urls"][0].startswith("oss://dashscope-instant/x/")
+            return httpx.Response(200, json={"output": {"task_id": "T1", "task_status": "PENDING"}})
+        if u.endswith("/tasks/T1"):
+            n = sum(1 for c in calls if c[1].endswith("/tasks/T1"))
+            st = "RUNNING" if n == 1 else "SUCCEEDED"
+            return httpx.Response(200, json={"output": {"task_status": st, "results": [{"subtask_status": "SUCCEEDED", "transcription_url": "https://res.example/r.json"}]}})
+        if u == "https://res.example/r.json":
+            return httpx.Response(200, json={"transcripts": [{"sentences": [
+                {"begin_time": 3200, "end_time": 5100, "text": "第二句"}, {"begin_time": 0, "end_time": 3100, "text": "今天讲对数"}]}]})
+        return httpx.Response(404)
+    real = httpx.Client
+    monkeypatch.setattr(cloud_asr.httpx, "Client", lambda **k: real(transport=httpx.MockTransport(handler), **{x: v for x, v in k.items() if x != "transport"}))
+    monkeypatch.setattr(cloud_asr, "compress", lambda media, out: open(out, "wb").write(b"mp3") and out)
+    monkeypatch.setattr(cloud_asr.time, "sleep", lambda s: None)
+    monkeypatch.setattr(cloud_asr, "POLL_EVERY", 0)
+    base = str(tmp_path / "lec")
+    assert cloud_asr.transcribe("in.mp4", base, lambda s: None, key="sk-x") == 2
+    srt = open(base + ".srt", encoding="utf-8").read()
+    assert srt.startswith("1\n00:00:00,000 --> 00:00:03,100\n今天讲对数") and "00:00:03,200 --> 00:00:05,100" in srt
+    sub = [c for c in calls if c[1].endswith("/transcription")][0][2]
+    assert sub["x-dashscope-async"] == "enable" and sub["x-dashscope-ossresourceresolve"] == "enable"
+    assert not os.path.exists(base + ".cloud.mp3")
+
+
+def test_dialect_needs_key_and_routes_to_cloud(env, monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from wb import cloud_asr, sources
+    c = TestClient(env["server"].app)
+    r = c.post("/api/tasks", json={"source": str(tmp_path / "a.mp3"), "lang": "dialect"})
+    assert r.status_code == 400 and "阿里云百炼" in r.json()["detail"]
+    monkeypatch.setattr(cloud_asr, "check_key", lambda k: None)
+    assert c.post("/api/config/dashscope", json={"api_key": "sk-abc"}).json()["dashscope_ok"]
+    got = {}
+    monkeypatch.setattr(cloud_asr, "transcribe", lambda media, base, log: got.update(media=media))
+    monkeypatch.setattr(sources, "need", lambda n: n)
+    sources.transcribe("x.mp4", str(tmp_path / "b"), "dialect", lambda s: None)
+    assert got["media"] == "x.mp4"
+    assert "paraformer" in sources.asr_how("dialect") and "whisper" in sources.asr_how("zh")

@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from . import config, db, export, llm, materials, pipeline, sources, templates, update, worker
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-LANGS = {"auto", "zh", "en", "ja", "ko", "fr", "de", "es"}
+LANGS = {"auto", "zh", "dialect", "en", "ja", "ko", "fr", "de", "es"}
 
 
 @asynccontextmanager
@@ -107,7 +107,7 @@ def get_config():
     return {"model": c.model, "base_url": c.base_url, "review_model": config.review_model(), "key_ok": bool(c.api_key), "key_source": c.source,
             "provider": c.provider, "active": active, "ready": active is not None,
             "cookies_browser": config.cookies_browser(), "browsers": list(config.BROWSERS),
-            "version": update.current(), "update_check": config.update_check(), "parallel_tasks": config.parallel_tasks(),
+            "version": update.current(), "update_check": config.update_check(), "parallel_tasks": config.parallel_tasks(), "dashscope_ok": bool(config.dashscope_key()),
             "providers": [{"id": p, "name": info["name"], "ok": av[p][0], "note": av[p][1]} for p, info in llm.PROVIDERS.items()]}
 
 
@@ -130,6 +130,26 @@ def update_apply():
 
 class UpdatePref(BaseModel):
     on: bool
+
+
+class DashscopeKey(BaseModel):
+    api_key: str = ""
+
+
+@app.post("/api/config/dashscope")
+def set_dashscope(body: DashscopeKey):
+    """方言识别用的阿里云百炼 Key:先试一下对不对,对了才存;空字符串 = 删掉"""
+    from . import cloud_asr
+    key = body.api_key.strip()
+    if key:
+        try:
+            cloud_asr.check_key(key)
+        except cloud_asr.CloudASRError as e:
+            raise HTTPException(400, str(e))
+        except httpx.HTTPError as e:
+            raise HTTPException(400, f"连不上阿里云百炼:{e}")
+    config.save_setting("dashscope_key", key)
+    return get_config()
 
 
 class ParallelPref(BaseModel):
@@ -229,6 +249,8 @@ def get_status():
 @app.post("/api/tasks")
 def create_task(body: NewTask):
     _check_langs(body.lang, body.out_lang)
+    if body.lang == "dialect" and not config.dashscope_key():
+        raise HTTPException(400, "选了「方言」要用阿里云百炼识别:先到「设置 → 方言识别」填阿里云百炼的 API Key")
     _check_template(body.template)
     if not body.source.strip() and body.slides:        # 只附了课件、没贴链接:只根据课件写复习笔记
         sp = _slides_file(body.slides)

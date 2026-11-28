@@ -69,6 +69,11 @@ def update_check():
     return True if v is None else bool(v)
 
 
+def dashscope_key():
+    """阿里云百炼 API Key(方言识别用):环境变量 DASHSCOPE_API_KEY,或设置里填的"""
+    return (os.environ.get("DASHSCOPE_API_KEY") or _file_config().get("dashscope_key") or "").strip()
+
+
 def parallel_tasks():
     """最多同时跑几个任务(1–4,默认 2)。转写仍一次一个,同时跑的是写总结、审核这些调模型的步骤"""
     v = os.environ.get("WORKBENCH_PARALLEL") or _file_config().get("parallel_tasks")

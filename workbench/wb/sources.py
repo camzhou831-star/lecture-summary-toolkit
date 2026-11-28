@@ -205,8 +205,24 @@ def save_meta(info_path, meta_path):
     return meta
 
 
+WHISPER_HOW = "whisper large-v3-turbo 转写,时间精度约 ±0.5 秒,同音错字未校"
+CLOUD_HOW = "阿里云百炼 paraformer-v2 方言识别,时间精度约 ±0.5 秒,同音错字未校"
+
+
+def asr_how(lang):
+    return CLOUD_HOW if lang == "dialect" else WHISPER_HOW
+
+
 def transcribe(media, base, lang, log):
-    """调录播课工具的 transcribe.py:产出 <base>.srt / <base>.txt"""
+    """语音转文字:产出 <base>.srt。选了「方言」走阿里云百炼(cloud_asr.py),否则调录播课工具的 transcribe.py(本机 whisper)"""
+    if lang == "dialect":
+        from . import cloud_asr
+        need("ffmpeg")
+        try:
+            cloud_asr.transcribe(media, base, log)
+        except cloud_asr.CloudASRError as e:
+            raise SourceError(str(e)) from e
+        return
     need("ffmpeg")
     need("whisper-cli")
     code, tail = run([sys.executable, os.path.join(config.TOOLS, "transcribe.py"), media, lang], log, timeout=4 * 3600,
@@ -240,30 +256,31 @@ def fetch(task, root, log):
         meta = save_meta(os.path.join(vdir, "src.info.json"), meta_path)
         transcribe(src[0], base, "zh" if lang == "auto" else lang, log)
         os.remove(src[0])
-        how = "yt-dlp 匿名音频 + whisper large-v3-turbo 转写,时间精度约 ±0.5 秒,同音错字未校"
+        how = "yt-dlp 匿名音频 + " + asr_how(lang)
     elif kind == "youtube":
         need("yt-dlp")
-        sub = "en" if lang == "auto" else lang
+        sub = "en" if lang == "auto" else "zh" if lang == "dialect" else lang
         code, tail = run([need("yt-dlp"), *ytdlp_auth(), "--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", sub, "--sub-format", "vtt",
                           "--write-info-json", "-o", os.path.join(vdir, "src.%(ext)s"), source], log, timeout=600)
         meta = save_meta(os.path.join(vdir, "src.info.json"), meta_path)
         vtts = sorted(glob.glob(os.path.join(vdir, "src.*.vtt")))
-        if vtts and vtt_to_srt(vtts[0], srt) > 0:
+        if lang != "dialect" and vtts and vtt_to_srt(vtts[0], srt) > 0:     # 方言:平台的自动字幕多半不准,直接下音频识别
             how = "yt-dlp 下的 YouTube 字幕(多半是自动字幕),断句是平台切的,时间精度约 ±1 秒"
         else:
-            log(f"== 没有 {sub} 字幕,改为下载音频 + whisper 转写")
+            log("== 方言:不用平台字幕,下载音频识别" if lang == "dialect" else f"== 没有 {sub} 字幕,改为下载音频 + whisper 转写")
             code, tail = run([need("yt-dlp"), *ytdlp_auth(), "-f", "ba", "--no-playlist", "-o", os.path.join(vdir, "src.%(ext)s"), source], log, timeout=1800)
             src = [f for f in glob.glob(os.path.join(vdir, "src.*")) if not f.endswith((".json", ".vtt"))]
             if not src:
                 raise SourceError("YouTube 字幕和音频都没拿到(可能限流或需要登录)。可以自己下载后把文件拖进来。\n" + tail[-300:])
             transcribe(src[0], base, "auto" if lang == "auto" else lang, log)
             os.remove(src[0])
-            how = "yt-dlp 音频 + whisper large-v3-turbo 转写,时间精度约 ±0.5 秒,同音错字未校"
+            how = "yt-dlp 音频 + " + asr_how(lang)
         for v in vtts:
             os.remove(v)
     elif kind == "web":
         yt = need("yt-dlp")
-        sub = "en,en-US,en-GB,en-orig" if lang in ("auto", "en") else f"{lang},{lang}-Hans,{lang}-CN"
+        sl = "zh" if lang == "dialect" else lang
+        sub = "en,en-US,en-GB,en-orig" if sl in ("auto", "en") else f"{sl},{sl}-Hans,{sl}-CN"
         code, tail = run([yt, *ytdlp_auth(), "--no-playlist", "--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", sub,
                           "--sub-format", "vtt/best", "--convert-subs", "vtt", "--write-info-json", "-o", os.path.join(vdir, "src.%(ext)s"), source], log, timeout=600)
         if code and not os.path.exists(os.path.join(vdir, "src.info.json")):
@@ -274,17 +291,17 @@ def fetch(task, root, log):
         meta = save_meta(os.path.join(vdir, "src.info.json"), meta_path)
         meta["site"] = site_name(source)
         vtts = sorted(glob.glob(os.path.join(vdir, "src.*.vtt")))
-        if vtts and vtt_to_srt(vtts[0], srt) > 0:
+        if lang != "dialect" and vtts and vtt_to_srt(vtts[0], srt) > 0:
             how = f"yt-dlp 下的 {meta['site']} 字幕,时间精度约 ±1 秒"
         else:
-            log("== 网页没有现成字幕,下载音频用 whisper 转写")
+            log("== 方言:不用网页字幕,下载音频识别" if lang == "dialect" else "== 网页没有现成字幕,下载音频用 whisper 转写")
             code, tail = run([yt, *ytdlp_auth(), "--no-playlist", "-f", "ba/b", "-o", os.path.join(vdir, "src.%(ext)s"), source], log, timeout=4 * 3600)
             src = [f for f in glob.glob(os.path.join(vdir, "src.*")) if not f.endswith((".json", ".vtt", ".part"))]
             if not src:
                 raise SourceError("音频没下载下来。" + LOGIN_HINT + "\n" + tail[-300:])
             transcribe(src[0], base, lang, log)
             os.remove(src[0])
-            how = f"yt-dlp 下 {meta['site']} 音频 + whisper large-v3-turbo 转写,时间精度约 ±0.5 秒,同音错字未校"
+            how = f"yt-dlp 下 {meta['site']} 音频 + " + asr_how(lang)
         for v in vtts:
             os.remove(v)
     elif kind == "local":
@@ -305,7 +322,7 @@ def fetch(task, root, log):
                 log(f"== 用视频旁边的同名字幕 {os.path.basename(side)},不再转写")
             else:
                 transcribe(source, base, lang, log)
-                how = "本地文件 + whisper large-v3-turbo 转写,时间精度约 ±0.5 秒,同音错字未校"
+                how = "本地文件 + " + asr_how(lang)
             meta["duration"] = media_duration(source)
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=1)

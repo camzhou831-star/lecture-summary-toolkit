@@ -1050,6 +1050,23 @@ async function applyUpdate() {
   }
   bar.innerHTML = `<div class="u-text"><b>${t("upd_done", { v: esc(res.version) })}</b>${t("upd_reopen")}</div>`;
 }
+function drawDialectCard(c) {
+  const box = $("#set-dialect"); if (!box) return;
+  box.innerHTML = `<p class="muted small" style="margin:0 0 10px">${t("dia_note")}</p>
+    <div class="upd-line"><span>${c.dashscope_ok ? "✅ " + t("dia_ok") : t("dia_none")}</span>
+      ${c.dashscope_ok ? `<button type="button" class="btn btn-ghost btn-sm" id="dia-clear">${t("key_clear")}</button>` : ""}</div>
+    <form class="keyform" id="dia-form" autocomplete="off" style="margin-top:10px"><input type="password" class="input input-sm" name="k" placeholder="${t("dia_ph")}" spellcheck="false">
+      <button type="submit" class="btn btn-primary btn-sm">${t("key_save")}</button></form>
+    <p class="muted small" style="margin:8px 0 0">${t("dia_how")}</p>`;
+  const send = async (k) => { cfg = Object.assign(cfg || {}, await api("/api/config/dashscope", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: k }) })); drawDialectCard(cfg); };
+  $("#dia-form").onsubmit = async (e) => {
+    e.preventDefault(); const k = e.target.k.value.trim(); if (!k) return e.target.k.focus();
+    const b = e.target.querySelector("button"); b.disabled = true;
+    try { await send(k); toast(t("key_ok")); } catch (err) { toast(trServer(err.message), 5000); } finally { b.disabled = false; }
+  };
+  if ($("#dia-clear")) $("#dia-clear").onclick = async () => { await send(""); toast(t("key_cleared")); };
+}
 function drawParallelCard(c) {
   const box = $("#set-parallel"); if (!box) return;
   const n = c.parallel_tasks || 2;
@@ -1062,7 +1079,7 @@ function drawParallelCard(c) {
 async function drawUpdateCard() {
   const box = $("#set-update"); if (!box) return;
   const c = cfg || await api("/api/config"), info = updInfo;
-  drawParallelCard(c);
+  drawParallelCard(c); drawDialectCard(c);
   const st = !info ? "" : info.error ? t("upd_unreach") : info.off ? "" : info.newer ? t("upd_new", { v: esc(info.latest) }) : t("upd_latest");
   box.innerHTML = `<div class="upd-line"><span>${t("upd_cur", { v: esc(c.version || "?") })}</span><span class="muted">${st}</span>
       <button type="button" class="btn btn-ghost btn-sm" id="upd-check">${t("upd_check")}</button>
