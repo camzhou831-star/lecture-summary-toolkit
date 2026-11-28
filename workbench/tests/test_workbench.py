@@ -1315,3 +1315,11 @@ def test_worker_overlaps_model_steps_but_not_heavy(env, monkeypatch):
     assert b0 >= a1 - 0.01                       # 转写一个接一个
     (m0, m1), (n0, n1) = sorted(spans["model"])
     assert n0 < m1                               # 调模型的步骤有重叠
+
+
+def test_card_colons_display_only():
+    from wb import export
+    md = "## 复习卡\n\n问题一::答案一\n- 已知 lg 2 = a,等于什么? ::$\\frac{2b}{a+b}$\n- What is X::the answer\n- `std::vector` 是什么::动态数组\n## 笔记\n- use std::vector here\n```\na::b\n```"
+    out = export.card_colons(md)
+    assert "问题一：答案一" in out and "等于什么?：$" in out and "What is X: the answer" in out and "`std::vector` 是什么：动态数组" in out
+    assert "use std::vector here" in out and "a::b" in out

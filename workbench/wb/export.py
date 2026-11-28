@@ -92,6 +92,29 @@ def plain_math(md):
     return MATH_MD.sub(rep, md)
 
 
+CARD_HEAD = re.compile(r"复习卡|review cards|flashcards", re.I)
+CARD_SEP = re.compile(r"^((?:[^`:]|`[^`]*`|:(?!:))*?)\s*::\s*")
+CJK = re.compile(r"[\u3000-\u9fff\uff00-\uffef]")
+
+
+def card_colons(md):
+    """复习卡「问题::答案」(Obsidian 间隔复习插件的写法)在 Word 里显示成一个冒号;只动复习卡那一节,代码不动"""
+    out, fence, in_cards = [], False, False
+    for line in md.split("\n"):
+        if line.lstrip().startswith("```"):
+            fence = not fence
+        elif not fence:
+            h = re.match(r"#{1,6}\s+(.*)", line)
+            if h:
+                in_cards = bool(CARD_HEAD.search(h.group(1)))
+            elif in_cards:
+                m = CARD_SEP.match(line)
+                if m:
+                    line = m.group(1) + ("：" if CJK.search(line) else ": ") + line[m.end():]
+        out.append(line)
+    return "\n".join(out)
+
+
 # ---------- Markdown → Word ----------
 def _font(doc):
     st = doc.styles["Normal"]
@@ -194,7 +217,7 @@ def _table(doc, rows, task_root):
 def to_docx(md, task_root, title=""):
     doc = Document()
     _font(doc)
-    lines = plain_math(md.replace("\r\n", "\n")).split("\n")
+    lines = plain_math(card_colons(md.replace("\r\n", "\n"))).split("\n")
     i, n = 0, len(lines)
     while i < n:
         line = lines[i]

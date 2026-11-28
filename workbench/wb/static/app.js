@@ -405,6 +405,21 @@ function setTab(name) {
 // ---------- 数学公式:$…$ / $$…$$ / \(…\) / \[…\] 用 KaTeX 排版 ----------
 // 先换成占位符再交给 marked(不然 \ 和 _ 会被当成 Markdown 吃掉),过滤完 HTML 再把排好的公式放回去。代码里的 $ 不动;$5 这种金额不算公式
 const MATH_RE = /(```[\s\S]*?```|`[^`\n]*`)|\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\((.+?)\\\)|(?<![\\$\w])\$(?![\s$])([^\n$`　-〿一-鿿＀-￯]+?)(?<![\s\\])\$(?![\d$])/g;
+// 复习卡「问题::答案」是 Obsidian 间隔复习插件的写法:文件里保留,页面上显示成一个冒号。
+// 只动「复习卡 / Review Cards」那一节里每行的第一个 ::(一行一张卡,写不写成列表都行;反引号里的代码不动)
+function cardColons(md) {
+  let fence = false, inCards = false;
+  return md.split("\n").map((line) => {
+    if (/^\s*```/.test(line)) { fence = !fence; return line; }
+    if (fence) return line;
+    const h = /^#{1,6}\s+(.*)/.exec(line);
+    if (h) { inCards = /复习卡|review cards|flashcards/i.test(h[1]); return line; }
+    if (!inCards) return line;
+    const m = /^((?:[^`:]|`[^`]*`|:(?!:))*?)\s*::\s*/.exec(line);
+    if (!m) return line;
+    return m[1] + (/[\u3000-\u9fff\uff00-\uffef]/.test(line) ? "：" : ": ") + line.slice(m[0].length);
+  }).join("\n");
+}
 function mdToHtml(md) {
   const items = [];
   const src = window.katex ? md.replace(MATH_RE, (all, code, d1, d2, i1, i2) => {
@@ -413,7 +428,7 @@ function mdToHtml(md) {
     items.push({ tex: (d1 ?? d2 ?? i1 ?? i2).trim(), display });
     return `KXMATH${items.length - 1}XK`;
   }) : md;
-  let html = window.marked ? marked.parse(src, { breaks: true }) : `<pre>${esc(src)}</pre>`;
+  let html = window.marked ? marked.parse(cardColons(src), { breaks: true }) : `<pre>${esc(src)}</pre>`;
   html = window.DOMPurify ? DOMPurify.sanitize(html) : html;
   return html.replace(/KXMATH(\d+)XK/g, (_, n) => {
     const it = items[+n];
