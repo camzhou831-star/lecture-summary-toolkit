@@ -1,0 +1,44 @@
+name: windows-install-test
+on:
+  push:
+    branches: [ci/windows-install-test]
+jobs:
+  install:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Tools already on the runner
+        shell: pwsh
+        run: |
+          foreach ($c in "winget","uv","yt-dlp","ffmpeg","tesseract","python","claude","codex") { "{0,-10} {1}" -f $c, ((Get-Command $c -ErrorAction SilentlyContinue).Source) }
+          (Get-UICulture).Name
+          [Environment]::OSVersion
+      - name: Download the real release package (zh windows)
+        shell: pwsh
+        run: |
+          $d = Join-Path $env:USERPROFILE "Desktop"; New-Item -ItemType Directory -Force $d | Out-Null
+          gh release download v0.8.5 -R ${{ github.repository }} -p lecture-workbench-zh-windows.zip -D $d
+          Expand-Archive (Join-Path $d lecture-workbench-zh-windows.zip) -DestinationPath $d -Force
+          Get-ChildItem $d
+      - name: Double-click the bat (run like a user, log everything)
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:USERPROFILE "Desktop\课程总结工作台"
+          $bat = Join-Path $root "启动工作台.bat"
+          $log = Join-Path $env:RUNNER_TEMP "bat.log"
+          $p = Start-Process cmd.exe -ArgumentList "/c", "`"`"$bat`" > `"$log`" 2>&1 < nul`"" -WorkingDirectory $root -PassThru -WindowStyle Hidden
+          $t0 = Get-Date; $ok = $false
+          while ((Get-Date) - $t0 -lt [TimeSpan]::FromMinutes(60)) {
+            Start-Sleep 20
+            try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 http://127.0.0.1:8770/api/config | Out-Null; $ok = $true; break } catch {}
+            if ($p.HasExited) { "bat exited with code $($p.ExitCode)"; break }
+            "--- {0:N0} min, still running; log tail:" -f ((Get-Date) - $t0).TotalMinutes
+            if (Test-Path $log) { Get-Content $log -Tail 5 -Encoding utf8 }
+          }
+          "===== FULL LOG ====="
+          if (Test-Path $log) { Get-Content $log -Encoding utf8 }
+          "===== server up: $ok ====="
+          Get-ChildItem (Join-Path $env:USERPROFILE ".local\share") -Recurse -Depth 1 -ErrorAction SilentlyContinue | Select-Object FullName, Length
+          if (-not $ok) { exit 1 }
